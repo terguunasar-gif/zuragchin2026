@@ -153,7 +153,7 @@ export default function DashboardPage() {
     if (!profile) return;
     setAddingRole(role);
     const newRoles = [...profile.role, role];
-    await supabase.from('users').update({ role: newRoles }).eq('id', profile.id);
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
     await refreshProfile();
     setAddingRole(null);
   }
@@ -180,7 +180,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-stone-950">
-      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -255,7 +254,6 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10">
-        {/* Welcome */}
         <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
           <div>
             <h1 className="text-white text-3xl font-bold mb-1.5">
@@ -296,7 +294,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {isOrganizer && (
             <StatCard
@@ -351,7 +348,6 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Organizer section */}
         {isOrganizer && (
           <section className="mb-10">
             <SectionHeading label="Зохион байгуулагч" />
@@ -362,7 +358,6 @@ export default function DashboardPage() {
               <TabButton active={activeOrgTab === 'settlement'} onClick={() => setActiveOrgTab('settlement')} icon={<BarChart3 className="w-4 h-4" />}   label="Тооцоо" />
               <TabButton active={activeOrgTab === 'wallet'}     onClick={() => setActiveOrgTab('wallet')}     icon={<Wallet className="w-4 h-4" />}      label="Хэтэвч" />
             </div>
-
             {activeOrgTab === 'albums' && (
               <div className="bg-white/5 border border-white/10 rounded-2xl">
                 <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
@@ -429,7 +424,6 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Photographer section */}
         {isPhotographer && (
           <section className="mb-10">
             {(isOrganizer || isAdmin) && <SectionHeading label="Зурагчин" />}
@@ -442,7 +436,6 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Admin section */}
         {isAdmin && (
           <section className="mb-10">
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
@@ -454,10 +447,8 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Buyer-only section */}
         {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
           <section className="mb-10">
-            {/* Action buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
               <button
                 onClick={() => addRole('photographer')}
@@ -496,7 +487,6 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Tabs */}
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activeBuyerTab === 'purchases'} onClick={() => setActiveBuyerTab('purchases')} icon={<ShoppingBag className="w-4 h-4" />} label="Худалдан авалт" />
               <TabButton active={activeBuyerTab === 'downloads'} onClick={() => setActiveBuyerTab('downloads')} icon={<Download className="w-4 h-4" />}    label="Татсан зурагнууд" badge={activePurchases.length > 0 ? activePurchases.length : undefined} />
@@ -517,14 +507,12 @@ export default function DashboardPage() {
 
             {activeBuyerTab === 'downloads' && (
               <div>
-                {/* Warning */}
                 <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-5">
                   <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                   <p className="text-amber-300 text-sm">
                     Татсан зурагнууд <span className="font-semibold">21 хоногийн</span> дотор татах боломжтой. Хугацаа дуусвал системээс устгагдана.
                   </p>
                 </div>
-
                 {loadingPurchases ? (
                   <div className="flex justify-center py-12">
                     <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
@@ -546,32 +534,21 @@ export default function DashboardPage() {
                         <div key={p.id} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group">
                           <div className="relative aspect-square bg-stone-900">
                             {p.photo?.preview_url && (
-                              <img
-                                src={p.photo.preview_url}
-                                alt=""
-                                className="w-full h-full object-cover"
-                              />
+                              <img src={p.photo.preview_url} alt="" className="w-full h-full object-cover" />
                             )}
-                            <div className={`absolute top-2 right-2 text-xs font-medium px-2 py-1 rounded-lg ${
-                              urgent ? 'bg-red-500/80 text-white' : 'bg-black/60 text-stone-300'
-                            }`}>
+                            <div className={`absolute top-2 right-2 text-xs font-medium px-2 py-1 rounded-lg ${urgent ? 'bg-red-500/80 text-white' : 'bg-black/60 text-stone-300'}`}>
                               {days}өдөр
                             </div>
                           </div>
                           <div className="p-3">
-                            <p className="text-stone-400 text-xs truncate mb-2">
-                              {p.photo?.album?.name ?? 'Цомог'}
-                            </p>
-                            <a
-                              href={p.photo?.original_url}
-                              download
-                              target="_blank"
-                              rel="noreferrer"
+                            <p className="text-stone-400 text-xs truncate mb-2">{p.photo?.album?.name ?? 'Цомог'}</p>
+                            <button
+                              onClick={() => window.open(p.photo?.original_url, '_blank')}
                               className="flex items-center justify-center gap-1.5 w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs py-1.5 rounded-lg transition-colors"
                             >
                               <Download className="w-3.5 h-3.5" />
                               Татах
-                            </a>
+                            </button>
                           </div>
                         </div>
                       );
@@ -585,7 +562,6 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Add role upsell — only if not already shown above */}
         {(canAddPhotographer || canAddOrganizer) && !isAdmin && (isOrganizer || isPhotographer) && (
           <section>
             <p className="text-stone-500 text-sm font-medium mb-3">Дүрэм нэмэх</p>
