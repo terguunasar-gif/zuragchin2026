@@ -5,6 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight, Search,
   Users, Wallet, BarChart3, Shield, LayoutDashboard,
   ShoppingBag, UserPlus, ChevronDown, Settings, Briefcase,
+  Download, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -23,10 +24,24 @@ interface Album {
   created_at: string;
 }
 
+interface Purchase {
+  id: string;
+  photo_id: string;
+  type: string;
+  gross_amount: number;
+  created_at: string;
+  expires_at: string;
+  photo?: {
+    preview_url: string;
+    original_url: string;
+    album?: { name: string };
+  };
+}
+
 type OrganizerTab = 'albums' | 'requests' | 'listings' | 'settlement' | 'wallet';
 type PhotographerTab = 'albums' | 'wallet';
 type AdminTab = 'platform' | 'wallet';
-type BuyerTab = 'purchases' | 'wallet';
+type BuyerTab = 'purchases' | 'downloads' | 'wallet';
 
 export default function DashboardPage() {
   const { profile, signOut, refreshProfile } = useAuth();
@@ -40,7 +55,8 @@ export default function DashboardPage() {
   const [activeBuyerTab, setActiveBuyerTab] = useState<BuyerTab>('purchases');
   const [pendingCount, setPendingCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
-  const [purchaseCount, setPurchaseCount] = useState(0);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
 
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [addingRole, setAddingRole] = useState<'photographer' | 'organizer' | null>(null);
@@ -58,7 +74,7 @@ export default function DashboardPage() {
     if (!profile) return;
     loadWalletBalance();
     if (isOrganizer) { loadOrganizerAlbums(); loadPendingCount(); }
-    if (isBuyer) loadPurchaseCount();
+    if (isBuyer) loadPurchases();
   }, [profile]);
 
   useEffect(() => {
@@ -104,12 +120,33 @@ export default function DashboardPage() {
     setWalletBalance(Number(data?.pending_balance ?? 0));
   }
 
-  async function loadPurchaseCount() {
-    const { count } = await supabase
+  async function loadPurchases() {
+    setLoadingPurchases(true);
+    const { data } = await supabase
       .from('purchases')
-      .select('id', { count: 'exact', head: true })
-      .eq('buyer_id', profile!.id);
-    setPurchaseCount(count ?? 0);
+      .select(`
+        id, photo_id, type, gross_amount, created_at,
+        photo_uploads!purchases_photo_id_fkey (
+          preview_url, original_url,
+          albums!photo_uploads_album_id_fkey ( name )
+        )
+      `)
+      .eq('buyer_id', profile!.id)
+      .eq('type', 'download')
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      setPurchases(data.map((p: any) => ({
+        ...p,
+        expires_at: new Date(new Date(p.created_at).getTime() + 21 * 24 * 60 * 60 * 1000).toISOString(),
+        photo: p.photo_uploads ? {
+          preview_url: p.photo_uploads.preview_url,
+          original_url: p.photo_uploads.original_url,
+          album: p.photo_uploads.albums,
+        } : undefined,
+      })));
+    }
+    setLoadingPurchases(false);
   }
 
   async function addRole(role: 'photographer' | 'organizer') {
@@ -119,6 +156,11 @@ export default function DashboardPage() {
     await supabase.from('users').update({ role: newRoles }).eq('id', profile.id);
     await refreshProfile();
     setAddingRole(null);
+  }
+
+  function daysLeft(expiresAt: string): number {
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
 
   const statusBadge: Record<string, string> = {
@@ -133,6 +175,8 @@ export default function DashboardPage() {
     organizer:    'Зохион байгуулагч',
     admin:        'Админ',
   };
+
+  const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -160,7 +204,6 @@ export default function DashboardPage() {
               </button>
             )}
 
-            {/* Profile dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setProfileDropdownOpen(o => !o)}
@@ -253,7 +296,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Stats row — shown conditionally per role */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {isOrganizer && (
             <StatCard
@@ -274,9 +317,9 @@ export default function DashboardPage() {
           {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
             <StatCard
               icon={<ShoppingBag className="w-5 h-5 text-blue-400" />}
-              label="Худалдан авалт"
-              value={purchaseCount}
-              onClick={() => setActiveBuyerTab('purchases')}
+              label="Татсан зураг"
+              value={activePurchases.length}
+              onClick={() => setActiveBuyerTab('downloads')}
             />
           )}
           {isOrganizer && (
@@ -308,7 +351,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* ── Organizer section ── */}
+        {/* Organizer section */}
         {isOrganizer && (
           <section className="mb-10">
             <SectionHeading label="Зохион байгуулагч" />
@@ -386,7 +429,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* ── Photographer section ── */}
+        {/* Photographer section */}
         {isPhotographer && (
           <section className="mb-10">
             {(isOrganizer || isAdmin) && <SectionHeading label="Зурагчин" />}
@@ -399,7 +442,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* ── Admin section ── */}
+        {/* Admin section */}
         {isAdmin && (
           <section className="mb-10">
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
@@ -411,13 +454,55 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* ── Buyer-only section (no other role) ── */}
+        {/* Buyer-only section */}
         {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
           <section className="mb-10">
+            {/* Action buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+              <button
+                onClick={() => addRole('photographer')}
+                disabled={addingRole === 'photographer'}
+                className="flex items-center gap-4 bg-white/5 hover:bg-white/8 border border-white/10 hover:border-blue-500/30 rounded-2xl p-5 text-left transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                  {addingRole === 'photographer'
+                    ? <div className="w-5 h-5 border-2 border-blue-400/40 border-t-blue-400 rounded-full animate-spin" />
+                    : <Camera className="w-6 h-6 text-blue-400" />
+                  }
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm mb-1">Зурагчин болох</p>
+                  <p className="text-stone-500 text-xs">Цомогт нэгдэж, зургаа зарж орлого олоорой</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-700 group-hover:text-blue-400 transition-colors ml-auto flex-shrink-0" />
+              </button>
+
+              <button
+                onClick={() => addRole('organizer')}
+                disabled={addingRole === 'organizer'}
+                className="flex items-center gap-4 bg-white/5 hover:bg-white/8 border border-white/10 hover:border-amber-500/30 rounded-2xl p-5 text-left transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                  {addingRole === 'organizer'
+                    ? <div className="w-5 h-5 border-2 border-amber-400/40 border-t-amber-400 rounded-full animate-spin" />
+                    : <FolderOpen className="w-6 h-6 text-amber-400" />
+                  }
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm mb-1">Цомог үүсгэх</p>
+                  <p className="text-stone-500 text-xs">Арга хэмжээний цомог үүсгэж зурагчидтай хамтар</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-700 group-hover:text-amber-400 transition-colors ml-auto flex-shrink-0" />
+              </button>
+            </div>
+
+            {/* Tabs */}
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activeBuyerTab === 'purchases'} onClick={() => setActiveBuyerTab('purchases')} icon={<ShoppingBag className="w-4 h-4" />} label="Худалдан авалт" />
+              <TabButton active={activeBuyerTab === 'downloads'} onClick={() => setActiveBuyerTab('downloads')} icon={<Download className="w-4 h-4" />}    label="Татсан зурагнууд" badge={activePurchases.length > 0 ? activePurchases.length : undefined} />
               <TabButton active={activeBuyerTab === 'wallet'}    onClick={() => setActiveBuyerTab('wallet')}    icon={<Wallet className="w-4 h-4" />}       label="Хэтэвч" />
             </div>
+
             {activeBuyerTab === 'purchases' && (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
                 <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -429,12 +514,79 @@ export default function DashboardPage() {
                 </p>
               </div>
             )}
+
+            {activeBuyerTab === 'downloads' && (
+              <div>
+                {/* Warning */}
+                <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-5">
+                  <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-amber-300 text-sm">
+                    Татсан зурагнууд <span className="font-semibold">21 хоногийн</span> дотор татах боломжтой. Хугацаа дуусвал системээс устгагдана.
+                  </p>
+                </div>
+
+                {loadingPurchases ? (
+                  <div className="flex justify-center py-12">
+                    <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+                  </div>
+                ) : activePurchases.length === 0 ? (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
+                    <div className="w-14 h-14 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Download className="w-7 h-7 text-stone-500" />
+                    </div>
+                    <p className="text-white font-medium mb-1">Татсан зураг байхгүй</p>
+                    <p className="text-stone-500 text-sm">Цомгоос зураг худалдан авсны дараа энд харагдана.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {activePurchases.map(p => {
+                      const days = daysLeft(p.expires_at);
+                      const urgent = days <= 3;
+                      return (
+                        <div key={p.id} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group">
+                          <div className="relative aspect-square bg-stone-900">
+                            {p.photo?.preview_url && (
+                              <img
+                                src={p.photo.preview_url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            )}
+                            <div className={`absolute top-2 right-2 text-xs font-medium px-2 py-1 rounded-lg ${
+                              urgent ? 'bg-red-500/80 text-white' : 'bg-black/60 text-stone-300'
+                            }`}>
+                              {days}өдөр
+                            </div>
+                          </div>
+                          <div className="p-3">
+                            <p className="text-stone-400 text-xs truncate mb-2">
+                              {p.photo?.album?.name ?? 'Цомог'}
+                            </p>
+                            <a
+                              href={p.photo?.original_url}
+                              download
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center justify-center gap-1.5 w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs py-1.5 rounded-lg transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Татах
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeBuyerTab === 'wallet' && <WalletTab />}
           </section>
         )}
 
-        {/* ── Add role upsell cards ── */}
-        {(canAddPhotographer || canAddOrganizer) && !isAdmin && (
+        {/* Add role upsell — only if not already shown above */}
+        {(canAddPhotographer || canAddOrganizer) && !isAdmin && (isOrganizer || isPhotographer) && (
           <section>
             <p className="text-stone-500 text-sm font-medium mb-3">Дүрэм нэмэх</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
