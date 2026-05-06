@@ -544,7 +544,7 @@ export default function DashboardPage() {
                             <p className="text-stone-400 text-xs truncate mb-2">{p.photo?.album?.name ?? 'Цомог'}</p>
                             
                               href={p.photo?.original_url}
-                              download
+                              download={true}
                               target="_blank"
                               rel="noreferrer"
                               className="flex items-center justify-center gap-1.5 w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs py-1.5 rounded-lg transition-colors"
