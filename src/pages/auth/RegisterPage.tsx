@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle2, Check } from 'lucide-react';
-import { supabase, UserRole } from '../../lib/supabase';
+import { Camera, Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -9,8 +9,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  // buyer is always included; user can toggle photographer and organizer
-  const [extraRoles, setExtraRoles] = useState<Set<UserRole>>(new Set());
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,15 +28,6 @@ export default function RegisterPage() {
     return { score, label: labels[score] || '', color: colors[score] || '' };
   }
 
-  function toggleRole(role: UserRole) {
-    setExtraRoles(prev => {
-      const next = new Set(prev);
-      if (next.has(role)) next.delete(role);
-      else next.add(role);
-      return next;
-    });
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -51,12 +40,11 @@ export default function RegisterPage() {
       return;
     }
     setLoading(true);
-    const roles: UserRole[] = ['buyer', ...Array.from(extraRoles)];
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name, roles: JSON.stringify(roles) },
+        data: { name, roles: JSON.stringify(['buyer']) },
       },
     });
     if (error) {
@@ -67,11 +55,6 @@ export default function RegisterPage() {
       setTimeout(() => navigate('/dashboard'), 2000);
     }
   }
-
-  const optionalRoles: { value: UserRole; label: string; desc: string }[] = [
-    { value: 'photographer', label: 'Зурагчин', desc: 'Цомогт нэгдэж, зураг байршуулах' },
-    { value: 'organizer',   label: 'Зохион байгуулагч', desc: 'Цомог үүсгэж, удирдах' },
-  ];
 
   if (success) {
     return (
@@ -143,53 +126,6 @@ export default function RegisterPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Role multi-select */}
-            <div>
-              <label className="block text-stone-300 text-sm font-medium mb-3">
-                Би дараах байдлаар нэгдэх
-              </label>
-
-              {/* Buyer — always selected, not toggleable */}
-              <div className="flex items-center gap-3 p-3 rounded-xl border bg-amber-500/10 border-amber-500/40 mb-2 cursor-default">
-                <div className="w-5 h-5 rounded-md bg-amber-500 flex items-center justify-center flex-shrink-0">
-                  <Check className="w-3.5 h-3.5 text-stone-950" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-amber-400 font-medium text-sm">Худалдан авагч</p>
-                  <p className="text-stone-500 text-xs">Зураг үзэж, худалдан авах — үргэлж идэвхтэй</p>
-                </div>
-              </div>
-
-              {/* Optional roles */}
-              {optionalRoles.map(r => {
-                const checked = extraRoles.has(r.value);
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => toggleRole(r.value)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 mb-2 text-left ${
-                      checked
-                        ? 'bg-amber-500/10 border-amber-500/40'
-                        : 'bg-white/5 border-white/10 hover:border-white/20'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      checked ? 'bg-amber-500 border-amber-500' : 'border-stone-600'
-                    }`}>
-                      {checked && <Check className="w-3.5 h-3.5 text-stone-950" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-sm ${checked ? 'text-amber-400' : 'text-stone-300'}`}>
-                        {r.label}
-                      </p>
-                      <p className="text-stone-500 text-xs">{r.desc}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
             <div>
               <label className="block text-stone-300 text-sm font-medium mb-2">Бүтэн нэр</label>
               <div className="relative">
