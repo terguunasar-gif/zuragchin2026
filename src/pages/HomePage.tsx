@@ -27,7 +27,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
-      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-50 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
@@ -50,7 +49,6 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="relative py-20 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent pointer-events-none" />
         <div className="max-w-4xl mx-auto text-center">
@@ -61,8 +59,6 @@ export default function HomePage() {
           <p className="text-stone-400 text-lg mb-10 max-w-2xl mx-auto">
             Зурагчид, зохион байгуулагчид болон дурсамжийг холбогч платформ
           </p>
-
-          {/* Search */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-2 flex items-center gap-3 max-w-2xl mx-auto mb-6">
             <Search className="w-5 h-5 text-stone-400 ml-3 flex-shrink-0" />
             <input
@@ -76,8 +72,6 @@ export default function HomePage() {
               Хайх
             </button>
           </div>
-
-          {/* Categories */}
           <div className="flex flex-wrap justify-center gap-2">
             {categories.map(cat => (
               <button
@@ -96,18 +90,20 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Photographers */}
       <section className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зурагчингууд</h2>
-            <button className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
+            <button
+              onClick={() => navigate('/listings')}
+              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
+            >
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {photographers.map(p => (
-              <div key={p.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer">
+              <div key={p.id} onClick={() => navigate('/listings')} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer">
                 <div className="relative h-32 overflow-hidden">
                   <img src={p.cover} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 to-transparent" />
@@ -125,9 +121,9 @@ export default function HomePage() {
                     <span className="text-amber-400 text-sm font-medium">{p.price}</span>
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3 text-stone-500">
-                    <button className="hover:text-white transition-colors"><Phone className="w-3.5 h-3.5" /></button>
-                    <button className="hover:text-pink-400 transition-colors"><Instagram className="w-3.5 h-3.5" /></button>
-                    <button className="hover:text-blue-400 transition-colors"><Facebook className="w-3.5 h-3.5" /></button>
+                    <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors"><Phone className="w-3.5 h-3.5" /></button>
+                    <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors"><Instagram className="w-3.5 h-3.5" /></button>
+                    <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors"><Facebook className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
               </div>
@@ -136,18 +132,20 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Albums */}
-      <section className="py-16 px-6 bg-white/2">
+      <section className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
-            <button className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
+            <button
+              onClick={() => navigate('/albums')}
+              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
+            >
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {featuredAlbums.map(album => (
-              <div key={album.id} className="group cursor-pointer">
+              <div key={album.id} onClick={() => navigate('/albums')} className="group cursor-pointer">
                 <div className="relative rounded-2xl overflow-hidden mb-3 aspect-video">
                   <img src={album.image} alt={album.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
@@ -169,7 +167,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-white/10 py-12 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
@@ -188,32 +185,17 @@ export default function HomePage() {
             <div>
               <h4 className="text-white font-semibold mb-4">Холбоо барих</h4>
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-stone-400 text-sm">
-                  <Phone className="w-4 h-4" />
-                  <span>+976 9911-2233</span>
-                </div>
-                <div className="flex items-center gap-2 text-stone-400 text-sm">
-                  <Mail className="w-4 h-4" />
-                  <span>info@zuragchin.mn</span>
-                </div>
-                <div className="flex items-center gap-2 text-stone-400 text-sm">
-                  <MapPin className="w-4 h-4" />
-                  <span>Улаанбаатар, Монгол</span>
-                </div>
+                <div className="flex items-center gap-2 text-stone-400 text-sm"><Phone className="w-4 h-4" /><span>+976 9911-2233</span></div>
+                <div className="flex items-center gap-2 text-stone-400 text-sm"><Mail className="w-4 h-4" /><span>info@zuragchin.mn</span></div>
+                <div className="flex items-center gap-2 text-stone-400 text-sm"><MapPin className="w-4 h-4" /><span>Улаанбаатар, Монгол</span></div>
               </div>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Сошиал хаяг</h4>
               <div className="flex gap-3">
-                <button className="w-10 h-10 bg-white/5 hover:bg-pink-500/20 border border-white/10 hover:border-pink-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-pink-400 transition-all">
-                  <Instagram className="w-4 h-4" />
-                </button>
-                <button className="w-10 h-10 bg-white/5 hover:bg-blue-500/20 border border-white/10 hover:border-blue-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-blue-400 transition-all">
-                  <Facebook className="w-4 h-4" />
-                </button>
-                <button className="w-10 h-10 bg-white/5 hover:bg-sky-500/20 border border-white/10 hover:border-sky-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-sky-400 transition-all">
-                  <Twitter className="w-4 h-4" />
-                </button>
+                <button className="w-10 h-10 bg-white/5 hover:bg-pink-500/20 border border-white/10 hover:border-pink-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-pink-400 transition-all"><Instagram className="w-4 h-4" /></button>
+                <button className="w-10 h-10 bg-white/5 hover:bg-blue-500/20 border border-white/10 hover:border-blue-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-blue-400 transition-all"><Facebook className="w-4 h-4" /></button>
+                <button className="w-10 h-10 bg-white/5 hover:bg-sky-500/20 border border-white/10 hover:border-sky-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-sky-400 transition-all"><Twitter className="w-4 h-4" /></button>
               </div>
             </div>
           </div>
