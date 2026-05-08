@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, Image } from 'lucide-react';
+import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, Image, User, ChevronDown, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
@@ -23,15 +23,21 @@ const featuredAlbums = [
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Бүгд');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (profile) {
-      navigate('/dashboard');
+    function onClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
     }
-  }, [profile]);
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
@@ -46,13 +52,53 @@ export default function HomePage() {
               <span className="text-amber-400 font-bold">.mn</span>
             </div>
           </button>
+
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/auth/login')} className="text-stone-400 hover:text-white text-sm transition-colors px-4 py-2">
-              Нэвтрэх
-            </button>
-            <button onClick={() => navigate('/auth/register')} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl transition-colors">
-              Бүртгүүлэх
-            </button>
+            {profile ? (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setDropdownOpen(o => !o)}
+                  className="flex items-center gap-2 text-stone-300 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5"
+                >
+                  <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">{profile.name || profile.email}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {dropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-30">
+                    <div className="px-4 py-3 border-b border-white/10">
+                      <p className="text-white text-sm font-medium truncate">{profile.name}</p>
+                      <p className="text-stone-500 text-xs truncate">{profile.email}</p>
+                    </div>
+                    <div className="py-1">
+                      <button
+                        onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm"
+                      >
+                        <Settings className="w-4 h-4" />Dashboard
+                      </button>
+                      <button
+                        onClick={() => { setDropdownOpen(false); signOut(); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm"
+                      >
+                        <LogOut className="w-4 h-4" />Гарах
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <button onClick={() => navigate('/auth/login')} className="text-stone-400 hover:text-white text-sm transition-colors px-4 py-2">
+                  Нэвтрэх
+                </button>
+                <button onClick={() => navigate('/auth/register')} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl transition-colors">
+                  Бүртгүүлэх
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
