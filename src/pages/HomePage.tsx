@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, Image } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
 
@@ -22,8 +23,15 @@ const featuredAlbums = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Бүгд');
+
+  useEffect(() => {
+    if (profile) {
+      navigate('/dashboard');
+    }
+  }, [profile]);
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
@@ -94,10 +102,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зурагчингууд</h2>
-            <button
-              onClick={() => navigate('/listings')}
-              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
-            >
+            <button onClick={() => navigate('/listings')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -136,10 +141,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
-            <button
-              onClick={() => navigate('/albums')}
-              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
-            >
+            <button onClick={() => navigate('/albums')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
