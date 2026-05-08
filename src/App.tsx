@@ -15,13 +15,14 @@ import PublicAlbumPage from './pages/PublicAlbumPage';
 import ReceiptPage from './pages/ReceiptPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import EventListingsPage from './pages/EventListingsPage';
+import HomePage from './pages/HomePage';
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<Navigate to="/auth/login" replace />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/auth/login" element={<LoginPage />} />
           <Route path="/auth/register" element={<RegisterPage />} />
           <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
@@ -82,7 +83,6 @@ export default function App() {
               </AdminRoute>
             }
           />
-          {/* Public routes — no login required */}
           <Route path="/listings" element={<EventListingsPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
