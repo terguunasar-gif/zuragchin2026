@@ -111,10 +111,9 @@ export default function EventListingsPage() {
 
   return (
     <div className="min-h-screen bg-stone-950">
-      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
               <Camera className="w-5 h-5 text-stone-950" />
             </div>
@@ -122,7 +121,7 @@ export default function EventListingsPage() {
               <span className="text-white font-bold tracking-tight">Zuragchin</span>
               <span className="text-amber-400 font-bold">.mn</span>
             </div>
-          </div>
+          </button>
           <div className="flex items-center gap-3">
             {profile ? (
               <button
@@ -176,7 +175,6 @@ export default function EventListingsPage() {
                   <div className="flex-1 min-w-0">
                     <h2 className="text-white font-bold text-lg mb-1">{listing.title}</h2>
                     <p className="text-stone-400 text-sm mb-3">{listing.organizer_name}</p>
-
                     <div className="flex flex-wrap gap-3 mb-3">
                       <div className="flex items-center gap-1.5 text-stone-400 text-sm">
                         <Calendar className="w-4 h-4 text-stone-500 flex-shrink-0" />
@@ -199,39 +197,25 @@ export default function EventListingsPage() {
                         </div>
                       )}
                     </div>
-
                     {listing.description && (
                       <p className="text-stone-400 text-sm leading-relaxed line-clamp-3">{listing.description}</p>
                     )}
                   </div>
-
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     {listing.alreadyApplied ? (
                       <span className="flex items-center gap-2 text-green-400 text-sm font-medium bg-green-500/10 border border-green-500/20 px-4 py-2 rounded-xl">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Өргөдөл илгээсэн
+                        <CheckCircle2 className="w-4 h-4" />Өргөдөл илгээсэн
                       </span>
                     ) : isPhotographer ? (
-                      <button
-                        onClick={() => openApply(listing)}
-                        className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors"
-                      >
-                        <Send className="w-4 h-4" />
-                        Өргөдөл гаргах
+                      <button onClick={() => openApply(listing)} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors">
+                        <Send className="w-4 h-4" />Өргөдөл гаргах
                       </button>
                     ) : !profile ? (
-                      <button
-                        onClick={() => navigate('/auth/login')}
-                        className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-stone-300 hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-                      >
-                        <LogIn className="w-4 h-4" />
-                        Нэвтрэн орж өргөдөл гаргах
+                      <button onClick={() => navigate('/auth/login')} className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-stone-300 hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                        <LogIn className="w-4 h-4" />Нэвтрэн орж өргөдөл гаргах
                       </button>
                     ) : (
-                      <button
-                        onClick={() => navigate('/dashboard')}
-                        className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-stone-300 hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-                      >
+                      <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-stone-300 hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
                         Зурагчин болох
                       </button>
                     )}
@@ -246,7 +230,6 @@ export default function EventListingsPage() {
         )}
       </main>
 
-      {/* Apply modal */}
       {applyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-stone-950/80 backdrop-blur-sm" onClick={() => !submitting && setApplyModal(null)} />
@@ -262,7 +245,6 @@ export default function EventListingsPage() {
                 </button>
               )}
             </div>
-
             {submitSuccess ? (
               <div className="text-center py-6">
                 <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -270,12 +252,7 @@ export default function EventListingsPage() {
                 </div>
                 <p className="text-white font-semibold mb-1">Өргөдөл амжилттай илгээгдлээ!</p>
                 <p className="text-stone-400 text-sm">Зохион байгуулагч хянаад тантай холбогдоно.</p>
-                <button
-                  onClick={() => setApplyModal(null)}
-                  className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
-                >
-                  Хаах
-                </button>
+                <button onClick={() => setApplyModal(null)} className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">Хаах</button>
               </div>
             ) : (
               <>
@@ -285,11 +262,8 @@ export default function EventListingsPage() {
                     <p className="text-red-400 text-sm">{submitError}</p>
                   </div>
                 )}
-
                 <div>
-                  <label className="block text-stone-300 text-sm font-medium mb-2">
-                    Танилцуулга мессеж
-                  </label>
+                  <label className="block text-stone-300 text-sm font-medium mb-2">Танилцуулга мессеж</label>
                   <textarea
                     value={message}
                     onChange={e => setMessage(e.target.value)}
@@ -298,29 +272,11 @@ export default function EventListingsPage() {
                     className="w-full bg-white/5 border border-white/10 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 text-white placeholder-stone-600 rounded-xl px-4 py-3 outline-none transition-all text-sm resize-none"
                   />
                 </div>
-
-                {profile?.photographer_id && (
-                  <p className="text-stone-500 text-xs">
-                    Таны ZUR-ID: <span className="font-mono text-stone-400">{profile.photographer_id}</span> — өргөдлийн хамт илгээгдэнэ.
-                  </p>
-                )}
-
                 <div className="flex gap-3">
-                  <button
-                    onClick={submitApplication}
-                    disabled={submitting}
-                    className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold py-2.5 rounded-xl transition-colors text-sm"
-                  >
-                    {submitting
-                      ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-                      : <><Send className="w-4 h-4" />Илгээх</>
-                    }
+                  <button onClick={submitApplication} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold py-2.5 rounded-xl transition-colors text-sm">
+                    {submitting ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <><Send className="w-4 h-4" />Илгээх</>}
                   </button>
-                  <button
-                    onClick={() => setApplyModal(null)}
-                    disabled={submitting}
-                    className="px-4 text-stone-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-sm"
-                  >
+                  <button onClick={() => setApplyModal(null)} disabled={submitting} className="px-4 text-stone-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-sm">
                     Цуцлах
                   </button>
                 </div>
