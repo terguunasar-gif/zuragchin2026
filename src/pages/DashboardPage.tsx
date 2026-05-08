@@ -158,6 +158,11 @@ export default function DashboardPage() {
     setAddingRole(null);
   }
 
+  function scrollToSection(role: string) {
+    const el = document.getElementById(`section-${role}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }
+
   function daysLeft(expiresAt: string): number {
     const diff = new Date(expiresAt).getTime() - Date.now();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
@@ -259,9 +264,17 @@ export default function DashboardPage() {
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
-            <p className="text-stone-400 text-sm">
-              {profile?.role.map(r => roleLabels[r] ?? r).join(' · ')}
-            </p>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {profile?.role.map(r => (
+                <button
+                  key={r}
+                  onClick={() => scrollToSection(r)}
+                  className="text-stone-400 text-sm hover:text-amber-400 transition-colors cursor-pointer underline-offset-2 hover:underline"
+                >
+                  {roleLabels[r] ?? r}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-3 flex-wrap">
             {isPhotographer && (
@@ -349,7 +362,7 @@ export default function DashboardPage() {
         </div>
 
         {isOrganizer && (
-          <section className="mb-10">
+          <section id="section-organizer" className="mb-10">
             <SectionHeading label="Зохион байгуулагч" />
             <div className="flex flex-wrap gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activeOrgTab === 'albums'}     onClick={() => setActiveOrgTab('albums')}     icon={<FolderOpen className="w-4 h-4" />}  label="Цомог" />
@@ -425,7 +438,7 @@ export default function DashboardPage() {
         )}
 
         {isPhotographer && (
-          <section className="mb-10">
+          <section id="section-photographer" className="mb-10">
             {(isOrganizer || isAdmin) && <SectionHeading label="Зурагчин" />}
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activePhotoTab === 'albums'} onClick={() => setActivePhotoTab('albums')} icon={<FolderOpen className="w-4 h-4" />} label="Миний цомог" />
@@ -437,7 +450,7 @@ export default function DashboardPage() {
         )}
 
         {isAdmin && (
-          <section className="mb-10">
+          <section id="section-admin" className="mb-10">
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activeAdminTab === 'platform'} onClick={() => setActiveAdminTab('platform')} icon={<Shield className="w-4 h-4" />}   label="Платформ" />
               <TabButton active={activeAdminTab === 'wallet'}   onClick={() => setActiveAdminTab('wallet')}   icon={<Wallet className="w-4 h-4" />}    label="Хэтэвч" />
@@ -448,7 +461,7 @@ export default function DashboardPage() {
         )}
 
         {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
-          <section className="mb-10">
+          <section id="section-buyer" className="mb-10">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
               <button
                 onClick={() => addRole('photographer')}
