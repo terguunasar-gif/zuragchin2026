@@ -184,7 +184,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-stone-950">
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
               <Camera className="w-5 h-5 text-stone-950" />
             </div>
@@ -196,25 +196,16 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-3">
             {isAdmin && (
-              <button
-                onClick={() => navigate('/admin')}
-                className="hidden sm:flex items-center gap-2 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-3 py-1.5 rounded-xl transition-colors text-sm font-medium"
-              >
-                <LayoutDashboard className="w-3.5 h-3.5" />
-                Admin
+              <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-2 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-3 py-1.5 rounded-xl transition-colors text-sm font-medium">
+                <LayoutDashboard className="w-3.5 h-3.5" />Admin
               </button>
             )}
             <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setProfileDropdownOpen(o => !o)}
-                className="flex items-center gap-2 text-stone-300 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5"
-              >
+              <button onClick={() => setProfileDropdownOpen(o => !o)} className="flex items-center gap-2 text-stone-300 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5">
                 <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
                   <User className="w-3.5 h-3.5" />
                 </div>
-                <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">
-                  {profile?.name || profile?.email}
-                </span>
+                <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">{profile?.name || profile?.email}</span>
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               {profileDropdownOpen && (
@@ -224,26 +215,16 @@ export default function DashboardPage() {
                     <p className="text-stone-500 text-xs truncate">{profile?.email}</p>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {profile?.role.map(r => (
-                        <span key={r} className="text-xs bg-white/10 text-stone-400 px-2 py-0.5 rounded-full">
-                          {roleLabels[r] ?? r}
-                        </span>
+                        <span key={r} className="text-xs bg-white/10 text-stone-400 px-2 py-0.5 rounded-full">{roleLabels[r] ?? r}</span>
                       ))}
                     </div>
                   </div>
                   <div className="py-1">
-                    <button
-                      onClick={() => { setProfileDropdownOpen(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm"
-                    >
-                      <Settings className="w-4 h-4" />
-                      Тохиргоо
+                    <button onClick={() => { setProfileDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm">
+                      <Settings className="w-4 h-4" />Тохиргоо
                     </button>
-                    <button
-                      onClick={() => { setProfileDropdownOpen(false); signOut(); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Гарах
+                    <button onClick={() => { setProfileDropdownOpen(false); signOut(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm">
+                      <LogOut className="w-4 h-4" />Гарах
                     </button>
                   </div>
                 </div>
@@ -261,11 +242,7 @@ export default function DashboardPage() {
             </h1>
             <div className="flex flex-wrap gap-2 mt-1">
               {profile?.role.map(r => (
-                <button
-                  key={r}
-                  onClick={() => scrollToSection(r)}
-                  className="text-stone-400 text-sm hover:text-amber-400 transition-colors cursor-pointer underline-offset-2 hover:underline"
-                >
+                <button key={r} onClick={() => scrollToSection(r)} className="text-stone-400 text-sm hover:text-amber-400 transition-colors cursor-pointer underline-offset-2 hover:underline">
                   {roleLabels[r] ?? r}
                 </button>
               ))}
@@ -274,50 +251,28 @@ export default function DashboardPage() {
           <div className="flex gap-3 flex-wrap">
             {isPhotographer && (
               <>
-                <button
-                  onClick={() => navigate('/listings')}
-                  className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm"
-                >
-                  <Briefcase className="w-4 h-4" />
-                  Ажлын зар
+                <button onClick={() => navigate('/listings')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+                  <Briefcase className="w-4 h-4" />Ажлын зар
                 </button>
-                <button
-                  onClick={() => navigate('/albums')}
-                  className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm"
-                >
-                  <Search className="w-4 h-4" />
-                  Цомог хайх
+                <button onClick={() => navigate('/albums')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+                  <Search className="w-4 h-4" />Цомог хайх
                 </button>
               </>
             )}
             {isOrganizer && (
-              <button
-                onClick={() => navigate('/dashboard/albums/create')}
-                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-all duration-200"
-              >
-                <Plus className="w-5 h-5" />
-                Шинэ цомог
+              <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-all duration-200">
+                <Plus className="w-5 h-5" />Шинэ цомог
               </button>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {isOrganizer && (
-            <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} onClick={() => setActiveOrgTab('albums')} />
-          )}
-          {isPhotographer && (
-            <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" onClick={() => setActivePhotoTab('albums')} />
-          )}
-          {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
-            <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зураг" value={activePurchases.length} onClick={() => setActiveBuyerTab('downloads')} />
-          )}
-          {isOrganizer && (
-            <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} onClick={() => setActiveOrgTab('requests')} />
-          )}
-          {(isOrganizer || isPhotographer) && (
-            <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" onClick={() => isOrganizer ? setActiveOrgTab('settlement') : undefined} />
-          )}
+          {isOrganizer && <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} onClick={() => setActiveOrgTab('albums')} />}
+          {isPhotographer && <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" onClick={() => setActivePhotoTab('albums')} />}
+          {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зураг" value={activePurchases.length} onClick={() => setActiveBuyerTab('downloads')} />}
+          {isOrganizer && <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} onClick={() => setActiveOrgTab('requests')} />}
+          {(isOrganizer || isPhotographer) && <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" onClick={() => isOrganizer ? setActiveOrgTab('settlement') : undefined} />}
           <StatCard
             icon={<Clock className="w-5 h-5 text-amber-400" />}
             label="Хүлээгдэж буй"
@@ -391,7 +346,7 @@ export default function DashboardPage() {
             {(isOrganizer || isAdmin) && <SectionHeading label="Зурагчин" />}
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activePhotoTab === 'albums'} onClick={() => setActivePhotoTab('albums')} icon={<FolderOpen className="w-4 h-4" />} label="Миний цомог" />
-              <TabButton active={activePhotoTab === 'wallet'} onClick={() => setActivePhotoTab('wallet')} icon={<Wallet className="w-4 h-4" />}     label="Хэтэвч" />
+              <TabButton active={activePhotoTab === 'wallet'} onClick={() => setActivePhotoTab('wallet')} icon={<Wallet className="w-4 h-4" />} label="Хэтэвч" />
             </div>
             {activePhotoTab === 'albums' && <PhotographerAlbumsTab />}
             {activePhotoTab === 'wallet' && <WalletTab />}
@@ -436,8 +391,8 @@ export default function DashboardPage() {
 
             <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 w-fit mb-6">
               <TabButton active={activeBuyerTab === 'purchases'} onClick={() => setActiveBuyerTab('purchases')} icon={<ShoppingBag className="w-4 h-4" />} label="Худалдан авалт" />
-              <TabButton active={activeBuyerTab === 'downloads'} onClick={() => setActiveBuyerTab('downloads')} icon={<Download className="w-4 h-4" />}    label="Татсан зурагнууд" badge={activePurchases.length > 0 ? activePurchases.length : undefined} />
-              <TabButton active={activeBuyerTab === 'wallet'}    onClick={() => setActiveBuyerTab('wallet')}    icon={<Wallet className="w-4 h-4" />}       label="Хэтэвч" />
+              <TabButton active={activeBuyerTab === 'downloads'} onClick={() => setActiveBuyerTab('downloads')} icon={<Download className="w-4 h-4" />} label="Татсан зурагнууд" badge={activePurchases.length > 0 ? activePurchases.length : undefined} />
+              <TabButton active={activeBuyerTab === 'wallet'}    onClick={() => setActiveBuyerTab('wallet')}    icon={<Wallet className="w-4 h-4" />} label="Хэтэвч" />
             </div>
 
             {activeBuyerTab === 'purchases' && (
