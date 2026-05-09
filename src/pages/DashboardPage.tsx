@@ -212,7 +212,6 @@ export default function DashboardPage() {
           {!isOrganizer && !isPhotographer && !isAdmin && (
             <>
               <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
-              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
               <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
             </>
           )}
