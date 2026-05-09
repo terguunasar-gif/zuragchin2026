@@ -128,11 +128,6 @@ export default function DashboardPage() {
       .limit(20);
     setPublicAlbums(data ?? []);
   }
-    if (!profile || isPhotographer) return;
-    const newRoles = [...(profile.role ?? []), 'photographer'];
-    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
-    await refreshProfile();
-  }
 
   function daysLeft(expiresAt: string): number {
     const diff = new Date(expiresAt).getTime() - Date.now();
