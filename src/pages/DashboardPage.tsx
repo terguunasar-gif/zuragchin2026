@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Camera, LogOut, User, Plus, Image, Clock,
   CheckCircle2, FolderOpen, ChevronRight,
-  Users, Wallet, Shield, LayoutDashboard,
+  Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -259,7 +259,6 @@ export default function DashboardPage() {
             <>
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
-              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
             </>
           )}
           {isAdmin && (
