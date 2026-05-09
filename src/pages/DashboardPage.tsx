@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Camera, LogOut, User, Plus, Image, Clock,
   CheckCircle2, FolderOpen, ChevronRight,
-  Users, Wallet, Shield, LayoutDashboard,
+  Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -244,7 +244,6 @@ export default function DashboardPage() {
             <>
               <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
               <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={printOrders.length} />
-              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
             </>
           )}
           {isOrganizer && (
