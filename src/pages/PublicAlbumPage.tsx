@@ -1,14 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Camera, Download, Printer, ShoppingCart, X, Plus, Minus,
-  Calendar, User, Image as ImageIcon, ArrowLeft, ChevronDown,
-  ChevronUp, AlertCircle, Loader2,
+  Camera, Download, Printer, ShoppingCart, X,
+  Calendar, User, Image as ImageIcon, AlertCircle,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AlbumData {
   id: string;
@@ -23,14 +21,14 @@ export interface AlbumData {
 
 export interface PhotoData {
   id: string;
-  preview_url: string;
-  filename: string;
+  watermarked_url: string;
+  title: string;
   photographer_id: string;
   print_prices: Record<string, number>;
 }
 
 export interface CartItem {
-  id: string; // unique cart entry id
+  id: string;
   photoId: string;
   photographerId: string;
   previewUrl: string;
@@ -41,14 +39,12 @@ export interface CartItem {
 }
 
 const PRINT_SIZE_LABELS: Record<string, string> = {
-  '10x15': '10×15 cm',
-  '13x18': '13×18 cm',
-  '20x30': '20×30 cm',
+  '10x15': '10×15 см',
+  '13x18': '13×18 см',
+  '20x30': '20×30 см',
   'A4':    'A4 (21×29.7)',
-  '21x30': '21×30 cm',
+  '21x30': '21×30 см',
 };
-
-// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PublicAlbumPage() {
   const { shareLink } = useParams<{ shareLink: string }>();
@@ -62,8 +58,6 @@ export default function PublicAlbumPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-
-  // Per-photo print size selector
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,40 +67,37 @@ export default function PublicAlbumPage() {
   async function loadAlbum(link: string) {
     setLoading(true);
 
-    // share_link stored as "/album/{id}" — match by the full path or just the segment
     const { data: albumData } = await supabase
       .from('albums')
       .select('id, name, event_date, description, is_free, download_price, owner_id, status')
-      .or(`share_link.eq./album/${link},share_link.eq.${link}`)
+      .or(`share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`)
       .eq('status', 'active')
       .maybeSingle();
 
     if (!albumData) { setNotFound(true); setLoading(false); return; }
 
-    // Fetch organizer name
+    // Organizer name
     const { data: ownerData } = await supabase
-      .from('users')
+      .from('profiles')
       .select('name')
       .eq('id', albumData.owner_id)
       .maybeSingle();
 
-    setAlbum({ ...albumData, organizer_name: ownerData?.name ?? 'Organizer' });
+    setAlbum({ ...albumData, organizer_name: ownerData?.name ?? 'Зохион байгуулагч' });
 
-    // Fetch photos
+    // Photos
     const { data: photoData } = await supabase
-      .from('photo_uploads')
-      .select('id, preview_url, filename, photographer_id, print_prices')
+      .from('photos')
+      .select('id, watermarked_url, title, photographer_id, print_prices')
       .eq('album_id', albumData.id)
+      .eq('is_active', true)
       .order('created_at', { ascending: true });
 
     setPhotos(photoData ?? []);
     setLoading(false);
   }
 
-  // ── Cart actions ─────────────────────────────────────────────────────────────
-
   const addToCart = useCallback((item: Omit<CartItem, 'id'>) => {
-    // Prevent duplicates (same photo + type + size)
     const dup = cart.find(c =>
       c.photoId === item.photoId &&
       c.type === item.type &&
@@ -117,10 +108,7 @@ export default function PublicAlbumPage() {
   }, [cart]);
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
-
   const cartTotal = cart.reduce((s, i) => s + i.price, 0);
-
-  // ── Render ────────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -138,9 +126,7 @@ export default function PublicAlbumPage() {
             <AlertCircle className="w-8 h-8 text-stone-500" />
           </div>
           <p className="text-white font-semibold text-xl mb-2">Цомог олдсонгүй</p>
-          <p className="text-stone-400 text-sm">
-            Энэ цомгийн холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.
-          </p>
+          <p className="text-stone-400 text-sm">Холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.</p>
         </div>
       </div>
     );
@@ -157,11 +143,10 @@ export default function PublicAlbumPage() {
             </div>
             <div className="min-w-0">
               <p className="text-white font-bold truncate leading-tight">{album.name}</p>
-              <p className="text-stone-500 text-xs truncate">by {album.organizer_name}</p>
+              <p className="text-stone-500 text-xs truncate">{album.organizer_name}</p>
             </div>
           </div>
 
-          {/* Cart button */}
           <button
             onClick={() => setCartOpen(o => !o)}
             className="relative flex items-center gap-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl transition-colors flex-shrink-0"
@@ -177,13 +162,13 @@ export default function PublicAlbumPage() {
         </div>
       </header>
 
-      {/* Album hero */}
+      {/* Album info */}
       <div className="max-w-7xl mx-auto px-6 py-8 border-b border-white/5">
-        <h1 className="text-white text-4xl font-bold mb-3">{album.name}</h1>
+        <h1 className="text-white text-3xl font-bold mb-3">{album.name}</h1>
         <div className="flex flex-wrap gap-5 text-sm text-stone-400 mb-3">
           <span className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-amber-400" />
-            {new Date(album.event_date).toLocaleDateString('mn-MN', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            {new Date(album.event_date).toLocaleDateString('mn-MN', { month: 'long', day: 'numeric', year: 'numeric' })}
           </span>
           <span className="flex items-center gap-2">
             <User className="w-4 h-4 text-amber-400" />
@@ -211,8 +196,8 @@ export default function PublicAlbumPage() {
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <ImageIcon className="w-8 h-8 text-stone-500" />
             </div>
-            <p className="text-white font-medium text-lg mb-2">Одоогоор зураг байхгүй</p>
-            <p className="text-stone-500 text-sm">Зурагчид энэ цомогт одоогоор зураг байршуулаагүй байна.</p>
+            <p className="text-white font-medium text-lg mb-2">Зураг байхгүй байна</p>
+            <p className="text-stone-500 text-sm">Зурагчид одоогоор зураг байршуулаагүй байна.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -229,8 +214,8 @@ export default function PublicAlbumPage() {
                 onAddDownload={() => addToCart({
                   photoId: photo.id,
                   photographerId: photo.photographer_id,
-                  previewUrl: photo.preview_url,
-                  filename: photo.filename,
+                  previewUrl: photo.watermarked_url,
+                  filename: photo.title || photo.id,
                   type: 'download',
                   price: album.is_free ? 0 : album.download_price,
                 })}
@@ -238,8 +223,8 @@ export default function PublicAlbumPage() {
                   addToCart({
                     photoId: photo.id,
                     photographerId: photo.photographer_id,
-                    previewUrl: photo.preview_url,
-                    filename: photo.filename,
+                    previewUrl: photo.watermarked_url,
+                    filename: photo.title || photo.id,
                     type: 'print',
                     printSize: size,
                     price,
@@ -280,8 +265,6 @@ export default function PublicAlbumPage() {
   );
 }
 
-// ── PhotoCard ─────────────────────────────────────────────────────────────────
-
 function PhotoCard({
   photo, album, inCart, printSelectorOpen,
   onTogglePrintSelector, onAddDownload, onAddPrint,
@@ -295,16 +278,15 @@ function PhotoCard({
   onAddPrint: (size: string, price: number) => void;
 }) {
   const downloadInCart = inCart.some(c => c.type === 'download');
-  const hasPrintPrices = Object.keys(photo.print_prices).length > 0;
+  const hasPrintPrices = photo.print_prices && Object.keys(photo.print_prices).length > 0;
   const downloadPrice = album.is_free ? 0 : album.download_price;
 
   return (
     <div className="group bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden transition-all duration-200">
-      {/* Preview image */}
       <div className="relative aspect-square bg-stone-900 overflow-hidden">
         <img
-          src={photo.preview_url}
-          alt={photo.filename}
+          src={photo.watermarked_url}
+          alt={photo.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
         />
@@ -315,9 +297,8 @@ function PhotoCard({
         )}
       </div>
 
-      {/* Actions */}
       <div className="p-3 space-y-2">
-        {/* Download button */}
+        {/* Татах */}
         <button
           onClick={onAddDownload}
           disabled={downloadInCart}
@@ -329,14 +310,14 @@ function PhotoCard({
         >
           <span className="flex items-center gap-2">
             <Download className="w-3.5 h-3.5" />
-            {downloadInCart ? 'Татах ✓' : 'Татах'}
+            {downloadInCart ? 'Нэмэгдсэн ✓' : 'Татах'}
           </span>
           <span className="text-xs font-semibold">
             {downloadPrice === 0 ? 'Үнэгүй' : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
 
-        {/* Print button */}
+        {/* Угаалгах */}
         {hasPrintPrices && (
           <div>
             <button
@@ -345,7 +326,7 @@ function PhotoCard({
             >
               <span className="flex items-center gap-2">
                 <Printer className="w-3.5 h-3.5" />
-                Хэвлэх
+                Угаалгах
               </span>
               {printSelectorOpen
                 ? <ChevronUp className="w-3.5 h-3.5 text-stone-500" />
@@ -384,8 +365,6 @@ function PhotoCard({
   );
 }
 
-// ── CartSidebar ───────────────────────────────────────────────────────────────
-
 function CartSidebar({
   cart, total, onRemove, onClose, onCheckout,
 }: {
@@ -399,7 +378,6 @@ function CartSidebar({
     <>
       <div className="fixed inset-0 bg-stone-950/60 z-40 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-full max-w-sm bg-stone-900 border-l border-white/10 z-50 flex flex-col shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
           <h2 className="text-white font-semibold text-lg flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-amber-400" />
@@ -410,7 +388,6 @@ function CartSidebar({
           </button>
         </div>
 
-        {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {cart.length === 0 ? (
             <div className="text-center py-12">
@@ -430,7 +407,7 @@ function CartSidebar({
                   <p className="text-stone-400 text-xs">
                     {item.type === 'download'
                       ? 'Татах'
-                      : `Хэвлэх — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
+                      : `Угаалгах — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
                   </p>
                   <p className="text-amber-400 text-sm font-semibold">
                     {item.price === 0 ? 'Үнэгүй' : `₮${item.price.toLocaleString()}`}
@@ -447,12 +424,11 @@ function CartSidebar({
           )}
         </div>
 
-        {/* Footer */}
         {cart.length > 0 && (
           <div className="px-6 py-5 border-t border-white/10 space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-stone-400">Нийт дүн</span>
-              <span className="text-white font-semibold">₮{total.toLocaleString()}</span>
+              <span className="text-white font-semibold text-lg">₮{total.toLocaleString()}</span>
             </div>
             <button
               onClick={onCheckout}
