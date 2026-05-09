@@ -194,7 +194,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex gap-3 flex-wrap">
-            {!isPhotographer && !isAdmin && (
+            {!isPhotographer && (
               <button onClick={() => navigate('/dashboard/photographer/register')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
                 <Camera className="w-4 h-4" />Зурагчин болох
               </button>
@@ -207,35 +207,41 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Stat cards */}
+        {/* Stat cards — зөвхөн тухайн үүрэгт хамаарах */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {isOrganizer && (
-            <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
-          )}
-          {isPhotographer && (
-            <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
-          )}
+          {/* Худалдан авагч — зөвхөн buyer */}
           {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
-            <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зураг" value={activePurchases.length} />
+            <>
+              <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зураг" value={activePurchases.length} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
+              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+            </>
           )}
+          {/* Зурагчин */}
+          {isPhotographer && (
+            <>
+              <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
+              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+            </>
+          )}
+          {/* Зохион байгуулагч */}
           {isOrganizer && (
-            <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
+            <>
+              <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
+              <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
+            </>
           )}
-          {(isOrganizer || isPhotographer) && (
-            <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
-          )}
-          <StatCard
-            icon={<Clock className="w-5 h-5 text-amber-400" />}
-            label="Хүлээгдэж буй"
-            value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'}
-          />
+          {/* Админ */}
           {isAdmin && (
-            <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
+            <>
+              <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
+              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+            </>
           )}
-          {isBuyer && (
-            <StatCard icon={<Download className="w-5 h-5 text-stone-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
-          )}
-          <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
         </div>
       </main>
     </div>
