@@ -44,8 +44,34 @@ export default function PhotographerProfileTab() {
       .select('*')
       .eq('user_id', profile!.id)
       .maybeSingle();
-    if (p) setData(p);
+    if (p) {
+      setData(p);
+      // ZUR-ID байхгүй бол автоматаар үүсгэнэ
+      if (!p.zur_id) {
+        await autoGenerateZurId(p.id);
+      }
+    } else {
+      // Profile байхгүй бол шинэ үүсгэж ZUR-ID өгнө
+      await autoGenerateZurId(undefined);
+    }
     setLoading(false);
+  }
+
+  async function autoGenerateZurId(profileId?: string) {
+    if (!profile) return;
+    const { data: result } = await supabase.rpc('generate_zur_id');
+    if (!result) return;
+    if (profileId) {
+      await supabase.from('photographer_profiles').update({ zur_id: result }).eq('id', profileId);
+      setData(prev => ({ ...prev, zur_id: result }));
+    } else {
+      const { data: created } = await supabase
+        .from('photographer_profiles')
+        .insert({ user_id: profile.id, zur_id: result, is_visible: true, specialties: [] })
+        .select()
+        .single();
+      if (created) setData(created);
+    }
   }
 
   async function generateZurId() {
