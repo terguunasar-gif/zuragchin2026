@@ -33,7 +33,7 @@ interface Purchase {
 }
 
 export default function DashboardPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -111,7 +111,12 @@ export default function DashboardPage() {
     }
   }
 
-  function daysLeft(expiresAt: string): number {
+  async function addPhotographerRole() {
+    if (!profile || isPhotographer) return;
+    const newRoles = [...(profile.role ?? []), 'photographer'];
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
+    await refreshProfile();
+  }
     const diff = new Date(expiresAt).getTime() - Date.now();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
@@ -187,24 +192,52 @@ export default function DashboardPage() {
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
+            {/* Зөвхөн зурагчин эсвэл зохион байгуулагч үүрэгтэй бол харуулна */}
             <div className="flex flex-wrap gap-2 mt-1">
-              {profile?.role.map(r => (
-                <span key={r} className="text-stone-400 text-sm">{roleLabels[r] ?? r}</span>
+              {(isPhotographer || isOrganizer || isAdmin) && profile?.role.map(r => (
+                r !== 'buyer' && <span key={r} className="text-stone-400 text-sm">{roleLabels[r] ?? r}</span>
               ))}
             </div>
           </div>
           <div className="flex gap-3 flex-wrap">
             {!isPhotographer && (
-              <button onClick={() => navigate('/dashboard/photographer/register')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+              <button onClick={addPhotographerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
                 <Camera className="w-4 h-4" />Зурагчин болох
               </button>
             )}
-            {isOrganizer && (
-              <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-all duration-200">
-                <Plus className="w-5 h-5" />Шинэ цомог
-              </button>
-            )}
+            <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-all duration-200">
+              <Plus className="w-5 h-5" />Шинэ цомог
+            </button>
           </div>
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Зөвхөн buyer */}
+          {!isOrganizer && !isPhotographer && !isAdmin && <>
+            <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
+            <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
+            <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+          </>}
+          {/* Зохион байгуулагч */}
+          {isOrganizer && <>
+            <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
+            <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
+          </>}
+          {/* Зурагчин */}
+          {isPhotographer && (
+            <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
+          )}
+          {/* Зурагчин эсвэл зохион байгуулагч */}
+          {(isOrganizer || isPhotographer) && <>
+            <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+            <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
+            <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+          </>}
+          {/* Админ */}
+          {isAdmin && (
+            <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
+          )}
         </div>
 
         {/* Stat cards */}
