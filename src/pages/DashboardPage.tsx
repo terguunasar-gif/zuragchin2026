@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
+import PhotographerProfileTab from './photographer/PhotographerProfileTab';
 
 interface Album {
   id: string;
@@ -243,6 +244,11 @@ export default function DashboardPage() {
                 <Camera className="w-4 h-4" />Зурагчин болох
               </button>
             )}
+            {isPhotographer && activeRole === 'photographer' && (
+              <button onClick={() => setActiveRole('buyer')} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+                <Camera className="w-4 h-4" />Зурагчин ✓
+              </button>
+            )}
             {isOrganizer && activeRole !== 'organizer' && (
               <button onClick={() => setActiveRole('organizer')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
                 <FolderOpen className="w-4 h-4" />Зохион байгуулагч
@@ -283,6 +289,15 @@ export default function DashboardPage() {
             <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
           )}
         </div>
+
+        {/* Зурагчны профайл хэсэг */}
+        {activeRole === 'photographer' && isPhotographer && (
+          <div className="mt-8">
+            <PhotographerProfileTab />
+          </div>
+        )
+
+        }
 
         {/* Угаалгах захиалгуудын жагсаалт */}
         {(activeRole === 'buyer' || (!isPhotographer && !isOrganizer && !isAdmin)) && printOrders.length > 0 && (
