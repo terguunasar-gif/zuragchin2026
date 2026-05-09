@@ -219,7 +219,7 @@ export default function DashboardPage() {
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
-            {/* Role tabs */}
+            {/* Role tabs — зөвхөн buyer tab */}
             {(isPhotographer || isOrganizer) && (
               <div className="flex gap-1 mt-3 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
                 <button
@@ -229,24 +229,6 @@ export default function DashboardPage() {
                   <ShoppingBag className="w-4 h-4" />
                   Худалдан авагч
                 </button>
-                {isPhotographer && (
-                  <button
-                    onClick={() => setActiveRole('photographer')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'photographer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}
-                  >
-                    <Camera className="w-4 h-4" />
-                    Зурагчин
-                  </button>
-                )}
-                {isOrganizer && (
-                  <button
-                    onClick={() => setActiveRole('organizer')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'organizer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Зохион байгуулагч
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -254,6 +236,16 @@ export default function DashboardPage() {
             {!isPhotographer && (
               <button onClick={addPhotographerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
                 <Camera className="w-4 h-4" />Зурагчин болох
+              </button>
+            )}
+            {isPhotographer && activeRole !== 'photographer' && (
+              <button onClick={() => setActiveRole('photographer')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+                <Camera className="w-4 h-4" />Зурагчин
+              </button>
+            )}
+            {isOrganizer && activeRole !== 'organizer' && (
+              <button onClick={() => setActiveRole('organizer')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl transition-all duration-200 text-sm">
+                <FolderOpen className="w-4 h-4" />Зохион байгуулагч
               </button>
             )}
             <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-all duration-200">
