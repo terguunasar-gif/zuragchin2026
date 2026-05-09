@@ -105,7 +105,22 @@ export default function DashboardPage() {
     }
   }
 
-  async function addPhotographerRole() {
+  const [publicAlbums, setPublicAlbums] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadPublicAlbums();
+  }, []);
+
+  async function loadPublicAlbums() {
+    const { data } = await supabase
+      .from('albums')
+      .select('id, name, event_date, owner_id, visibility, is_public, share_link')
+      .or('visibility.eq.public,is_public.eq.true')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setPublicAlbums(data ?? []);
+  }
     if (!profile || isPhotographer) return;
     const newRoles = [...(profile.role ?? []), 'photographer'];
     await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
@@ -235,6 +250,48 @@ export default function DashboardPage() {
             <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
           )}
         </div>
+
+        {/* Нийтлэг цомгуудын жагсаалт — buyer-д харуулна */}
+        {!isOrganizer && !isPhotographer && !isAdmin && (
+          <div className="mt-10">
+            <h2 className="text-white font-semibold text-lg mb-4">Нээлттэй цомгууд</h2>
+            {publicAlbums.length === 0 ? (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
+                <div className="w-14 h-14 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FolderOpen className="w-7 h-7 text-amber-400" />
+                </div>
+                <p className="text-white font-medium mb-1">Цомог байхгүй байна</p>
+                <p className="text-stone-500 text-sm">Зохион байгуулагчийн хуваалцсан QR эсвэл линкээр цомог үзнэ үү.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {publicAlbums.map(album => (
+                  <button
+                    key={album.id}
+                    onClick={() => navigate(`/album/${album.id}`)}
+                    className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-amber-500/30 rounded-2xl p-5 text-left transition-all duration-200 group"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Camera className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">{album.name}</p>
+                        <p className="text-stone-500 text-xs">
+                          {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-600 group-hover:text-amber-400 transition-colors flex-shrink-0" />
+                    </div>
+                    <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-full">
+                      Нээлттэй
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
