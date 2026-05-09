@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [printOrders, setPrintOrders] = useState<any[]>([]);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [activeRole, setActiveRole] = useState<'buyer' | 'photographer' | 'organizer'>('buyer');
 
   const isOrganizer    = hasRole(profile, 'organizer');
   const isPhotographer = hasRole(profile, 'photographer');
@@ -218,14 +219,36 @@ export default function DashboardPage() {
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {(isPhotographer || isOrganizer || isAdmin) && profile?.role
-                .filter(r => r !== 'buyer')
-                .map(r => (
-                  <span key={r} className="text-stone-400 text-sm">{roleLabels[r] ?? r}</span>
-                ))
-              }
-            </div>
+            {/* Role tabs */}
+            {(isPhotographer || isOrganizer) && (
+              <div className="flex gap-1 mt-3 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
+                <button
+                  onClick={() => setActiveRole('buyer')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'buyer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  Худалдан авагч
+                </button>
+                {isPhotographer && (
+                  <button
+                    onClick={() => setActiveRole('photographer')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'photographer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}
+                  >
+                    <Camera className="w-4 h-4" />
+                    Зурагчин
+                  </button>
+                )}
+                {isOrganizer && (
+                  <button
+                    onClick={() => setActiveRole('organizer')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'organizer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    Зохион байгуулагч
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-3 flex-wrap">
             {!isPhotographer && (
@@ -240,23 +263,26 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {!isOrganizer && !isPhotographer && !isAdmin && (
+          {/* Худалдан авагч */}
+          {(activeRole === 'buyer' || (!isPhotographer && !isOrganizer && !isAdmin)) && (
             <>
               <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
               <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={printOrders.length} />
             </>
           )}
-          {isOrganizer && (
+          {/* Зурагчин */}
+          {activeRole === 'photographer' && isPhotographer && (
+            <>
+              <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
+            </>
+          )}
+          {/* Зохион байгуулагч */}
+          {activeRole === 'organizer' && isOrganizer && (
             <>
               <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
-            </>
-          )}
-          {isPhotographer && (
-            <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
-          )}
-          {(isOrganizer || isPhotographer) && (
-            <>
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
             </>
@@ -267,7 +293,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Угаалгах захиалгуудын жагсаалт */}
-        {!isOrganizer && !isPhotographer && !isAdmin && printOrders.length > 0 && (
+        {(activeRole === 'buyer' || (!isPhotographer && !isOrganizer && !isAdmin)) && printOrders.length > 0 && (
           <div className="mt-8">
             <h2 className="text-white font-semibold text-lg mb-4">Угаалгах зурагнууд</h2>
             <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
@@ -308,8 +334,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Нийтлэг цомгуудын жагсаалт — buyer-д харуулна */}
-        {!isOrganizer && !isPhotographer && !isAdmin && (
+        {/* Нээлттэй цомгуудын жагсаалт */}
+        {(activeRole === 'buyer' || (!isPhotographer && !isOrganizer && !isAdmin)) && (
           <div className="mt-10">
             <h2 className="text-white font-semibold text-lg mb-4">Нээлттэй цомгууд</h2>
             {publicAlbums.length === 0 ? (
