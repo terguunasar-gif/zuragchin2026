@@ -239,30 +239,6 @@ export default function DashboardPage() {
             <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
           )}
         </div>
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {isOrganizer && (
-            <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
-          )}
-          {isOrganizer && (
-            <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
-          )}
-          {isPhotographer && (
-            <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
-          )}
-          {(isOrganizer || isPhotographer) && (
-            <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
-          )}
-          {isBuyer && !isOrganizer && !isPhotographer && !isAdmin && (
-            <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зураг" value={activePurchases.length} />
-          )}
-          {isAdmin && (
-            <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
-          )}
-          <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
-          <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
-        </div>
       </main>
     </div>
   );
