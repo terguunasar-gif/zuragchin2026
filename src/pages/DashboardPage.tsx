@@ -4,7 +4,7 @@ import {
   Camera, LogOut, User, Plus, Image, Clock,
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Wallet, Shield, LayoutDashboard,
-  ShoppingBag, ChevronDown, Settings,
+  ShoppingBag, ChevronDown, Settings, Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [printOrders, setPrintOrders] = useState<any[]>([]);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +47,7 @@ export default function DashboardPage() {
     if (!profile) return;
     loadWalletBalance();
     if (isOrganizer) { loadOrganizerAlbums(); loadPendingCount(); }
-    if (isBuyer) loadPurchases();
+    if (isBuyer) { loadPurchases(); loadPrintOrders(); }
   }, [profile]);
 
   useEffect(() => {
@@ -110,6 +111,19 @@ export default function DashboardPage() {
   useEffect(() => {
     loadPublicAlbums();
   }, []);
+
+  async function loadPrintOrders() {
+    const { data } = await supabase
+      .from('print_orders')
+      .select(`
+        id, size, price, status, created_at, phone,
+        photos!print_orders_photo_id_fkey ( watermarked_url ),
+        profiles!print_orders_photographer_id_fkey ( name, photographer_id )
+      `)
+      .eq('buyer_id', profile!.id)
+      .order('created_at', { ascending: false });
+    setPrintOrders(data ?? []);
+  }
 
   async function addPhotographerRole() {
     if (!profile || isPhotographer) return;
@@ -229,6 +243,7 @@ export default function DashboardPage() {
           {!isOrganizer && !isPhotographer && !isAdmin && (
             <>
               <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
+              <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={printOrders.length} />
               <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
             </>
           )}
@@ -252,6 +267,48 @@ export default function DashboardPage() {
             <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
           )}
         </div>
+
+        {/* Угаалгах захиалгуудын жагсаалт */}
+        {!isOrganizer && !isPhotographer && !isAdmin && printOrders.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-white font-semibold text-lg mb-4">Угаалгах зурагнууд</h2>
+            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+              <ul className="divide-y divide-white/5">
+                {printOrders.map((order: any) => (
+                  <li key={order.id} className="flex items-center gap-4 px-5 py-4">
+                    <div className="w-12 h-12 bg-stone-900 rounded-xl overflow-hidden flex-shrink-0">
+                      {order.photos?.watermarked_url
+                        ? <img src={order.photos.watermarked_url} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center"><Image className="w-5 h-5 text-stone-600" /></div>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium">{order.size ?? '—'} хэмжээ</p>
+                      <p className="text-stone-500 text-xs mt-0.5">
+                        Зурагчин: <span className="text-stone-300">{order.profiles?.name ?? '—'}</span>
+                      </p>
+                      {order.profiles?.photographer_id && (
+                        <p className="text-stone-500 text-xs font-mono">{order.profiles.photographer_id}</p>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-amber-400 text-sm font-semibold">₮{Number(order.price ?? 0).toLocaleString()}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                        order.status === 'ready'
+                          ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                          : order.status === 'delivered'
+                          ? 'bg-stone-500/10 text-stone-400 border-stone-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {order.status === 'ready' ? 'Бэлэн' : order.status === 'delivered' ? 'Хүргэгдсэн' : 'Хүлээгдэж буй'}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* Нийтлэг цомгуудын жагсаалт — buyer-д харуулна */}
         {!isOrganizer && !isPhotographer && !isAdmin && (
