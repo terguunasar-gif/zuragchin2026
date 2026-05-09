@@ -46,12 +46,10 @@ export default function PhotographerProfileTab() {
       .maybeSingle();
     if (p) {
       setData(p);
-      // ZUR-ID байхгүй бол автоматаар үүсгэнэ
       if (!p.zur_id) {
         await autoGenerateZurId(p.id);
       }
     } else {
-      // Profile байхгүй бол шинэ үүсгэж ZUR-ID өгнө
       await autoGenerateZurId(undefined);
     }
     setLoading(false);
@@ -136,8 +134,9 @@ export default function PhotographerProfileTab() {
   }
 
   if (loading) return (
-    <div className="flex justify-center py-12">
+    <div className="flex flex-col items-center justify-center py-12 gap-3">
       <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+      <p className="text-stone-500 text-sm">ZUR-ID үүсгэж байна...</p>
     </div>
   );
 
