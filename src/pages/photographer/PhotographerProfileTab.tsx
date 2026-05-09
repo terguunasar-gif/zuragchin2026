@@ -49,10 +49,26 @@ export default function PhotographerProfileTab() {
   }
 
   async function generateZurId() {
+    if (!profile) return;
     setGeneratingId(true);
     const { data: result } = await supabase.rpc('generate_zur_id');
     if (result) {
-      setData(prev => ({ ...prev, zur_id: result }));
+      if (data.id) {
+        // Аль хэдийн profile байгаа бол update хийнэ
+        await supabase
+          .from('photographer_profiles')
+          .update({ zur_id: result })
+          .eq('id', data.id);
+        setData(prev => ({ ...prev, zur_id: result }));
+      } else {
+        // Шинэ profile үүсгэнэ — ZUR-ID-тэй хамт
+        const { data: created } = await supabase
+          .from('photographer_profiles')
+          .insert({ user_id: profile.id, zur_id: result, is_visible: true, specialties: [] })
+          .select()
+          .single();
+        if (created) setData(created);
+      }
     }
     setGeneratingId(false);
   }
@@ -64,7 +80,11 @@ export default function PhotographerProfileTab() {
     if (data.id) {
       await supabase.from('photographer_profiles').update(payload).eq('id', data.id);
     } else {
-      const { data: created } = await supabase.from('photographer_profiles').insert(payload).select().single();
+      const { data: created } = await supabase
+        .from('photographer_profiles')
+        .insert(payload)
+        .select()
+        .single();
       if (created) setData(created);
     }
     setSaving(false);
@@ -180,39 +200,42 @@ export default function PhotographerProfileTab() {
         </div>
 
         <div>
-          <label className="block text-stone-400 text-xs mb-1.5 flex items-center gap-1">
-            <Phone className="w-3.5 h-3.5" /> Утасны дугаар
-          </label>
-          <input
-            value={data.phone}
-            onChange={e => setData(prev => ({ ...prev, phone: e.target.value }))}
-            placeholder="+976 9911-2233"
-            className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none text-sm transition-colors"
-          />
+          <label className="block text-stone-400 text-xs mb-1.5">Утасны дугаар</label>
+          <div className="relative">
+            <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" />
+            <input
+              value={data.phone}
+              onChange={e => setData(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="+976 9911-2233"
+              className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl pl-10 pr-4 py-2.5 outline-none text-sm transition-colors"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-stone-400 text-xs mb-1.5 flex items-center gap-1">
-              <Instagram className="w-3.5 h-3.5" /> Instagram
-            </label>
-            <input
-              value={data.instagram}
-              onChange={e => setData(prev => ({ ...prev, instagram: e.target.value }))}
-              placeholder="@username"
-              className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none text-sm transition-colors"
-            />
+            <label className="block text-stone-400 text-xs mb-1.5">Instagram</label>
+            <div className="relative">
+              <Instagram className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" />
+              <input
+                value={data.instagram}
+                onChange={e => setData(prev => ({ ...prev, instagram: e.target.value }))}
+                placeholder="@username"
+                className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl pl-10 pr-4 py-2.5 outline-none text-sm transition-colors"
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-stone-400 text-xs mb-1.5 flex items-center gap-1">
-              <Facebook className="w-3.5 h-3.5" /> Facebook
-            </label>
-            <input
-              value={data.facebook}
-              onChange={e => setData(prev => ({ ...prev, facebook: e.target.value }))}
-              placeholder="facebook.com/..."
-              className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none text-sm transition-colors"
-            />
+            <label className="block text-stone-400 text-xs mb-1.5">Facebook</label>
+            <div className="relative">
+              <Facebook className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" />
+              <input
+                value={data.facebook}
+                onChange={e => setData(prev => ({ ...prev, facebook: e.target.value }))}
+                placeholder="facebook.com/..."
+                className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl pl-10 pr-4 py-2.5 outline-none text-sm transition-colors"
+              />
+            </div>
           </div>
         </div>
       </div>
