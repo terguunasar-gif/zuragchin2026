@@ -111,6 +111,13 @@ export default function DashboardPage() {
     loadPublicAlbums();
   }, []);
 
+  async function addPhotographerRole() {
+    if (!profile || isPhotographer) return;
+    const newRoles = [...(profile.role ?? []), 'photographer'];
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
+    await refreshProfile();
+  }
+
   async function loadPublicAlbums() {
     const { data } = await supabase
       .from('albums')
