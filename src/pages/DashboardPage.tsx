@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Camera, LogOut, User, Plus, Image, Clock,
-  CheckCircle2, FolderOpen, ChevronRight, Search,
+  CheckCircle2, FolderOpen, ChevronRight,
   Users, Wallet, Shield, LayoutDashboard,
-  ShoppingBag, ChevronDown, Settings, Briefcase,
-  Download,
+  ShoppingBag, ChevronDown, Settings,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -25,11 +24,6 @@ interface Purchase {
   gross_amount: number;
   created_at: string;
   expires_at: string;
-  photo?: {
-    preview_url: string;
-    original_url: string;
-    album?: { name: string };
-  };
 }
 
 export default function DashboardPage() {
@@ -77,7 +71,7 @@ export default function DashboardPage() {
 
   async function loadPendingCount() {
     const albumIds = (await supabase.from('albums').select('id').eq('owner_id', profile!.id))
-      .data?.map(a => a.id) ?? [];
+      .data?.map((a: any) => a.id) ?? [];
     if (albumIds.length === 0) return;
     const { count } = await supabase
       .from('album_photographers')
@@ -117,11 +111,14 @@ export default function DashboardPage() {
     await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
     await refreshProfile();
   }
+
+  function daysLeft(expiresAt: string): number {
     const diff = new Date(expiresAt).getTime() - Date.now();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
 
   const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
+  const walletStr = walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0';
 
   const roleLabels: Record<string, string> = {
     buyer:        'Худалдан авагч',
@@ -132,7 +129,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-stone-950">
-      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
@@ -186,17 +182,18 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10">
-        {/* Title + action buttons */}
         <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
           <div>
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
-            {/* Зөвхөн зурагчин эсвэл зохион байгуулагч үүрэгтэй бол харуулна */}
             <div className="flex flex-wrap gap-2 mt-1">
-              {(isPhotographer || isOrganizer || isAdmin) && profile?.role.map(r => (
-                r !== 'buyer' && <span key={r} className="text-stone-400 text-sm">{roleLabels[r] ?? r}</span>
-              ))}
+              {(isPhotographer || isOrganizer || isAdmin) && profile?.role
+                .filter(r => r !== 'buyer')
+                .map(r => (
+                  <span key={r} className="text-stone-400 text-sm">{roleLabels[r] ?? r}</span>
+                ))
+              }
             </div>
           </div>
           <div className="flex gap-3 flex-wrap">
@@ -211,30 +208,30 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Зөвхөн buyer */}
-          {!isOrganizer && !isPhotographer && !isAdmin && <>
-            <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
-            <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
-            <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
-          </>}
-          {/* Зохион байгуулагч */}
-          {isOrganizer && <>
-            <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
-            <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
-          </>}
-          {/* Зурагчин */}
+          {!isOrganizer && !isPhotographer && !isAdmin && (
+            <>
+              <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
+              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+            </>
+          )}
+          {isOrganizer && (
+            <>
+              <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Цомог" value={albums.length} />
+              <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүсэлт" value={pendingCount} />
+            </>
+          )}
           {isPhotographer && (
             <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
           )}
-          {/* Зурагчин эсвэл зохион байгуулагч */}
-          {(isOrganizer || isPhotographer) && <>
-            <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
-            <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0'} />
-            <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
-          </>}
-          {/* Админ */}
+          {(isOrganizer || isPhotographer) && (
+            <>
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
+              <StatCard icon={<Wallet className="w-5 h-5 text-amber-400" />} label="Хэтэвч" value="—" />
+            </>
+          )}
           {isAdmin && (
             <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
           )}
@@ -245,7 +242,10 @@ export default function DashboardPage() {
 }
 
 function StatCard({ icon, label, value, onClick }: {
-  icon: React.ReactNode; label: string; value: string | number; onClick?: () => void;
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  onClick?: () => void;
 }) {
   return (
     <button onClick={onClick} className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-white/20 rounded-2xl p-5 flex items-center gap-3 text-left transition-all duration-200 group w-full">
