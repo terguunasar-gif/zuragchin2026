@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Camera, LogOut, User, Plus, Image, Clock,
   CheckCircle2, FolderOpen, ChevronRight,
-  Users, Shield, LayoutDashboard,
+  Users, Wallet, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
