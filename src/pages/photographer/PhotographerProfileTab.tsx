@@ -32,7 +32,6 @@ export default function PhotographerProfileTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [generatingId, setGeneratingId] = useState(false);
 
   useEffect(() => {
     if (profile) loadProfile();
@@ -44,76 +43,38 @@ export default function PhotographerProfileTab() {
       .select('*')
       .eq('user_id', profile!.id)
       .maybeSingle();
-    if (p) {
-      setData(p);
-      if (!p.zur_id) {
-        await autoGenerateZurId(p.id);
-      }
-    } else {
-      await autoGenerateZurId(undefined);
-    }
+    if (p) setData(p);
     setLoading(false);
-  }
-
-  async function autoGenerateZurId(profileId?: string) {
-    if (!profile) return;
-    const { data: result } = await supabase.rpc('generate_zur_id');
-    if (!result) return;
-    if (profileId) {
-      await supabase.from('photographer_profiles').update({ zur_id: result }).eq('id', profileId);
-      setData(prev => ({ ...prev, zur_id: result }));
-    } else {
-      const { data: created } = await supabase
-        .from('photographer_profiles')
-        .insert({ user_id: profile.id, zur_id: result, is_visible: true, specialties: [] })
-        .select()
-        .single();
-      if (created) setData(created);
-    }
-  }
-
-  async function generateZurId() {
-    if (!profile) return;
-    setGeneratingId(true);
-    const { data: result } = await supabase.rpc('generate_zur_id');
-    if (result) {
-      if (data.id) {
-        // Аль хэдийн profile байгаа бол update хийнэ
-        await supabase
-          .from('photographer_profiles')
-          .update({ zur_id: result })
-          .eq('id', data.id);
-        setData(prev => ({ ...prev, zur_id: result }));
-      } else {
-        // Шинэ profile үүсгэнэ — ZUR-ID-тэй хамт
-        const { data: created } = await supabase
-          .from('photographer_profiles')
-          .insert({ user_id: profile.id, zur_id: result, is_visible: true, specialties: [] })
-          .select()
-          .single();
-        if (created) setData(created);
-      }
-    }
-    setGeneratingId(false);
   }
 
   async function save() {
     if (!profile) return;
     setSaving(true);
-    const payload = { ...data, user_id: profile.id };
+
     if (data.id) {
-      await supabase.from('photographer_profiles').update(payload).eq('id', data.id);
+      // Байгаа профайлыг update хийнэ
+      await supabase
+        .from('photographer_profiles')
+        .update({ ...data, user_id: profile.id })
+        .eq('id', data.id);
     } else {
+      // Шинэ профайл үүсгэхдээ ZUR-ID автоматаар үүсгэнэ
+      const { data: zurResult } = await supabase.rpc('generate_zur_id');
       const { data: created } = await supabase
         .from('photographer_profiles')
-        .insert(payload)
+        .insert({
+          ...data,
+          user_id: profile.id,
+          zur_id: zurResult,
+        })
         .select()
         .single();
       if (created) setData(created);
     }
+
     setSaving(false);
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setTimeout(() => setSaved(false), 3000);
   }
 
   function copyZurId() {
@@ -134,23 +95,22 @@ export default function PhotographerProfileTab() {
   }
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center py-12 gap-3">
+    <div className="flex justify-center py-12">
       <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
-      <p className="text-stone-500 text-sm">ZUR-ID үүсгэж байна...</p>
     </div>
   );
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* ZUR-ID */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-        <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-          <Camera className="w-4 h-4 text-amber-400" />
-          Зурагчины ID (ZUR-ID)
-        </h3>
-        <p className="text-stone-500 text-xs mb-4">Зохион байгуулагч энэ ID-г ашиглан таныг цомогт нэмнэ.</p>
 
-        {data.zur_id ? (
+      {/* ZUR-ID — хадгалсны дараа харагдана */}
+      {data.zur_id && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+          <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
+            <Camera className="w-4 h-4 text-amber-400" />
+            Зурагчины ID (ZUR-ID)
+          </h3>
+          <p className="text-stone-500 text-xs mb-4">Зохион байгуулагч энэ ID-г ашиглан таныг цомогт нэмнэ.</p>
           <div className="flex items-center gap-3">
             <div className="flex-1 bg-stone-900 border border-white/10 rounded-xl px-4 py-3 font-mono text-amber-400 font-bold text-lg tracking-widest">
               {data.zur_id}
@@ -163,20 +123,8 @@ export default function PhotographerProfileTab() {
               {copied ? 'Хуулагдлаа' : 'Хуулах'}
             </button>
           </div>
-        ) : (
-          <button
-            onClick={generateZurId}
-            disabled={generatingId}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm"
-          >
-            {generatingId
-              ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-              : <Camera className="w-4 h-4" />
-            }
-            ZUR-ID авах
-          </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Нүүр хуудсанд харагдах */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
@@ -299,6 +247,13 @@ export default function PhotographerProfileTab() {
         }
         {saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
       </button>
+
+      {/* Анхны хадгалалтын мэдэгдэл */}
+      {!data.zur_id && (
+        <p className="text-stone-500 text-xs text-center">
+          Хадгалах дарахад таны давтагдашгүй ZUR-ID автоматаар үүснэ
+        </p>
+      )}
     </div>
   );
 }
