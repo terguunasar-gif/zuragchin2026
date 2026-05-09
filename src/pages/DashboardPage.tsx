@@ -40,6 +40,15 @@ export default function DashboardPage() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [activeRole, setActiveRole] = useState<'buyer' | 'photographer' | 'organizer'>('buyer');
 
+  // Profile load болмогц зурагчин бол тэр tab-руу автоматаар шилж
+  useEffect(() => {
+    if (profile && hasRole(profile, 'photographer')) {
+      setActiveRole('photographer');
+    } else if (profile && hasRole(profile, 'organizer')) {
+      setActiveRole('organizer');
+    }
+  }, [profile]);
+
   const isOrganizer    = hasRole(profile, 'organizer');
   const isPhotographer = hasRole(profile, 'photographer');
   const isAdmin        = hasRole(profile, 'admin');
