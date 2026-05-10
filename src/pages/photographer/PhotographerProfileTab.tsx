@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User, ImagePlus, Trash2, Pencil } from 'lucide-react';
+import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User, ImagePlus, Trash2, Pencil, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -15,20 +15,23 @@ interface PhotographerProfile {
   zur_id?: string;
   avatar_url?: string;
   cover_url?: string;
+  location?: string;
 }
 
 const SPECIALTIES = ['Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал', 'Портрет', 'Байгаль', 'Мода'];
 
+const LOCATIONS = [
+  'Улаанбаатар', 'Дархан', 'Эрдэнэт', 'Баянхонгор', 'Өвөрхангай',
+  'Архангай', 'Булган', 'Орхон', 'Сэлэнгэ', 'Төв', 'Дорнод',
+  'Сүхбаатар', 'Хэнтий', 'Дорноговь', 'Дундговь', 'Өмнөговь',
+  'Говьсүмбэр', 'Ховд', 'Баян-Өлгий', 'Увс', 'Завхан', 'Говь-Алтай', 'Хөвсгөл',
+];
+
 export default function PhotographerProfileTab() {
   const { profile } = useAuth();
   const [data, setData] = useState<PhotographerProfile>({
-    display_name: '',
-    bio: '',
-    phone: '',
-    instagram: '',
-    facebook: '',
-    specialties: [],
-    is_visible: true,
+    display_name: '', bio: '', phone: '', instagram: '', facebook: '',
+    specialties: [], is_visible: true, location: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,16 +43,12 @@ export default function PhotographerProfileTab() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (profile) loadProfile();
-  }, [profile]);
+  useEffect(() => { if (profile) loadProfile(); }, [profile]);
 
   async function loadProfile() {
     const { data: p } = await supabase
-      .from('photographer_profiles')
-      .select('*')
-      .eq('user_id', profile!.id)
-      .maybeSingle();
+      .from('photographer_profiles').select('*')
+      .eq('user_id', profile!.id).maybeSingle();
     if (p) setData(p);
     setLoading(false);
   }
@@ -58,23 +57,14 @@ export default function PhotographerProfileTab() {
     const file = e.target.files?.[0];
     if (!file || !profile) return;
     setUploadingAvatar(true);
-
     const ext = file.name.split('.').pop();
     const path = `${profile.id}/avatar.${ext}`;
-
-    const { error } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true });
-
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
     if (!error) {
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
       const avatar_url = urlData.publicUrl + '?t=' + Date.now();
       setData(prev => ({ ...prev, avatar_url }));
-      if (data.id) {
-        await supabase.from('photographer_profiles')
-          .update({ avatar_url })
-          .eq('id', data.id);
-      }
+      if (data.id) await supabase.from('photographer_profiles').update({ avatar_url }).eq('id', data.id);
     }
     setUploadingAvatar(false);
   }
@@ -83,54 +73,35 @@ export default function PhotographerProfileTab() {
     const file = e.target.files?.[0];
     if (!file || !profile) return;
     setUploadingCover(true);
-
     const ext = file.name.split('.').pop();
     const path = `${profile.id}/cover.${ext}`;
-
-    const { error } = await supabase.storage
-      .from('covers')
-      .upload(path, file, { upsert: true });
-
+    const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
     if (!error) {
       const { data: urlData } = supabase.storage.from('covers').getPublicUrl(path);
       const cover_url = urlData.publicUrl + '?t=' + Date.now();
       setData(prev => ({ ...prev, cover_url }));
-      if (data.id) {
-        await supabase.from('photographer_profiles')
-          .update({ cover_url })
-          .eq('id', data.id);
-      }
+      if (data.id) await supabase.from('photographer_profiles').update({ cover_url }).eq('id', data.id);
     }
     setUploadingCover(false);
   }
 
   async function removeCover() {
     if (!profile || !data.id) return;
-    await supabase.from('photographer_profiles')
-      .update({ cover_url: null })
-      .eq('id', data.id);
+    await supabase.from('photographer_profiles').update({ cover_url: null }).eq('id', data.id);
     setData(prev => ({ ...prev, cover_url: undefined }));
   }
 
   async function save() {
     if (!profile) return;
     setSaving(true);
-
     if (data.id) {
-      await supabase
-        .from('photographer_profiles')
-        .update({ ...data, user_id: profile.id })
-        .eq('id', data.id);
+      await supabase.from('photographer_profiles').update({ ...data, user_id: profile.id }).eq('id', data.id);
     } else {
       const { data: zurResult } = await supabase.rpc('generate_zur_id');
-      const { data: created } = await supabase
-        .from('photographer_profiles')
-        .insert({ ...data, user_id: profile.id, zur_id: zurResult })
-        .select()
-        .single();
+      const { data: created } = await supabase.from('photographer_profiles')
+        .insert({ ...data, user_id: profile.id, zur_id: zurResult }).select().single();
       if (created) setData(created);
     }
-
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -166,18 +137,14 @@ export default function PhotographerProfileTab() {
       {data.zur_id && (
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
           <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-            <Camera className="w-4 h-4 text-amber-400" />
-            Зурагчины ID (ZUR-ID)
+            <Camera className="w-4 h-4 text-amber-400" /> Зурагчины ID (ZUR-ID)
           </h3>
           <p className="text-stone-500 text-xs mb-4">Зохион байгуулагч энэ ID-г ашиглан таныг цомогт нэмнэ.</p>
           <div className="flex items-center gap-3">
             <div className="flex-1 bg-stone-900 border border-white/10 rounded-xl px-4 py-3 font-mono text-amber-400 font-bold text-lg tracking-widest">
               {data.zur_id}
             </div>
-            <button
-              onClick={copyZurId}
-              className="flex items-center gap-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-xl transition-colors text-sm font-medium"
-            >
+            <button onClick={copyZurId} className="flex items-center gap-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-xl transition-colors text-sm font-medium">
               {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               {copied ? 'Хуулагдлаа' : 'Хуулах'}
             </button>
@@ -185,46 +152,29 @@ export default function PhotographerProfileTab() {
         </div>
       )}
 
-      {/* Профайл болон арын зураг — нэг карт */}
+      {/* Профайл болон арын зураг */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
         <h3 className="text-white font-semibold mb-4">Профайл болон арын зураг</h3>
-
-        {/* Cover upload zone */}
         <div className="relative w-full h-40 rounded-xl overflow-hidden bg-stone-900 border-2 border-dashed border-white/10 flex flex-col items-center justify-center mb-4">
           {uploadingCover && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
               <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
             </div>
           )}
-
           {data.cover_url ? (
             <>
-              <img
-                src={data.cover_url}
-                alt="cover"
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-              {/* Actions overlay */}
+              <img src={data.cover_url} alt="cover" className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute top-2 right-2 flex gap-2 z-10">
-                <button
-                  onClick={() => coverInputRef.current?.click()}
-                  className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-white/20 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
-                >
+                <button onClick={() => coverInputRef.current?.click()} className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-white/20 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">
                   <Pencil className="w-3 h-3" /> Өөрчлөх
                 </button>
-                <button
-                  onClick={removeCover}
-                  className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-red-500/30 text-red-400 text-xs px-3 py-1.5 rounded-lg transition-colors"
-                >
+                <button onClick={removeCover} className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-red-500/30 text-red-400 text-xs px-3 py-1.5 rounded-lg transition-colors">
                   <Trash2 className="w-3 h-3" /> Устгах
                 </button>
               </div>
             </>
           ) : (
-            <button
-              onClick={() => coverInputRef.current?.click()}
-              className="flex flex-col items-center gap-2 text-stone-500 hover:text-stone-300 transition-colors"
-            >
+            <button onClick={() => coverInputRef.current?.click()} className="flex flex-col items-center gap-2 text-stone-500 hover:text-stone-300 transition-colors">
               <div className="w-11 h-11 rounded-full border border-dashed border-stone-600 flex items-center justify-center">
                 <ImagePlus className="w-5 h-5 text-amber-500" />
               </div>
@@ -236,22 +186,16 @@ export default function PhotographerProfileTab() {
             </button>
           )}
         </div>
-
-        {/* Avatar row */}
         <div className="flex items-center gap-4">
           <div className="relative flex-shrink-0">
             <div className="w-16 h-16 rounded-full overflow-hidden bg-stone-800 border-2 border-stone-700 flex items-center justify-center">
-              {data.avatar_url ? (
-                <img src={data.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-7 h-7 text-stone-600" />
-              )}
+              {data.avatar_url
+                ? <img src={data.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                : <User className="w-7 h-7 text-stone-600" />
+              }
             </div>
-            <button
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={uploadingAvatar}
-              className="absolute bottom-0 right-0 w-6 h-6 bg-amber-500 hover:bg-amber-400 rounded-full flex items-center justify-center border-2 border-stone-900 transition-colors disabled:opacity-50"
-            >
+            <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
+              className="absolute bottom-0 right-0 w-6 h-6 bg-amber-500 hover:bg-amber-400 rounded-full flex items-center justify-center border-2 border-stone-900 transition-colors disabled:opacity-50">
               {uploadingAvatar
                 ? <div className="w-3 h-3 border border-stone-900/40 border-t-stone-900 rounded-full animate-spin" />
                 : <Pencil className="w-3 h-3 text-stone-950" />
@@ -260,9 +204,12 @@ export default function PhotographerProfileTab() {
           </div>
           <div>
             <p className="text-white text-sm font-medium">{data.display_name || 'Нэр оруулаагүй'}</p>
-            <p className="text-stone-500 text-xs mt-0.5">
-              {data.specialties.length > 0 ? data.specialties.join(', ') : 'Чиглэл сонгоогүй'}
-            </p>
+            <p className="text-stone-500 text-xs mt-0.5">{data.specialties.length > 0 ? data.specialties.join(', ') : 'Чиглэл сонгоогүй'}</p>
+            {data.location && (
+              <p className="text-stone-500 text-xs mt-0.5 flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {data.location}
+              </p>
+            )}
             <p className="text-stone-600 text-xs mt-1">JPG, PNG, WebP • Дээд тал 5MB</p>
           </div>
         </div>
@@ -301,6 +248,24 @@ export default function PhotographerProfileTab() {
             placeholder="Б. Мөнхбаяр"
             className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none text-sm transition-colors"
           />
+        </div>
+
+        {/* Байршил */}
+        <div>
+          <label className="block text-stone-400 text-xs mb-1.5">Байршил (аймаг / хот)</label>
+          <div className="relative">
+            <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500 pointer-events-none z-10" />
+            <select
+              value={data.location || ''}
+              onChange={e => setData(prev => ({ ...prev, location: e.target.value }))}
+              className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white rounded-xl pl-10 pr-4 py-2.5 outline-none text-sm transition-colors appearance-none cursor-pointer"
+            >
+              <option value="" className="bg-stone-900 text-stone-500">Байршил сонгоно уу...</option>
+              {LOCATIONS.map(loc => (
+                <option key={loc} value={loc} className="bg-stone-900 text-white">{loc}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div>
@@ -360,9 +325,7 @@ export default function PhotographerProfileTab() {
         <h3 className="text-white font-semibold mb-3">Мэргэшил / Чиглэл</h3>
         <div className="flex flex-wrap gap-2">
           {SPECIALTIES.map(s => (
-            <button
-              key={s}
-              onClick={() => toggleSpecialty(s)}
+            <button key={s} onClick={() => toggleSpecialty(s)}
               className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                 data.specialties.includes(s)
                   ? 'bg-amber-500 text-stone-950'
@@ -376,16 +339,11 @@ export default function PhotographerProfileTab() {
       </div>
 
       {/* Хадгалах */}
-      <button
-        onClick={save}
-        disabled={saving}
-        className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-6 py-3 rounded-xl transition-colors"
-      >
+      <button onClick={save} disabled={saving}
+        className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-6 py-3 rounded-xl transition-colors">
         {saving
           ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-          : saved
-          ? <CheckCircle2 className="w-4 h-4" />
-          : <Save className="w-4 h-4" />
+          : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />
         }
         {saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
       </button>
@@ -396,7 +354,6 @@ export default function PhotographerProfileTab() {
         </p>
       )}
 
-      {/* Hidden inputs */}
       <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarUpload} />
       <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleCoverUpload} />
     </div>
