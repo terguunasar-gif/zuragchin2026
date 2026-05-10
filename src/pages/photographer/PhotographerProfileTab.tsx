@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -13,6 +13,7 @@ interface PhotographerProfile {
   specialties: string[];
   is_visible: boolean;
   zur_id?: string;
+  avatar_url?: string;
 }
 
 const SPECIALTIES = ['Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал', 'Портрет', 'Байгаль', 'Мода'];
@@ -32,6 +33,8 @@ export default function PhotographerProfileTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (profile) loadProfile();
@@ -47,26 +50,46 @@ export default function PhotographerProfileTab() {
     setLoading(false);
   }
 
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    setUploadingAvatar(true);
+
+    const ext = file.name.split('.').pop();
+    const path = `${profile.id}/avatar.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true });
+
+    if (!error) {
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      const avatar_url = urlData.publicUrl + '?t=' + Date.now();
+      setData(prev => ({ ...prev, avatar_url }));
+
+      if (data.id) {
+        await supabase.from('photographer_profiles')
+          .update({ avatar_url })
+          .eq('id', data.id);
+      }
+    }
+    setUploadingAvatar(false);
+  }
+
   async function save() {
     if (!profile) return;
     setSaving(true);
 
     if (data.id) {
-      // Байгаа профайлыг update хийнэ
       await supabase
         .from('photographer_profiles')
         .update({ ...data, user_id: profile.id })
         .eq('id', data.id);
     } else {
-      // Шинэ профайл үүсгэхдээ ZUR-ID автоматаар үүсгэнэ
       const { data: zurResult } = await supabase.rpc('generate_zur_id');
       const { data: created } = await supabase
         .from('photographer_profiles')
-        .insert({
-          ...data,
-          user_id: profile.id,
-          zur_id: zurResult,
-        })
+        .insert({ ...data, user_id: profile.id, zur_id: zurResult })
         .select()
         .single();
       if (created) setData(created);
@@ -125,6 +148,41 @@ export default function PhotographerProfileTab() {
           </div>
         </div>
       )}
+
+      {/* Профайл зураг */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+        <h3 className="text-white font-semibold mb-4">Профайл зураг</h3>
+        <div className="flex items-center gap-5">
+          <div className="w-20 h-20 rounded-full overflow-hidden bg-stone-800 border-2 border-white/10 flex-shrink-0 flex items-center justify-center">
+            {data.avatar_url ? (
+              <img src={data.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+            ) : (
+              <User className="w-8 h-8 text-stone-600" />
+            )}
+          </div>
+          <div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {uploadingAvatar
+                ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                : <Upload className="w-4 h-4" />
+              }
+              {uploadingAvatar ? 'Байршуулж байна...' : 'Зураг оруулах'}
+            </button>
+            <p className="text-stone-600 text-xs mt-1.5">JPG, PNG, WebP • Дээд тал 5MB</p>
+          </div>
+        </div>
+      </div>
 
       {/* Нүүр хуудсанд харагдах */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
@@ -248,7 +306,6 @@ export default function PhotographerProfileTab() {
         {saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
       </button>
 
-      {/* Анхны хадгалалтын мэдэгдэл */}
       {!data.zur_id && (
         <p className="text-stone-500 text-xs text-center">
           Хадгалах дарахад таны давтагдашгүй ZUR-ID автоматаар үүснэ
