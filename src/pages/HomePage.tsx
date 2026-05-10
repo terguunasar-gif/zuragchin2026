@@ -31,6 +31,7 @@ export default function HomePage() {
   const [activeCategory, setActiveCategory] = useState('Бүгд');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [realPhotographers, setRealPhotographers] = useState<any[]>([]);
+  const [loadingPhotographers, setLoadingPhotographers] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,18 +49,34 @@ export default function HomePage() {
   }, []);
 
   async function loadPhotographers() {
-    const { data } = await supabase
+    setLoadingPhotographers(true);
+    const { data, error } = await supabase
       .from('photographer_profiles')
       .select('*')
       .eq('is_visible', true)
-      .limit(4);
-    if (data && data.length > 0) setRealPhotographers(data);
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (!error && data && data.length > 0) {
+      setRealPhotographers(data);
+    }
+    setLoadingPhotographers(false);
   }
 
-  const displayPhotographers = realPhotographers.length > 0 ? realPhotographers : fallbackPhotographers;
+  // Категориор шүүх
+  const filteredPhotographers = realPhotographers.filter(p => {
+    if (activeCategory === 'Бүгд') return true;
+    const specs = Array.isArray(p.specialties) ? p.specialties : [];
+    return specs.includes(activeCategory);
+  });
+
+  const displayPhotographers = filteredPhotographers.length > 0
+    ? filteredPhotographers
+    : (realPhotographers.length > 0 ? realPhotographers : fallbackPhotographers);
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
+      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-50 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
@@ -92,11 +109,17 @@ export default function HomePage() {
                       <p className="text-stone-500 text-xs truncate">{profile.email}</p>
                     </div>
                     <div className="py-1">
-                      <button onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm">
-                        <Settings className="w-4 h-4" />Dashboard
+                      <button
+                        onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm"
+                      >
+                        <Settings className="w-4 h-4" /> Dashboard
                       </button>
-                      <button onClick={() => { setDropdownOpen(false); signOut(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm">
-                        <LogOut className="w-4 h-4" />Гарах
+                      <button
+                        onClick={() => { setDropdownOpen(false); signOut(); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm"
+                      >
+                        <LogOut className="w-4 h-4" /> Гарах
                       </button>
                     </div>
                   </div>
@@ -112,6 +135,7 @@ export default function HomePage() {
         </div>
       </header>
 
+      {/* Hero */}
       <section className="relative py-20 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent pointer-events-none" />
         <div className="max-w-4xl mx-auto text-center">
@@ -135,8 +159,15 @@ export default function HomePage() {
           </div>
           <div className="flex flex-wrap justify-center gap-2">
             {categories.map(cat => (
-              <button key={cat} onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${activeCategory === cat ? 'bg-stone-100 text-stone-950' : 'bg-white/5 text-stone-400 hover:text-white border border-white/10'}`}>
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  activeCategory === cat
+                    ? 'bg-stone-100 text-stone-950'
+                    : 'bg-white/5 text-stone-400 hover:text-white border border-white/10'
+                }`}
+              >
                 {cat}
               </button>
             ))}
@@ -149,55 +180,93 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зурагчингууд</h2>
-            <button onClick={() => navigate('/listings')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
+            <button
+              onClick={() => navigate('/listings')}
+              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
+            >
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {displayPhotographers.map((p: any) => (
-              <div key={p.id} onClick={() => navigate('/listings')}
-                className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer">
-                {/* Cover зураг */}
-                <div className="relative h-32 overflow-hidden">
-                  <img
-                    src={p.cover_url || p.cover || DEFAULT_COVER}
-                    alt=""
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 to-transparent" />
-                </div>
-                <div className="p-4 -mt-8 relative">
-                  {/* Профайл зураг */}
-                  {p.avatar_url || p.image ? (
+
+          {loadingPhotographers ? (
+            <div className="flex justify-center py-12">
+              <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {displayPhotographers.map((p: any) => (
+                <div
+                  key={p.id}
+                  onClick={() => navigate('/listings')}
+                  className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer"
+                >
+                  {/* Cover зураг */}
+                  <div className="relative h-32 overflow-hidden bg-stone-900">
                     <img
-                      src={p.avatar_url || p.image}
-                      alt={p.display_name || p.name}
-                      className="w-14 h-14 rounded-full border-2 border-stone-950 object-cover mb-3"
+                      src={p.cover_url || p.cover || DEFAULT_COVER}
+                      alt=""
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={e => { (e.target as HTMLImageElement).src = DEFAULT_COVER; }}
                     />
-                  ) : (
-                    <div className="w-14 h-14 rounded-full border-2 border-stone-950 bg-stone-800 flex items-center justify-center mb-3">
-                      <User className="w-6 h-6 text-stone-500" />
-                    </div>
-                  )}
-                  <h3 className="text-white font-semibold">{p.display_name || p.name}</h3>
-                  <p className="text-stone-400 text-xs mb-2">
-                    {Array.isArray(p.specialties) ? p.specialties.join(', ') : p.specialty}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      <span className="text-white text-sm font-medium">{p.rating ?? '—'}</span>
-                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 to-transparent" />
                   </div>
-                  <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3 text-stone-500">
-                    {p.phone && <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors"><Phone className="w-3.5 h-3.5" /></button>}
-                    {p.instagram && <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors"><Instagram className="w-3.5 h-3.5" /></button>}
-                    {p.facebook && <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors"><Facebook className="w-3.5 h-3.5" /></button>}
+
+                  <div className="p-4 -mt-8 relative">
+                    {/* Профайл зураг */}
+                    {p.avatar_url || p.image ? (
+                      <img
+                        src={p.avatar_url || p.image}
+                        alt={p.display_name || p.name}
+                        className="w-14 h-14 rounded-full border-2 border-stone-950 object-cover mb-3"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full border-2 border-stone-950 bg-stone-800 flex items-center justify-center mb-3">
+                        <User className="w-6 h-6 text-stone-500" />
+                      </div>
+                    )}
+
+                    <h3 className="text-white font-semibold">{p.display_name || p.name}</h3>
+                    <p className="text-stone-400 text-xs mb-2">
+                      {Array.isArray(p.specialties) ? p.specialties.join(', ') : (p.specialty || '—')}
+                    </p>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                        <span className="text-white text-sm font-medium">{p.rating ?? '—'}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3 text-stone-500">
+                      {p.phone && (
+                        <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors">
+                          <Phone className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {p.instagram && (
+                        <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors">
+                          <Instagram className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {p.facebook && (
+                        <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors">
+                          <Facebook className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+
+          {/* Бодит зурагчин байхгүй үед мессеж */}
+          {!loadingPhotographers && realPhotographers.length === 0 && (
+            <p className="text-center text-stone-500 text-sm mt-4">
+              Одоогоор бүртгэлтэй зурагчин байхгүй байна. Жишиг зурагчид харагдаж байна.
+            </p>
+          )}
         </div>
       </section>
 
@@ -206,7 +275,10 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
-            <button onClick={() => navigate('/albums')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
+            <button
+              onClick={() => navigate('/albums')}
+              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
+            >
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -214,7 +286,11 @@ export default function HomePage() {
             {featuredAlbums.map(album => (
               <div key={album.id} onClick={() => navigate('/albums')} className="group cursor-pointer">
                 <div className="relative rounded-2xl overflow-hidden mb-3 aspect-video">
-                  <img src={album.image} alt={album.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <img
+                    src={album.image}
+                    alt={album.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
                   <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
                     <div>
@@ -234,6 +310,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Footer */}
       <footer className="border-t border-white/10 py-12 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
@@ -247,7 +324,9 @@ export default function HomePage() {
                   <span className="text-amber-400 font-bold">.mn</span>
                 </div>
               </div>
-              <p className="text-stone-500 text-sm leading-relaxed">Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.</p>
+              <p className="text-stone-500 text-sm leading-relaxed">
+                Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.
+              </p>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Холбоо барих</h4>
