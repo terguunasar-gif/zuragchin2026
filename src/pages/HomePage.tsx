@@ -181,7 +181,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зурагчингууд</h2>
             <button
-              onClick={() => navigate('/listings')}
+              onClick={() => navigate('/photographers')}
               className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
             >
               Бүгдийг харах <ChevronRight className="w-4 h-4" />
