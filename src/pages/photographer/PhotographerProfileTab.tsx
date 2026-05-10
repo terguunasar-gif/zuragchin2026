@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User } from 'lucide-react';
+import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User, ImagePlus, Trash2, Pencil } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -14,6 +14,7 @@ interface PhotographerProfile {
   is_visible: boolean;
   zur_id?: string;
   avatar_url?: string;
+  cover_url?: string;
 }
 
 const SPECIALTIES = ['Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал', 'Портрет', 'Байгаль', 'Мода'];
@@ -34,7 +35,10 @@ export default function PhotographerProfileTab() {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (profile) loadProfile();
@@ -66,7 +70,6 @@ export default function PhotographerProfileTab() {
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
       const avatar_url = urlData.publicUrl + '?t=' + Date.now();
       setData(prev => ({ ...prev, avatar_url }));
-
       if (data.id) {
         await supabase.from('photographer_profiles')
           .update({ avatar_url })
@@ -74,6 +77,39 @@ export default function PhotographerProfileTab() {
       }
     }
     setUploadingAvatar(false);
+  }
+
+  async function handleCoverUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    setUploadingCover(true);
+
+    const ext = file.name.split('.').pop();
+    const path = `${profile.id}/cover.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('covers')
+      .upload(path, file, { upsert: true });
+
+    if (!error) {
+      const { data: urlData } = supabase.storage.from('covers').getPublicUrl(path);
+      const cover_url = urlData.publicUrl + '?t=' + Date.now();
+      setData(prev => ({ ...prev, cover_url }));
+      if (data.id) {
+        await supabase.from('photographer_profiles')
+          .update({ cover_url })
+          .eq('id', data.id);
+      }
+    }
+    setUploadingCover(false);
+  }
+
+  async function removeCover() {
+    if (!profile || !data.id) return;
+    await supabase.from('photographer_profiles')
+      .update({ cover_url: null })
+      .eq('id', data.id);
+    setData(prev => ({ ...prev, cover_url: undefined }));
   }
 
   async function save() {
@@ -126,7 +162,7 @@ export default function PhotographerProfileTab() {
   return (
     <div className="space-y-6 max-w-2xl">
 
-      {/* ZUR-ID — хадгалсны дараа харагдана */}
+      {/* ZUR-ID */}
       {data.zur_id && (
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
           <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
@@ -149,37 +185,85 @@ export default function PhotographerProfileTab() {
         </div>
       )}
 
-      {/* Профайл зураг */}
+      {/* Профайл болон арын зураг — нэг карт */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-        <h3 className="text-white font-semibold mb-4">Профайл зураг</h3>
-        <div className="flex items-center gap-5">
-          <div className="w-20 h-20 rounded-full overflow-hidden bg-stone-800 border-2 border-white/10 flex-shrink-0 flex items-center justify-center">
-            {data.avatar_url ? (
-              <img src={data.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-8 h-8 text-stone-600" />
-            )}
-          </div>
-          <div>
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={handleAvatarUpload}
-            />
+        <h3 className="text-white font-semibold mb-4">Профайл болон арын зураг</h3>
+
+        {/* Cover upload zone */}
+        <div className="relative w-full h-40 rounded-xl overflow-hidden bg-stone-900 border-2 border-dashed border-white/10 flex flex-col items-center justify-center mb-4">
+          {uploadingCover && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
+              <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+            </div>
+          )}
+
+          {data.cover_url ? (
+            <>
+              <img
+                src={data.cover_url}
+                alt="cover"
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              {/* Actions overlay */}
+              <div className="absolute top-2 right-2 flex gap-2 z-10">
+                <button
+                  onClick={() => coverInputRef.current?.click()}
+                  className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-white/20 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Pencil className="w-3 h-3" /> Өөрчлөх
+                </button>
+                <button
+                  onClick={removeCover}
+                  className="flex items-center gap-1.5 bg-black/70 hover:bg-black/90 border border-red-500/30 text-red-400 text-xs px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" /> Устгах
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              onClick={() => coverInputRef.current?.click()}
+              className="flex flex-col items-center gap-2 text-stone-500 hover:text-stone-300 transition-colors"
+            >
+              <div className="w-11 h-11 rounded-full border border-dashed border-stone-600 flex items-center justify-center">
+                <ImagePlus className="w-5 h-5 text-amber-500" />
+              </div>
+              <span className="text-sm">Арын зураг оруулах</span>
+              <span className="text-xs text-stone-600">JPG, PNG, WebP • Дээд тал 10MB</span>
+              <span className="flex items-center gap-1.5 bg-amber-500 text-stone-950 text-xs font-bold px-4 py-1.5 rounded-lg mt-1">
+                <Upload className="w-3 h-3" /> Зураг сонгох
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Avatar row */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-shrink-0">
+            <div className="w-16 h-16 rounded-full overflow-hidden bg-stone-800 border-2 border-stone-700 flex items-center justify-center">
+              {data.avatar_url ? (
+                <img src={data.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-7 h-7 text-stone-600" />
+              )}
+            </div>
             <button
               onClick={() => avatarInputRef.current?.click()}
               disabled={uploadingAvatar}
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+              className="absolute bottom-0 right-0 w-6 h-6 bg-amber-500 hover:bg-amber-400 rounded-full flex items-center justify-center border-2 border-stone-900 transition-colors disabled:opacity-50"
             >
               {uploadingAvatar
-                ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                : <Upload className="w-4 h-4" />
+                ? <div className="w-3 h-3 border border-stone-900/40 border-t-stone-900 rounded-full animate-spin" />
+                : <Pencil className="w-3 h-3 text-stone-950" />
               }
-              {uploadingAvatar ? 'Байршуулж байна...' : 'Зураг оруулах'}
             </button>
-            <p className="text-stone-600 text-xs mt-1.5">JPG, PNG, WebP • Дээд тал 5MB</p>
+          </div>
+          <div>
+            <p className="text-white text-sm font-medium">{data.display_name || 'Нэр оруулаагүй'}</p>
+            <p className="text-stone-500 text-xs mt-0.5">
+              {data.specialties.length > 0 ? data.specialties.join(', ') : 'Чиглэл сонгоогүй'}
+            </p>
+            <p className="text-stone-600 text-xs mt-1">JPG, PNG, WebP • Дээд тал 5MB</p>
           </div>
         </div>
       </div>
@@ -311,6 +395,10 @@ export default function PhotographerProfileTab() {
           Хадгалах дарахад таны давтагдашгүй ZUR-ID автоматаар үүснэ
         </p>
       )}
+
+      {/* Hidden inputs */}
+      <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarUpload} />
+      <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleCoverUpload} />
     </div>
   );
 }
