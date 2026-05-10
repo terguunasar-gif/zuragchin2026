@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, Image, User, ChevronDown, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
 
-const photographers = [
+const fallbackPhotographers = [
   { id: 1, name: 'Б. Мөнхбаяр', specialty: 'Хурим, Портрет', rating: 4.9, reviews: 124, price: '₮150,000', image: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop' },
   { id: 2, name: 'Д. Энхтуяа', specialty: 'Байгаль, Аялал', rating: 4.8, reviews: 89, price: '₮120,000', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=800&h=400&fit=crop' },
   { id: 3, name: 'Г. Батбаяр', specialty: 'Спорт, Арга хэмжээ', rating: 4.7, reviews: 67, price: '₮100,000', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&h=400&fit=crop' },
@@ -21,12 +22,15 @@ const featuredAlbums = [
   { id: 6, title: 'Хөгжмийн шөнө', photographer: 'Д. Энхтуяа', photos: 95, price: '₮18,000', image: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600&h=400&fit=crop' },
 ];
 
+const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
+
 export default function HomePage() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Бүгд');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [realPhotographers, setRealPhotographers] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +42,21 @@ export default function HomePage() {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  useEffect(() => {
+    loadPhotographers();
+  }, []);
+
+  async function loadPhotographers() {
+    const { data } = await supabase
+      .from('photographer_profiles')
+      .select('*')
+      .eq('is_visible', true)
+      .limit(4);
+    if (data && data.length > 0) setRealPhotographers(data);
+  }
+
+  const displayPhotographers = realPhotographers.length > 0 ? realPhotographers : fallbackPhotographers;
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
@@ -73,16 +92,10 @@ export default function HomePage() {
                       <p className="text-stone-500 text-xs truncate">{profile.email}</p>
                     </div>
                     <div className="py-1">
-                      <button
-                        onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm"
-                      >
+                      <button onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm">
                         <Settings className="w-4 h-4" />Dashboard
                       </button>
-                      <button
-                        onClick={() => { setDropdownOpen(false); signOut(); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm"
-                      >
+                      <button onClick={() => { setDropdownOpen(false); signOut(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm">
                         <LogOut className="w-4 h-4" />Гарах
                       </button>
                     </div>
@@ -91,12 +104,8 @@ export default function HomePage() {
               </div>
             ) : (
               <>
-                <button onClick={() => navigate('/auth/login')} className="text-stone-400 hover:text-white text-sm transition-colors px-4 py-2">
-                  Нэвтрэх
-                </button>
-                <button onClick={() => navigate('/auth/register')} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl transition-colors">
-                  Бүртгүүлэх
-                </button>
+                <button onClick={() => navigate('/auth/login')} className="text-stone-400 hover:text-white text-sm transition-colors px-4 py-2">Нэвтрэх</button>
+                <button onClick={() => navigate('/auth/register')} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl transition-colors">Бүртгүүлэх</button>
               </>
             )}
           </div>
@@ -122,21 +131,12 @@ export default function HomePage() {
               placeholder="Нэр байршил огноо..."
               className="flex-1 bg-transparent text-white placeholder-stone-500 outline-none text-sm py-2"
             />
-            <button className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-6 py-2.5 rounded-xl transition-colors text-sm">
-              Хайх
-            </button>
+            <button className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-6 py-2.5 rounded-xl transition-colors text-sm">Хайх</button>
           </div>
           <div className="flex flex-wrap justify-center gap-2">
             {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                  activeCategory === cat
-                    ? 'bg-stone-100 text-stone-950'
-                    : 'bg-white/5 text-stone-400 hover:text-white border border-white/10'
-                }`}
-              >
+              <button key={cat} onClick={() => setActiveCategory(cat)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${activeCategory === cat ? 'bg-stone-100 text-stone-950' : 'bg-white/5 text-stone-400 hover:text-white border border-white/10'}`}>
                 {cat}
               </button>
             ))}
@@ -144,6 +144,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Зурагчингууд */}
       <section className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
@@ -153,28 +154,45 @@ export default function HomePage() {
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {photographers.map(p => (
-              <div key={p.id} onClick={() => navigate('/listings')} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer">
+            {displayPhotographers.map((p: any) => (
+              <div key={p.id} onClick={() => navigate('/listings')}
+                className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer">
+                {/* Cover зураг */}
                 <div className="relative h-32 overflow-hidden">
-                  <img src={p.cover} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <img
+                    src={p.cover_url || p.cover || DEFAULT_COVER}
+                    alt=""
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 to-transparent" />
                 </div>
                 <div className="p-4 -mt-8 relative">
-                  <img src={p.image} alt={p.name} className="w-14 h-14 rounded-full border-2 border-stone-950 object-cover mb-3" />
-                  <h3 className="text-white font-semibold">{p.name}</h3>
-                  <p className="text-stone-400 text-xs mb-2">{p.specialty}</p>
+                  {/* Профайл зураг */}
+                  {p.avatar_url || p.image ? (
+                    <img
+                      src={p.avatar_url || p.image}
+                      alt={p.display_name || p.name}
+                      className="w-14 h-14 rounded-full border-2 border-stone-950 object-cover mb-3"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full border-2 border-stone-950 bg-stone-800 flex items-center justify-center mb-3">
+                      <User className="w-6 h-6 text-stone-500" />
+                    </div>
+                  )}
+                  <h3 className="text-white font-semibold">{p.display_name || p.name}</h3>
+                  <p className="text-stone-400 text-xs mb-2">
+                    {Array.isArray(p.specialties) ? p.specialties.join(', ') : p.specialty}
+                  </p>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      <span className="text-white text-sm font-medium">{p.rating}</span>
-                      <span className="text-stone-500 text-xs">({p.reviews})</span>
+                      <span className="text-white text-sm font-medium">{p.rating ?? '—'}</span>
                     </div>
-                    <span className="text-amber-400 text-sm font-medium">{p.price}</span>
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3 text-stone-500">
-                    <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors"><Phone className="w-3.5 h-3.5" /></button>
-                    <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors"><Instagram className="w-3.5 h-3.5" /></button>
-                    <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors"><Facebook className="w-3.5 h-3.5" /></button>
+                    {p.phone && <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors"><Phone className="w-3.5 h-3.5" /></button>}
+                    {p.instagram && <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors"><Instagram className="w-3.5 h-3.5" /></button>}
+                    {p.facebook && <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors"><Facebook className="w-3.5 h-3.5" /></button>}
                   </div>
                 </div>
               </div>
@@ -183,6 +201,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Цомгууд */}
       <section className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
