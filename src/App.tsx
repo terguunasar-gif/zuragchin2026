@@ -16,6 +16,7 @@ import ReceiptPage from './pages/ReceiptPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import EventListingsPage from './pages/EventListingsPage';
 import HomePage from './pages/HomePage';
+import PhotographersPage from './pages/PhotographersPage';
 
 export default function App() {
   return (
@@ -84,6 +85,7 @@ export default function App() {
             }
           />
           <Route path="/listings" element={<EventListingsPage />} />
+          <Route path="/photographers" element={<PhotographersPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
         </Routes>
