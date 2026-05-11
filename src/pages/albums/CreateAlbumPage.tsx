@@ -121,6 +121,19 @@ export default function CreateAlbumPage() {
   const [isFree, setIsFree] = useState(false);
   const [downloadPrice, setDownloadPrice] = useState('');
 
+  const [sizePrices, setSizePrices] = useState([
+    { size: '10x15',  label: '10x15 см  — 1200x1800px  (Стандарт)',      price: '', enabled: true  },
+    { size: '13x18',  label: '13x18 см  — 1535x2126px  (Жижиг)',         price: '', enabled: true  },
+    { size: '15x21',  label: '15x21 см  — 1772x2480px  (A5)',            price: '', enabled: false },
+    { size: '20x30',  label: '20x30 см  — 2362x3543px  (Хагас постер)',  price: '', enabled: false },
+    { size: '30x40',  label: '30x40 см  — 3543x4724px  (Том хэвлэл)',   price: '', enabled: false },
+    { size: '40x60',  label: '40x60 см  — 4724x7087px  (Постер)',        price: '', enabled: false },
+    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Хэвлэлд бэлэн)', price: '', enabled: true  },
+  ]);
+  function updateSizePrice(size: string, field: 'price' | 'enabled', value: string | boolean) {
+    setSizePrices(prev => prev.map(sp => sp.size === size ? { ...sp, [field]: value } : sp));
+  }
+
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactFacebook, setContactFacebook] = useState('');
@@ -217,8 +230,13 @@ export default function CreateAlbumPage() {
     if (!albumName.trim()) errs.name = 'Цомгийн нэр оруулна уу';
     if (!eventDate) errs.eventDate = 'Арга хэмжээний огноо оруулна уу';
     if (!isFree) {
-      const price = parseFloat(downloadPrice);
-      if (!downloadPrice || isNaN(price) || price <= 0) errs.downloadPrice = '0-ээс их үнэ оруулна уу';
+      const activeSizes = sizePrices.filter(s => s.enabled);
+      if (activeSizes.length === 0) {
+        errs.downloadPrice = 'Дор хаяж нэг хэмжээ идэвхтэй байх ёстой';
+      } else {
+        const missingPrice = activeSizes.some(s => !s.price || parseFloat(s.price) <= 0);
+        if (missingPrice) errs.downloadPrice = 'Идэвхтэй хэмжээ бүрт үнэ оруулна уу';
+      }
     }
     if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) errs.contactEmail = 'Зөв имэйл хаяг оруулна уу';
     setErrors(errs);
@@ -257,7 +275,8 @@ export default function CreateAlbumPage() {
         watermark_type: 'layers',
         watermark_value: watermarkValue,
         watermark_position: activeLayer.position,
-        download_price: isFree ? 0 : parseFloat(downloadPrice),
+        download_price: isFree ? 0 : parseFloat(sizePrices.find(s => s.enabled && s.price)?.price ?? '0'),
+        size_prices: isFree ? null : JSON.stringify(sizePrices.filter(s => s.enabled).map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) }))),
         is_free: isFree,
         owner_commission: ownerCommission,
         organizer_percent: ownerCommission * 100,
@@ -569,14 +588,67 @@ export default function CreateAlbumPage() {
                   <TypeToggleBtn active={!isFree} onClick={() => setIsFree(false)} icon={<span className="text-xs font-bold">₮</span>} label="Төлбөртэй татах" />
                 </div>
                 {!isFree && (
-                  <Field label="Татах үнэ (₮)" error={errors.downloadPrice} required>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 font-medium">₮</span>
-                      <input type="number" value={downloadPrice} onChange={e => setDownloadPrice(e.target.value)} placeholder="10000" min={1} className={inputClass(!!errors.downloadPrice) + ' pl-8'} />
+                  <div className="space-y-4">
+                    {/* Size-based pricing table */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+                      <div className="grid grid-cols-[80px_1fr_140px_60px] gap-px bg-white/5 text-xs font-medium">
+                        <div className="bg-stone-900 px-3 py-2 text-stone-400">Хэмжээ</div>
+                        <div className="bg-stone-900 px-3 py-2 text-stone-400">Стандарт / Хэмжээлбэр</div>
+                        <div className="bg-stone-900 px-3 py-2 text-stone-400">Үнэ (₮)</div>
+                        <div className="bg-stone-900 px-3 py-2 text-stone-400">✓</div>
+                      </div>
+                      {sizePrices.map((sp, i) => (
+                        <div key={sp.size} className={`grid grid-cols-[80px_1fr_140px_60px] gap-px ${i % 2 === 0 ? 'bg-white/3' : ''}`}>
+                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded whitespace-nowrap ${
+                              sp.size === 'digital' ? 'bg-purple-500/20 text-purple-400' :
+                              i === 0 ? 'bg-blue-500/20 text-blue-400' :
+                              i === 1 ? 'bg-cyan-500/20 text-cyan-400' :
+                              i === 2 ? 'bg-green-500/20 text-green-400' :
+                              i === 3 ? 'bg-amber-500/20 text-amber-400' :
+                              i === 4 ? 'bg-orange-500/20 text-orange-400' :
+                              'bg-red-500/20 text-red-400'
+                            }`}>{sp.size}</span>
+                          </div>
+                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
+                            <span className="text-stone-400 text-xs font-mono">{sp.label}</span>
+                          </div>
+                          <div className="bg-stone-900/60 px-2 py-1.5">
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500 text-xs">₮</span>
+                              <input
+                                type="number"
+                                value={sp.price}
+                                onChange={e => updateSizePrice(sp.size, 'price', e.target.value)}
+                                disabled={!sp.enabled}
+                                placeholder="10000"
+                                min={0}
+                                className="w-full bg-stone-800 disabled:bg-stone-900 disabled:text-stone-600 border border-white/10 focus:border-amber-500/50 text-white rounded-lg pl-6 pr-2 py-1.5 text-sm outline-none transition-all"
+                              />
+                            </div>
+                          </div>
+                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => updateSizePrice(sp.size, 'enabled', !sp.enabled)}
+                              className={`w-9 h-5 rounded-full transition-all relative flex-shrink-0 ${sp.enabled ? 'bg-amber-500' : 'bg-stone-700'}`}
+                            >
+                              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${sp.enabled ? 'left-4' : 'left-0.5'}`} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </Field>
+                    <p className="text-stone-500 text-xs">Идэвхтэй хэмжээнүүд татах боломжтой байна. Хамгийн бага нэг хэмжээ идэвхтэй байх ёстой.</p>
+                    {errors.downloadPrice && (
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                        <p className="text-red-400 text-xs">{errors.downloadPrice}</p>
+                      </div>
+                    )}
+                  </div>
                 )}
-                <FeeBreakdown price={isFree ? 0 : parseFloat(downloadPrice) || 0} revenueModel={revenueModel} organizerPercent={organizerPercent} photographers={photographers} />
+                <FeeBreakdown price={isFree ? 0 : (sizePrices.find(s => s.enabled)?.price ? parseFloat(sizePrices.find(s => s.enabled)!.price) : 0) || 0} revenueModel={revenueModel} organizerPercent={organizerPercent} photographers={photographers} />
               </div>
             </Section>
 
