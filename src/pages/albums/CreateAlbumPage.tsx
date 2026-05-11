@@ -271,6 +271,7 @@ export default function CreateAlbumPage() {
 
       const { error } = await supabase.from('albums').insert({
         id: albumId, owner_id: user!.id,
+        title: albumName.trim(),
         name: albumName.trim(), event_date: eventDate, description: description.trim(), status,
         watermark_type: 'layers',
         watermark_value: watermarkValue,
