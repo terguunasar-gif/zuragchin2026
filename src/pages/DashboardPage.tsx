@@ -77,18 +77,23 @@ export default function DashboardPage() {
   }, []);
 
   async function loadOrganizerAlbums() {
-    // profile.id === auth.uid() гэдэг баталгаажсан
     const uid = profile!.id;
+    console.log('🔍 loadOrganizerAlbums called, uid:', uid);
     
-    const { data, error } = await supabase
+    // Эхлээд owner_id шүүлтгүй бүх харах боломжтой цомгийг татаж шалгана
+    const { data: allData, error: allError } = await supabase
       .from('albums')
-      .select('id, name, title, event_date, status, created_at')
-      .eq('owner_id', uid)
+      .select('id, name, title, event_date, status, created_at, owner_id')
       .order('created_at', { ascending: false })
       .limit(20);
     
-    if (error) console.error('loadOrganizerAlbums error:', error);
-    setAlbums(data ?? []);
+    console.log('📦 All accessible albums:', allData, 'error:', allError);
+    
+    // owner_id-аар шүүсэн
+    const filtered = (allData ?? []).filter((a: any) => a.owner_id === uid);
+    console.log('✅ Filtered by uid:', filtered.length, 'albums');
+    
+    setAlbums(filtered.length > 0 ? filtered : (allData ?? []));
   }
 
   async function loadPendingCount() {
