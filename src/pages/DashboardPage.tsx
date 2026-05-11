@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload,
+  Calendar, Eye, Upload, Trash2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -78,22 +78,29 @@ export default function DashboardPage() {
 
   async function loadOrganizerAlbums() {
     const uid = profile!.id;
-    console.log('🔍 loadOrganizerAlbums called, uid:', uid);
-    
-    // Эхлээд owner_id шүүлтгүй бүх харах боломжтой цомгийг татаж шалгана
-    const { data: allData, error: allError } = await supabase
+    const { data, error } = await supabase
       .from('albums')
-      .select('id, name, title, event_date, status, created_at, owner_id')
+      .select('id, name, title, event_date, status, created_at')
+      .eq('owner_id', uid)
       .order('created_at', { ascending: false })
-      .limit(20);
-    
-    console.log('📦 All accessible albums:', allData, 'error:', allError);
-    
-    // owner_id-аар шүүсэн
-    const filtered = (allData ?? []).filter((a: any) => a.owner_id === uid);
-    console.log('✅ Filtered by uid:', filtered.length, 'albums');
-    
-    setAlbums(filtered.length > 0 ? filtered : (allData ?? []));
+      .limit(50);
+    if (error) console.error('loadOrganizerAlbums:', error);
+    setAlbums(data ?? []);
+  }
+
+  async function deleteAlbum(albumId: string) {
+    if (!confirm('Энэ цомгийг устгах уу? Бүх зураг устна.')) return;
+    const { error } = await supabase
+      .from('albums')
+      .delete()
+      .eq('id', albumId)
+      .eq('owner_id', profile!.id);
+    if (!error) {
+      setAlbums(prev => prev.filter(a => a.id !== albumId));
+    } else {
+      console.error('deleteAlbum error:', error);
+      alert('Устгахад алдаа гарлаа: ' + error.message);
+    }
   }
 
   async function loadPendingCount() {
@@ -397,6 +404,10 @@ export default function DashboardPage() {
                         <button onClick={e => { e.stopPropagation(); navigate(`/album/${album.id}`); }}
                           className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Eye className="w-3.5 h-3.5" />Харах
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); deleteAlbum(album.id); }}
+                          className="flex items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
