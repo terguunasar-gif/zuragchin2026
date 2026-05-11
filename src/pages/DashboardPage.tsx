@@ -60,8 +60,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!profile) return;
     loadWalletBalance();
-    if (isOrganizer) { loadOrganizerAlbums(); loadPendingCount(); }
-    if (isBuyer) { loadPurchases(); loadPrintOrders(); }
+    // hasRole-г шууд profile.role-оос шалгана — isOrganizer derived variable байна
+    const roles: string[] = profile.role ?? [];
+    if (roles.includes('organizer')) { loadOrganizerAlbums(); loadPendingCount(); }
+    if (roles.includes('buyer')) { loadPurchases(); loadPrintOrders(); }
   }, [profile]);
 
   useEffect(() => {
