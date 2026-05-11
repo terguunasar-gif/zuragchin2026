@@ -4,7 +4,7 @@ import {
   Camera, ChevronLeft, AlertCircle, Upload, X,
   Type, Image as ImageIcon, Phone, Mail, Facebook,
   Instagram, Link as LinkIcon, CheckCircle2, Copy,
-  Download, QrCode, UserPlus, Search, Trash2, Users,
+  Download, QrCode, UserPlus, Search, Trash2, Users, Plus,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,10 +16,23 @@ type WatermarkPosition =
   | 'middle-left' | 'center' | 'middle-right'
   | 'bottom-left' | 'bottom-center' | 'bottom-right';
 
+interface WatermarkLayer {
+  id: string;
+  type: WatermarkType;
+  // text fields
+  text: string;
+  fontSize: number;
+  opacity: number;
+  color: string;
+  // image fields
+  imagePreview: string;
+  // common
+  position: WatermarkPosition;
+}
+
 interface FormErrors {
   name?: string;
   eventDate?: string;
-  watermarkValue?: string;
   downloadPrice?: string;
   contactEmail?: string;
 }
@@ -31,112 +44,144 @@ interface PhotographerEntry {
   photographer_percent: number;
 }
 
-// ─── Watermark Position Grid ──────────────────────────────────────────────────
-const POSITIONS: { value: WatermarkPosition; row: number; col: number }[] = [
-  { value: 'top-left',      row: 0, col: 0 },
-  { value: 'top-center',    row: 0, col: 1 },
-  { value: 'top-right',     row: 0, col: 2 },
-  { value: 'middle-left',   row: 1, col: 0 },
-  { value: 'center',        row: 1, col: 1 },
-  { value: 'middle-right',  row: 1, col: 2 },
-  { value: 'bottom-left',   row: 2, col: 0 },
-  { value: 'bottom-center', row: 2, col: 1 },
-  { value: 'bottom-right',  row: 2, col: 2 },
+// ─── Constants ────────────────────────────────────────────────────────────────
+const POSITIONS: WatermarkPosition[] = [
+  'top-left', 'top-center', 'top-right',
+  'middle-left', 'center', 'middle-right',
+  'bottom-left', 'bottom-center', 'bottom-right',
 ];
 
 const POSITION_LABEL: Record<WatermarkPosition, string> = {
-  'top-left': 'Top Left', 'top-center': 'Top Center', 'top-right': 'Top Right',
-  'middle-left': 'Middle Left', 'center': 'Center', 'middle-right': 'Middle Right',
-  'bottom-left': 'Bottom Left', 'bottom-center': 'Bottom Center', 'bottom-right': 'Bottom Right',
+  'top-left': 'Зүүн дээр', 'top-center': 'Дунд дээр', 'top-right': 'Баруун дээр',
+  'middle-left': 'Зүүн дунд', 'center': 'Төв', 'middle-right': 'Баруун дунд',
+  'bottom-left': 'Зүүн доор', 'bottom-center': 'Дунд доор', 'bottom-right': 'Баруун доор',
 };
 
-// ─── Fee breakdown constants ──────────────────────────────────────────────────
+const OVERLAY_CLASS: Record<WatermarkPosition, string> = {
+  'top-left':      'top-2 left-2',
+  'top-center':    'top-2 left-1/2 -translate-x-1/2',
+  'top-right':     'top-2 right-2',
+  'middle-left':   'top-1/2 left-2 -translate-y-1/2',
+  'center':        'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
+  'middle-right':  'top-1/2 right-2 -translate-y-1/2',
+  'bottom-left':   'bottom-2 left-2',
+  'bottom-center': 'bottom-2 left-1/2 -translate-x-1/2',
+  'bottom-right':  'bottom-2 right-2',
+};
+
 const QPAY_FEE = 0.01;
 const PLATFORM_FEE = 0.03;
-const OWNER_COMMISSION_OWNED = 1 - QPAY_FEE - PLATFORM_FEE; // 0.96
+const OWNER_COMMISSION_OWNED = 1 - QPAY_FEE - PLATFORM_FEE;
 
 const PREVIEW_IMAGE = 'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop';
+
+function newTextLayer(): WatermarkLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'text',
+    text: '© Zuragchin.mn',
+    fontSize: 24,
+    opacity: 70,
+    color: '#ffffff',
+    imagePreview: '',
+    position: 'bottom-right',
+  };
+}
+
+function newImageLayer(): WatermarkLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'image',
+    text: '',
+    fontSize: 24,
+    opacity: 80,
+    color: '#ffffff',
+    imagePreview: '',
+    position: 'top-left',
+  };
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CreateAlbumPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Basic info
   const [albumName, setAlbumName] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('draft');
 
-  // Watermark
-  const [wmType, setWmType] = useState<WatermarkType>('text');
-  const [wmText, setWmText] = useState('© Zuragchin.mn');
-  const [wmFontSize, setWmFontSize] = useState(24);
-  const [wmOpacity, setWmOpacity] = useState(70);
-  const [wmColor, setWmColor] = useState('#ffffff');
-  const [wmPosition, setWmPosition] = useState<WatermarkPosition>('bottom-right');
-  const [_wmImageFile, setWmImageFile] = useState<File | null>(null);
-  const [wmImagePreview, setWmImagePreview] = useState<string>('');
-  const wmImageInputRef = useRef<HTMLInputElement>(null);
+  // Multiple watermark layers
+  const [wmLayers, setWmLayers] = useState<WatermarkLayer[]>([newTextLayer()]);
+  const [activeLayerId, setActiveLayerId] = useState<string>(() => wmLayers[0].id);
+  const imageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Revenue model
   const [revenueModel, setRevenueModel] = useState<'shared' | 'owned'>('shared');
-
-  // Organizer percent (shared mode only)
   const [organizerPercent, setOrganizerPercent] = useState(10);
-
-  // Pricing
   const [isFree, setIsFree] = useState(false);
   const [downloadPrice, setDownloadPrice] = useState('');
 
-  // Contact
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactFacebook, setContactFacebook] = useState('');
   const [contactInstagram, setContactInstagram] = useState('');
   const [contactOther, setContactOther] = useState('');
 
-  // Photographers
   const [photographers, setPhotographers] = useState<PhotographerEntry[]>([]);
   const [zurIdInput, setZurIdInput] = useState('');
   const [searchingZur, setSearchingZur] = useState(false);
   const [zurError, setZurError] = useState('');
 
-  // State
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [successData, setSuccessData] = useState<{ albumId: string; shareLink: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Computed: remaining percent for photographers
-  const fixedFees = QPAY_FEE + PLATFORM_FEE; // 4%
-  const availableForSplit = 1 - fixedFees; // 96%
+  const fixedFees = QPAY_FEE + PLATFORM_FEE;
+  const availableForSplit = 1 - fixedFees;
   const organizerFraction = revenueModel === 'owned' ? availableForSplit : organizerPercent / 100;
   const photographerPoolFraction = revenueModel === 'owned' ? 0 : availableForSplit - organizerFraction;
 
-  // ── Watermark image upload ─────────────────────────────────────────────────
-  function handleWmImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  const activeLayer = wmLayers.find(l => l.id === activeLayerId) ?? wmLayers[0];
+
+  // ── Layer helpers ──────────────────────────────────────────────────────────
+  function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
+    setWmLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  }
+
+  function addLayer(type: WatermarkType) {
+    const layer = type === 'text' ? newTextLayer() : newImageLayer();
+    setWmLayers(prev => [...prev, layer]);
+    setActiveLayerId(layer.id);
+  }
+
+  function removeLayer(id: string) {
+    setWmLayers(prev => {
+      const next = prev.filter(l => l.id !== id);
+      if (next.length === 0) {
+        const fresh = newTextLayer();
+        setActiveLayerId(fresh.id);
+        return [fresh];
+      }
+      if (activeLayerId === id) setActiveLayerId(next[next.length - 1].id);
+      return next;
+    });
+  }
+
+  function handleImageUpload(id: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setWmImageFile(file);
     const reader = new FileReader();
-    reader.onload = ev => setWmImagePreview(ev.target?.result as string);
+    reader.onload = ev => updateLayer(id, { imagePreview: ev.target?.result as string });
     reader.readAsDataURL(file);
   }
 
-  // ── Search photographer by ZUR-ID ─────────────────────────────────────────
-  // ✅ ЗАСВАРЛАСАН: photographer_profiles хүснэгтээс zur_id-аар хайна
+  // ── Photographer search ────────────────────────────────────────────────────
   async function addPhotographerByZurId() {
     setZurError('');
     const cleaned = zurIdInput.trim().toUpperCase();
-    if (!cleaned.startsWith('ZUR-')) {
-      setZurError('ZUR-XXXXX форматаар оруулна уу');
-      return;
-    }
-    if (photographers.find(p => p.zur_id === cleaned)) {
-      setZurError('Энэ зурагчин аль хэдийн нэмэгдсэн байна');
-      return;
-    }
+    if (!cleaned.startsWith('ZUR-')) { setZurError('ZUR-XXXXX форматаар оруулна уу'); return; }
+    if (photographers.find(p => p.zur_id === cleaned)) { setZurError('Энэ зурагчин аль хэдийн нэмэгдсэн байна'); return; }
     setSearchingZur(true);
 
     const { data, error } = await supabase
@@ -150,29 +195,20 @@ export default function CreateAlbumPage() {
       setSearchingZur(false);
       return;
     }
-
     const defaultPct = Math.floor((photographerPoolFraction * 100) / (photographers.length + 1));
-    setPhotographers(prev => [
-      ...prev,
-      {
-        zur_id: cleaned,
-        user_id: data.user_id,
-        display_name: data.display_name || cleaned,
-        photographer_percent: defaultPct,
-      },
-    ]);
+    setPhotographers(prev => [...prev, {
+      zur_id: cleaned,
+      user_id: data.user_id,
+      display_name: data.display_name || cleaned,
+      photographer_percent: defaultPct,
+    }]);
     setZurIdInput('');
     setSearchingZur(false);
   }
 
-  function removePhotographer(zur_id: string) {
-    setPhotographers(prev => prev.filter(p => p.zur_id !== zur_id));
-  }
-
+  function removePhotographer(zur_id: string) { setPhotographers(prev => prev.filter(p => p.zur_id !== zur_id)); }
   function updatePhotographerPercent(zur_id: string, pct: number) {
-    setPhotographers(prev =>
-      prev.map(p => p.zur_id === zur_id ? { ...p, photographer_percent: pct } : p)
-    );
+    setPhotographers(prev => prev.map(p => p.zur_id === zur_id ? { ...p, photographer_percent: pct } : p));
   }
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -180,14 +216,11 @@ export default function CreateAlbumPage() {
     const errs: FormErrors = {};
     if (!albumName.trim()) errs.name = 'Цомгийн нэр оруулна уу';
     if (!eventDate) errs.eventDate = 'Арга хэмжээний огноо оруулна уу';
-    if (wmType === 'text' && !wmText.trim()) errs.watermarkValue = 'Усан тэмдгийн текст оруулна уу';
     if (!isFree) {
       const price = parseFloat(downloadPrice);
-      if (!downloadPrice || isNaN(price) || price <= 0)
-        errs.downloadPrice = '0-ээс их үнэ оруулна уу';
+      if (!downloadPrice || isNaN(price) || price <= 0) errs.downloadPrice = '0-ээс их үнэ оруулна уу';
     }
-    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail))
-      errs.contactEmail = 'Зөв имэйл хаяг оруулна уу';
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) errs.contactEmail = 'Зөв имэйл хаяг оруулна уу';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -197,59 +230,51 @@ export default function CreateAlbumPage() {
     e.preventDefault();
     if (!validate()) return;
     setSaving(true);
-
     try {
       const albumId = crypto.randomUUID();
       const shareLink = `/album/${albumId}`;
       const shareUrl = `${window.location.origin}${shareLink}`;
 
-      let watermarkValue = '';
-      if (wmType === 'text') {
-        watermarkValue = JSON.stringify({ text: wmText, fontSize: wmFontSize, opacity: wmOpacity / 100, color: wmColor });
-      } else if (wmImagePreview) {
-        watermarkValue = wmImagePreview;
-      }
+      // Serialize all layers as JSON
+      const watermarkValue = JSON.stringify(wmLayers.map(l => ({
+        id: l.id,
+        type: l.type,
+        text: l.text,
+        fontSize: l.fontSize,
+        opacity: l.opacity / 100,
+        color: l.color,
+        imagePreview: l.imagePreview,
+        position: l.position,
+      })));
 
       const contactInfo = { phone: contactPhone, email: contactEmail, facebook: contactFacebook, instagram: contactInstagram, other: contactOther };
       const ownerCommission = revenueModel === 'owned' ? OWNER_COMMISSION_OWNED : organizerPercent / 100;
       const photographerPercent = revenueModel === 'owned' ? 0 : (photographerPoolFraction * 100);
 
       const { error } = await supabase.from('albums').insert({
-        id: albumId,
-        owner_id: user!.id,
-        name: albumName.trim(),
-        event_date: eventDate,
-        description: description.trim(),
-        status,
-        watermark_type: wmType,
+        id: albumId, owner_id: user!.id,
+        name: albumName.trim(), event_date: eventDate, description: description.trim(), status,
+        watermark_type: 'layers',
         watermark_value: watermarkValue,
-        watermark_position: wmPosition,
+        watermark_position: activeLayer.position,
         download_price: isFree ? 0 : parseFloat(downloadPrice),
         is_free: isFree,
         owner_commission: ownerCommission,
         organizer_percent: ownerCommission * 100,
         photographer_percent: photographerPercent,
         revenue_model: revenueModel,
-        share_link: shareLink,
-        qr_code_url: shareUrl,
-        contact_info: contactInfo,
+        share_link: shareLink, qr_code_url: shareUrl, contact_info: contactInfo,
       });
-
       if (error) throw error;
 
       if (photographers.length > 0) {
-        const rows = photographers.map(p => ({
-          album_id: albumId,
-          photographer_id: p.user_id,
-          status: 'approved',
-        }));
-        await supabase.from('album_photographers').insert(rows);
+        await supabase.from('album_photographers').insert(
+          photographers.map(p => ({ album_id: albumId, photographer_id: p.user_id, status: 'approved' }))
+        );
       }
-
       setSuccessData({ albumId, shareLink: shareUrl });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Алдаа гарлаа';
-      setErrors({ name: msg });
+      setErrors({ name: err instanceof Error ? err.message : 'Алдаа гарлаа' });
     } finally {
       setSaving(false);
     }
@@ -267,32 +292,17 @@ export default function CreateAlbumPage() {
     window.open(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(successData.shareLink)}`, '_blank');
   }
 
-  const overlayPositionClass: Record<WatermarkPosition, string> = {
-    'top-left':      'top-3 left-3 items-start justify-start',
-    'top-center':    'top-3 left-0 right-0 justify-center items-start',
-    'top-right':     'top-3 right-3 items-start justify-end',
-    'middle-left':   'top-0 bottom-0 left-3 items-center justify-start',
-    'center':        'inset-0 items-center justify-center',
-    'middle-right':  'top-0 bottom-0 right-3 items-center justify-end',
-    'bottom-left':   'bottom-3 left-3 items-end justify-start',
-    'bottom-center': 'bottom-3 left-0 right-0 justify-center items-end',
-    'bottom-right':  'bottom-3 right-3 items-end justify-end',
-  };
-
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-stone-950">
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center gap-4">
           <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-stone-400 hover:text-white transition-colors">
-            <ChevronLeft className="w-5 h-5" />
-            <span className="text-sm">Хяналтын самбар</span>
+            <ChevronLeft className="w-5 h-5" /><span className="text-sm">Хяналтын самбар</span>
           </button>
           <div className="h-5 w-px bg-white/10" />
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center">
-              <Camera className="w-4 h-4 text-stone-950" />
-            </div>
+            <div className="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center"><Camera className="w-4 h-4 text-stone-950" /></div>
             <span className="text-white font-semibold">Цомог үүсгэх</span>
           </div>
         </div>
@@ -307,7 +317,7 @@ export default function CreateAlbumPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
 
-            {/* ── Basic Info ── */}
+            {/* Basic Info */}
             <Section title="Үндсэн мэдээлэл" icon={<Camera className="w-4 h-4" />}>
               <div className="space-y-5">
                 <Field label="Цомгийн нэр" error={errors.name} required>
@@ -331,150 +341,87 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* ── Revenue Model ── */}
+            {/* Revenue Model */}
             <Section title="Орлогын загвар" icon={<span className="text-xs font-bold text-stone-400">%</span>}>
               <div className="space-y-4">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
                   <TypeToggleBtn active={revenueModel === 'shared'} onClick={() => setRevenueModel('shared')} icon={<span className="text-xs font-bold">Хуваалцах</span>} label="Зурагчинтай хувааx" />
                   <TypeToggleBtn active={revenueModel === 'owned'} onClick={() => setRevenueModel('owned')} icon={<span className="text-xs font-bold">96%</span>} label="Бүрэн өмчлөх" />
                 </div>
-
                 {revenueModel === 'shared' && (
-                  <div className="space-y-3">
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-stone-400">QPay шимтгэл (тогтмол)</span>
-                        <span className="text-stone-500 font-mono">1%</span>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between text-sm"><span className="text-stone-400">QPay шимтгэл</span><span className="text-stone-500 font-mono">1%</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-stone-400">Платформ шимтгэл</span><span className="text-stone-500 font-mono">3%</span></div>
+                    <div className="border-t border-white/10 pt-3">
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-amber-400 font-medium">Таны хувь</span>
+                        <span className="text-amber-400 font-mono font-bold">{organizerPercent}%</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-stone-400">Платформ шимтгэл (тогтмол)</span>
-                        <span className="text-stone-500 font-mono">3%</span>
-                      </div>
-                      <div className="border-t border-white/10 pt-3">
-                        <div className="flex items-center justify-between text-sm mb-2">
-                          <span className="text-amber-400 font-medium">Таны хувь (зохион байгуулагч)</span>
-                          <span className="text-amber-400 font-mono font-bold">{organizerPercent}%</span>
-                        </div>
-                        <input
-                          type="range" min={0} max={92} step={1}
-                          value={organizerPercent}
-                          onChange={e => setOrganizerPercent(Number(e.target.value))}
-                          className="w-full accent-amber-500"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-green-400 font-medium">Зурагчдын хувийн сан</span>
-                        <span className="text-green-400 font-mono font-bold">{Math.max(0, 96 - organizerPercent)}%</span>
-                      </div>
+                      <input type="range" min={0} max={92} step={1} value={organizerPercent} onChange={e => setOrganizerPercent(Number(e.target.value))} className="w-full accent-amber-500" />
                     </div>
-                    <p className="text-stone-500 text-xs">Зурагчдын хувийг доорх хэсэгт тус тусад нь тохируулна уу. Нийт хувь нь {Math.max(0, 96 - organizerPercent)}%-аас хэтрэхгүй байх ёстой.</p>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-400 font-medium">Зурагчдын хувийн сан</span>
+                      <span className="text-green-400 font-mono font-bold">{Math.max(0, 96 - organizerPercent)}%</span>
+                    </div>
                   </div>
                 )}
-
                 {revenueModel === 'owned' && (
                   <div className="rounded-xl p-4 border bg-amber-500/5 border-amber-500/20 text-amber-300 text-sm">
-                    <p>Зурагчидыг урьдчилж хөлслөсөн тохиолдолд зохион байгуулагч борлуулалтын <strong>96%</strong> авна (QPay 1% + Платформ 3% хасагдана).</p>
+                    Зурагчидыг урьдчилж хөлслөсөн тохиолдолд зохион байгуулагч борлуулалтын <strong>96%</strong> авна.
                   </div>
                 )}
               </div>
             </Section>
 
-            {/* ── Photographers ── */}
+            {/* Photographers */}
             <Section title="Зурагчин нэмэх" icon={<Users className="w-4 h-4" />}>
               <div className="space-y-4">
                 <p className="text-stone-500 text-sm">ZUR-ID-ээр зурагчин нэмнэ үү. Нэмэгдсэн зурагчид шууд зөвшөөрөгдсөн байна.</p>
-
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={zurIdInput}
-                      onChange={e => setZurIdInput(e.target.value.toUpperCase())}
+                    <input type="text" value={zurIdInput} onChange={e => setZurIdInput(e.target.value.toUpperCase())}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addPhotographerByZurId())}
                       placeholder="ZUR-XXXXX"
-                      className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none transition-all font-mono"
-                    />
+                      className="w-full bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white placeholder-stone-600 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none font-mono" />
                   </div>
-                  <button
-                    type="button"
-                    onClick={addPhotographerByZurId}
-                    disabled={searchingZur || !zurIdInput.trim()}
-                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors"
-                  >
-                    {searchingZur
-                      ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-                      : <UserPlus className="w-4 h-4" />
-                    }
+                  <button type="button" onClick={addPhotographerByZurId} disabled={searchingZur || !zurIdInput.trim()}
+                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-2.5 rounded-xl text-sm">
+                    {searchingZur ? <div className="w-4 h-4 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <UserPlus className="w-4 h-4" />}
                     Нэмэх
                   </button>
                 </div>
-
                 {zurError && (
                   <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
                     <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                     <p className="text-red-400 text-sm">{zurError}</p>
                   </div>
                 )}
-
                 {photographers.length > 0 && (
                   <div className="space-y-2">
                     {photographers.map(p => (
-                      <div key={p.zur_id} className="bg-stone-900 border border-white/10 rounded-xl px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-amber-500/10 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Camera className="w-4 h-4 text-amber-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{p.display_name}</p>
-                            <p className="text-stone-500 text-xs font-mono">{p.zur_id}</p>
-                          </div>
-                          {revenueModel === 'shared' && (
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-stone-400 text-xs">Хувь:</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={Math.max(0, 96 - organizerPercent)}
-                                  value={p.photographer_percent}
-                                  onChange={e => updatePhotographerPercent(p.zur_id, Number(e.target.value))}
-                                  className="w-14 bg-stone-800 border border-white/10 text-amber-400 text-sm font-mono rounded-lg px-2 py-1 outline-none text-center"
-                                />
-                                <span className="text-stone-500 text-xs">%</span>
-                              </div>
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removePhotographer(p.zur_id)}
-                            className="w-7 h-7 flex items-center justify-center text-stone-600 hover:text-red-400 transition-colors flex-shrink-0"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                      <div key={p.zur_id} className="bg-stone-900 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
+                        <div className="w-8 h-8 bg-amber-500/10 rounded-full flex items-center justify-center"><Camera className="w-4 h-4 text-amber-400" /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium text-sm truncate">{p.display_name}</p>
+                          <p className="text-stone-500 text-xs font-mono">{p.zur_id}</p>
                         </div>
+                        {revenueModel === 'shared' && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-stone-400 text-xs">Хувь:</span>
+                            <input type="number" min={0} max={Math.max(0, 96 - organizerPercent)} value={p.photographer_percent}
+                              onChange={e => updatePhotographerPercent(p.zur_id, Number(e.target.value))}
+                              className="w-14 bg-stone-800 border border-white/10 text-amber-400 text-sm font-mono rounded-lg px-2 py-1 outline-none text-center" />
+                            <span className="text-stone-500 text-xs">%</span>
+                          </div>
+                        )}
+                        <button type="button" onClick={() => removePhotographer(p.zur_id)} className="w-7 h-7 flex items-center justify-center text-stone-600 hover:text-red-400">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
-
-                    {revenueModel === 'shared' && (
-                      <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs">
-                        <div className="flex justify-between text-stone-400 mb-1">
-                          <span>Зурагчдын нийт хувь:</span>
-                          <span className={`font-mono font-bold ${
-                            photographers.reduce((s, p) => s + p.photographer_percent, 0) > (96 - organizerPercent)
-                              ? 'text-red-400' : 'text-green-400'
-                          }`}>
-                            {photographers.reduce((s, p) => s + p.photographer_percent, 0)}% / {Math.max(0, 96 - organizerPercent)}%
-                          </span>
-                        </div>
-                        {photographers.reduce((s, p) => s + p.photographer_percent, 0) > (96 - organizerPercent) && (
-                          <p className="text-red-400">⚠ Нийт хувь хязгаараас хэтэрсэн байна</p>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )}
-
                 {photographers.length === 0 && (
                   <div className="border-2 border-dashed border-white/10 rounded-xl py-6 text-center">
                     <Users className="w-6 h-6 text-stone-600 mx-auto mb-2" />
@@ -485,71 +432,136 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* ── Watermark ── */}
+            {/* ── Watermark Layers ── */}
             <Section title="Усан тэмдгийн тохиргоо" icon={<Type className="w-4 h-4" />}>
-              <div className="space-y-5">
-                <div className="flex rounded-xl overflow-hidden border border-white/10">
-                  <TypeToggleBtn active={wmType === 'text'} onClick={() => setWmType('text')} icon={<Type className="w-4 h-4" />} label="Текст усан тэмдэг" />
-                  <TypeToggleBtn active={wmType === 'image'} onClick={() => setWmType('image')} icon={<ImageIcon className="w-4 h-4" />} label="Лого / зураг" />
+              <div className="space-y-4">
+
+                {/* Layer tabs */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {wmLayers.map((layer, idx) => (
+                    <button key={layer.id} type="button"
+                      onClick={() => setActiveLayerId(layer.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${
+                        activeLayerId === layer.id
+                          ? 'bg-amber-500 border-amber-500 text-stone-950'
+                          : 'bg-white/5 border-white/10 text-stone-400 hover:text-white'
+                      }`}>
+                      {layer.type === 'text' ? <Type className="w-3.5 h-3.5" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                      {layer.type === 'text' ? `Текст ${idx + 1}` : `Лого ${idx + 1}`}
+                      {wmLayers.length > 1 && (
+                        <span onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
+                          className="ml-1 w-4 h-4 rounded-full bg-black/30 hover:bg-red-500 flex items-center justify-center transition-colors">
+                          <X className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  {/* Add buttons */}
+                  <button type="button" onClick={() => addLayer('text')}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-dashed border-white/20 text-stone-500 hover:text-white hover:border-white/40 transition-all">
+                    <Plus className="w-3 h-3" /><Type className="w-3 h-3" /> Текст нэмэх
+                  </button>
+                  <button type="button" onClick={() => addLayer('image')}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-dashed border-white/20 text-stone-500 hover:text-white hover:border-white/40 transition-all">
+                    <Plus className="w-3 h-3" /><ImageIcon className="w-3 h-3" /> Лого нэмэх
+                  </button>
                 </div>
 
-                {wmType === 'text' ? (
-                  <div className="space-y-4">
-                    <Field label="Усан тэмдгийн текст" error={errors.watermarkValue} required>
-                      <input type="text" value={wmText} onChange={e => setWmText(e.target.value)} placeholder="© Your Studio Name" className={inputClass(!!errors.watermarkValue)} />
-                    </Field>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field label={`Фонтын хэмжээ: ${wmFontSize}px`}>
-                        <input type="range" min={12} max={60} value={wmFontSize} onChange={e => setWmFontSize(Number(e.target.value))} className="w-full accent-amber-500 mt-1" />
-                      </Field>
-                      <Field label="Текстийн өнгө">
-                        <div className="flex items-center gap-3 mt-1">
-                          <input type="color" value={wmColor} onChange={e => setWmColor(e.target.value)} className="w-10 h-10 rounded-lg border border-white/10 bg-transparent cursor-pointer" />
-                          <span className="text-stone-300 text-sm font-mono">{wmColor}</span>
-                        </div>
-                      </Field>
+                {/* Active layer editor */}
+                {activeLayer && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      {activeLayer.type === 'text'
+                        ? <><Type className="w-4 h-4 text-amber-400" /><span className="text-white text-sm font-semibold">Текст усан тэмдэг</span></>
+                        : <><ImageIcon className="w-4 h-4 text-amber-400" /><span className="text-white text-sm font-semibold">Лого / зураг</span></>
+                      }
                     </div>
-                    <Field label={`Тунгалаг байдал: ${wmOpacity}%`}>
-                      <input type="range" min={10} max={100} value={wmOpacity} onChange={e => setWmOpacity(Number(e.target.value))} className="w-full accent-amber-500 mt-1" />
-                    </Field>
-                  </div>
-                ) : (
-                  <div>
-                    <input ref={wmImageInputRef} type="file" accept="image/png,image/svg+xml,image/webp" className="hidden" onChange={handleWmImageChange} />
-                    {wmImagePreview ? (
-                      <div className="relative inline-block">
-                        <img src={wmImagePreview} alt="Watermark logo" className="h-20 rounded-lg border border-white/10 object-contain bg-white/5 px-4" />
-                        <button type="button" onClick={() => { setWmImageFile(null); setWmImagePreview(''); }} className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-400 transition-colors">
-                          <X className="w-3.5 h-3.5 text-white" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => wmImageInputRef.current?.click()} className="w-full border-2 border-dashed border-white/20 hover:border-amber-500/50 hover:bg-amber-500/5 rounded-xl py-8 flex flex-col items-center gap-3 text-stone-400 hover:text-amber-400 transition-all duration-200">
-                        <Upload className="w-8 h-8" />
-                        <div className="text-center">
-                          <p className="font-medium">Лого / усан тэмдгийн зураг байршуулах</p>
-                          <p className="text-sm opacity-70 mt-0.5">Тунгалаг PNG зураг ашиглахыг зөвлөж байна</p>
+
+                    {activeLayer.type === 'text' ? (
+                      <>
+                        <Field label="Текст">
+                          <input type="text" value={activeLayer.text}
+                            onChange={e => updateLayer(activeLayer.id, { text: e.target.value })}
+                            placeholder="© Your Studio Name" className={inputClass(false)} />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Field label={`Фонт: ${activeLayer.fontSize}px`}>
+                            <input type="range" min={12} max={60} value={activeLayer.fontSize}
+                              onChange={e => updateLayer(activeLayer.id, { fontSize: Number(e.target.value) })}
+                              className="w-full accent-amber-500 mt-1" />
+                          </Field>
+                          <Field label="Өнгө">
+                            <div className="flex items-center gap-3 mt-1">
+                              <input type="color" value={activeLayer.color}
+                                onChange={e => updateLayer(activeLayer.id, { color: e.target.value })}
+                                className="w-10 h-10 rounded-lg border border-white/10 bg-transparent cursor-pointer" />
+                              <span className="text-stone-300 text-sm font-mono">{activeLayer.color}</span>
+                            </div>
+                          </Field>
                         </div>
-                      </button>
+                        <Field label={`Тунгалаг байдал: ${activeLayer.opacity}%`}>
+                          <input type="range" min={10} max={100} value={activeLayer.opacity}
+                            onChange={e => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })}
+                            className="w-full accent-amber-500 mt-1" />
+                        </Field>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          ref={el => { imageInputRefs.current[activeLayer.id] = el; }}
+                          type="file" accept="image/png,image/svg+xml,image/webp" className="hidden"
+                          onChange={e => handleImageUpload(activeLayer.id, e)} />
+                        {activeLayer.imagePreview ? (
+                          <div className="flex items-center gap-3">
+                            <img src={activeLayer.imagePreview} alt="logo" className="h-16 rounded-lg border border-white/10 object-contain bg-white/5 px-3" />
+                            <div className="space-y-2">
+                              <button type="button" onClick={() => imageInputRefs.current[activeLayer.id]?.click()}
+                                className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-white border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
+                                <Upload className="w-3 h-3" /> Солих
+                              </button>
+                              <button type="button" onClick={() => updateLayer(activeLayer.id, { imagePreview: '' })}
+                                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                                <Trash2 className="w-3 h-3" /> Устгах
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => imageInputRefs.current[activeLayer.id]?.click()}
+                            className="w-full border-2 border-dashed border-white/20 hover:border-amber-500/50 hover:bg-amber-500/5 rounded-xl py-6 flex flex-col items-center gap-2 text-stone-400 hover:text-amber-400 transition-all">
+                            <Upload className="w-7 h-7" />
+                            <p className="font-medium text-sm">Лого / усан тэмдгийн зураг байршуулах</p>
+                            <p className="text-xs opacity-70">Тунгалаг PNG зураг ашиглахыг зөвлөж байна</p>
+                          </button>
+                        )}
+                        <Field label={`Тунгалаг байдал: ${activeLayer.opacity}%`}>
+                          <input type="range" min={10} max={100} value={activeLayer.opacity}
+                            onChange={e => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })}
+                            className="w-full accent-amber-500 mt-1" />
+                        </Field>
+                      </>
                     )}
+
+                    {/* Position grid */}
+                    <Field label="Байршил">
+                      <div className="grid grid-cols-3 gap-1.5 w-fit mt-1">
+                        {POSITIONS.map(pos => (
+                          <button key={pos} type="button" title={POSITION_LABEL[pos]}
+                            onClick={() => updateLayer(activeLayer.id, { position: pos })}
+                            className={`w-11 h-11 rounded-lg border transition-all flex items-center justify-center ${
+                              activeLayer.position === pos ? 'bg-amber-500 border-amber-500' : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
+                            }`}>
+                            <div className={`w-2 h-2 rounded-full ${activeLayer.position === pos ? 'bg-stone-950' : 'bg-white/40'}`} />
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-stone-500 text-xs mt-2">{POSITION_LABEL[activeLayer.position]}</p>
+                    </Field>
                   </div>
                 )}
-
-                <Field label="Байршил">
-                  <div className="grid grid-cols-3 gap-1.5 w-fit mt-1">
-                    {POSITIONS.map(p => (
-                      <button key={p.value} type="button" title={POSITION_LABEL[p.value]} onClick={() => setWmPosition(p.value)}
-                        className={`w-12 h-12 rounded-lg border transition-all duration-150 flex items-center justify-center ${wmPosition === p.value ? 'bg-amber-500 border-amber-500' : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'}`}>
-                        <div className={`w-2 h-2 rounded-full ${wmPosition === p.value ? 'bg-stone-950' : 'bg-white/40'}`} />
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-stone-500 text-xs mt-2">{POSITION_LABEL[wmPosition]}</p>
-                </Field>
               </div>
             </Section>
 
-            {/* ── Pricing ── */}
+            {/* Pricing */}
             <Section title="Үнэлгээ" icon={<span className="text-xs font-bold text-stone-400">₮</span>}>
               <div className="space-y-5">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
@@ -564,101 +576,79 @@ export default function CreateAlbumPage() {
                     </div>
                   </Field>
                 )}
-                <FeeBreakdown
-                  price={isFree ? 0 : parseFloat(downloadPrice) || 0}
-                  revenueModel={revenueModel}
-                  organizerPercent={organizerPercent}
-                  photographers={photographers}
-                />
+                <FeeBreakdown price={isFree ? 0 : parseFloat(downloadPrice) || 0} revenueModel={revenueModel} organizerPercent={organizerPercent} photographers={photographers} />
               </div>
             </Section>
 
-            {/* ── Contact Info ── */}
+            {/* Contact */}
             <Section title="Холбоо барих мэдээлэл" icon={<Phone className="w-4 h-4" />}>
               <p className="text-stone-500 text-sm mb-4">Таны цомогт нэгдэх зурагчидад харагдана.</p>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Утасны дугаар">
-                    <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                      <input type="tel" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="+976 9900 0000" className={inputClass(false) + ' pl-10'} />
-                    </div>
+                    <div className="relative"><Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                      <input type="tel" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="+976 9900 0000" className={inputClass(false) + ' pl-10'} /></div>
                   </Field>
                   <Field label="Имэйл" error={errors.contactEmail}>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                      <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="organizer@example.com" className={inputClass(!!errors.contactEmail) + ' pl-10'} />
-                    </div>
+                    <div className="relative"><Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                      <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="organizer@example.com" className={inputClass(!!errors.contactEmail) + ' pl-10'} /></div>
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Facebook">
-                    <div className="relative">
-                      <Facebook className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                      <input type="url" value={contactFacebook} onChange={e => setContactFacebook(e.target.value)} placeholder="https://facebook.com/..." className={inputClass(false) + ' pl-10'} />
-                    </div>
+                    <div className="relative"><Facebook className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                      <input type="url" value={contactFacebook} onChange={e => setContactFacebook(e.target.value)} placeholder="https://facebook.com/..." className={inputClass(false) + ' pl-10'} /></div>
                   </Field>
                   <Field label="Instagram">
-                    <div className="relative">
-                      <Instagram className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                      <input type="url" value={contactInstagram} onChange={e => setContactInstagram(e.target.value)} placeholder="https://instagram.com/..." className={inputClass(false) + ' pl-10'} />
-                    </div>
+                    <div className="relative"><Instagram className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                      <input type="url" value={contactInstagram} onChange={e => setContactInstagram(e.target.value)} placeholder="https://instagram.com/..." className={inputClass(false) + ' pl-10'} /></div>
                   </Field>
                 </div>
                 <Field label="Бусад холбоос">
-                  <div className="relative">
-                    <LinkIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                    <input type="url" value={contactOther} onChange={e => setContactOther(e.target.value)} placeholder="https://..." className={inputClass(false) + ' pl-10'} />
-                  </div>
+                  <div className="relative"><LinkIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                    <input type="url" value={contactOther} onChange={e => setContactOther(e.target.value)} placeholder="https://..." className={inputClass(false) + ' pl-10'} /></div>
                 </Field>
               </div>
             </Section>
           </div>
 
-          {/* ── Right column ── */}
+          {/* Right column */}
           <div className="space-y-6">
             <div className="sticky top-24">
+              {/* Watermark preview */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <p className="text-stone-300 text-sm font-medium mb-3">Усан тэмдгийн урьдчилан харах</p>
                 <div className="relative rounded-xl overflow-hidden aspect-[3/2]">
-                  <img src={PREVIEW_IMAGE} alt="Sample preview" className="w-full h-full object-cover" />
-                  <div className={`absolute flex ${overlayPositionClass[wmPosition]} pointer-events-none`}>
-                    {wmType === 'text' && wmText && (
-                      <span className="font-semibold px-1 select-none whitespace-nowrap"
-                        style={{ fontSize: `${Math.max(8, Math.round(wmFontSize * 0.4))}px`, color: wmColor, opacity: wmOpacity / 100, textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
-                        {wmText}
-                      </span>
-                    )}
-                    {wmType === 'image' && wmImagePreview && (
-                      <img src={wmImagePreview} alt="watermark" className="h-8 object-contain" style={{ opacity: wmOpacity / 100 }} />
-                    )}
-                  </div>
+                  <img src={PREVIEW_IMAGE} alt="preview" className="w-full h-full object-cover" />
+                  {wmLayers.map(layer => (
+                    <div key={layer.id} className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`}>
+                      {layer.type === 'text' && layer.text && (
+                        <span className="font-semibold px-1 select-none whitespace-nowrap drop-shadow"
+                          style={{ fontSize: `${Math.max(8, Math.round(layer.fontSize * 0.4))}px`, color: layer.color, opacity: layer.opacity / 100 }}>
+                          {layer.text}
+                        </span>
+                      )}
+                      {layer.type === 'image' && layer.imagePreview && (
+                        <img src={layer.imagePreview} alt="wm" className="h-8 object-contain drop-shadow" style={{ opacity: layer.opacity / 100 }} />
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <p className="text-stone-600 text-xs mt-2 text-center">Худалдан авагчид ийм байдлаар усан тэмдэгтэй зурагнуудыг харна</p>
+                <p className="text-stone-600 text-xs mt-2 text-center">Бүх усан тэмдэг зэрэг харагдаж байна</p>
               </div>
 
+              {/* Summary */}
               <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
                 <p className="text-stone-300 font-medium mb-2">Цомгийн тойм</p>
-                <div className="flex justify-between text-stone-400">
-                  <span>Зурагчид</span>
-                  <span className="text-white">{photographers.length} нэмэгдсэн</span>
-                </div>
-                <div className="flex justify-between text-stone-400">
-                  <span>Загвар</span>
-                  <span className="text-white">{revenueModel === 'shared' ? 'Хуваалцах' : 'Бүрэн өмчлөх'}</span>
-                </div>
-                <div className="flex justify-between text-stone-400">
-                  <span>Үнэ</span>
-                  <span className="text-white">{isFree ? 'Үнэгүй' : `₮${parseFloat(downloadPrice || '0').toLocaleString()}`}</span>
-                </div>
+                <div className="flex justify-between text-stone-400"><span>Усан тэмдэг</span><span className="text-white">{wmLayers.length} давхарга</span></div>
+                <div className="flex justify-between text-stone-400"><span>Зурагчид</span><span className="text-white">{photographers.length} нэмэгдсэн</span></div>
+                <div className="flex justify-between text-stone-400"><span>Загвар</span><span className="text-white">{revenueModel === 'shared' ? 'Хуваалцах' : 'Бүрэн өмчлөх'}</span></div>
+                <div className="flex justify-between text-stone-400"><span>Үнэ</span><span className="text-white">{isFree ? 'Үнэгүй' : `₮${parseFloat(downloadPrice || '0').toLocaleString()}`}</span></div>
               </div>
 
               <button type="submit" disabled={saving}
-                className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-xl py-3.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {saving
-                  ? <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-                  : <><QrCode className="w-5 h-5" />Цомог үүсгэж QR код гаргах</>
-                }
+                className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-xl py-3.5 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                {saving ? <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <><QrCode className="w-5 h-5" />Цомог үүсгэж QR код гаргах</>}
               </button>
               <button type="button" onClick={() => navigate('/dashboard')} className="w-full mt-3 text-stone-400 hover:text-white transition-colors py-2 text-sm">Цуцлах</button>
             </div>
@@ -667,14 +657,8 @@ export default function CreateAlbumPage() {
       </form>
 
       {successData && (
-        <SuccessModal
-          shareLink={successData.shareLink}
-          copied={copied}
-          onCopy={copyLink}
-          onDownloadQR={downloadQR}
-          onGoToAlbum={() => navigate(`/dashboard/albums/${successData.albumId}`)}
-          onClose={() => navigate('/dashboard')}
-        />
+        <SuccessModal shareLink={successData.shareLink} copied={copied} onCopy={copyLink} onDownloadQR={downloadQR}
+          onGoToAlbum={() => navigate(`/dashboard/albums/${successData.albumId}`)} onClose={() => navigate('/dashboard')} />
       )}
     </div>
   );
@@ -700,12 +684,7 @@ function Field({ label, required, error, children }: { label: string; required?:
         {label}{required && <span className="text-amber-500 ml-0.5">*</span>}
       </label>
       {children}
-      {error && (
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-          <p className="text-red-400 text-xs">{error}</p>
-        </div>
-      )}
+      {error && <div className="flex items-center gap-1.5 mt-1.5"><AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" /><p className="text-red-400 text-xs">{error}</p></div>}
     </div>
   );
 }
@@ -713,47 +692,28 @@ function Field({ label, required, error, children }: { label: string; required?:
 function TypeToggleBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button type="button" onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 text-sm font-medium transition-all duration-200 ${active ? 'bg-amber-500 text-stone-950' : 'bg-transparent text-stone-400 hover:text-stone-200'}`}>
+      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 text-sm font-medium transition-all ${active ? 'bg-amber-500 text-stone-950' : 'bg-transparent text-stone-400 hover:text-stone-200'}`}>
       {icon}<span>{label}</span>
     </button>
   );
 }
 
-function FeeBreakdown({ price, revenueModel, organizerPercent, photographers }: {
-  price: number;
-  revenueModel: 'shared' | 'owned';
-  organizerPercent: number;
-  photographers: PhotographerEntry[];
-}) {
-  if (price <= 0) return (
-    <div className="bg-white/5 rounded-xl p-4 text-stone-500 text-sm text-center">Шимтгэлийн задаргааг харахын тулд үнэ оруулна уу</div>
-  );
-
+function FeeBreakdown({ price, revenueModel, organizerPercent, photographers }: { price: number; revenueModel: 'shared' | 'owned'; organizerPercent: number; photographers: PhotographerEntry[] }) {
+  if (price <= 0) return <div className="bg-white/5 rounded-xl p-4 text-stone-500 text-sm text-center">Шимтгэлийн задаргааг харахын тулд үнэ оруулна уу</div>;
   const qpayAmt = Math.round(price * QPAY_FEE);
   const platAmt = Math.round(price * PLATFORM_FEE);
-
   if (revenueModel === 'owned') {
-    const ownerAmt = Math.round(price * OWNER_COMMISSION_OWNED);
     return (
       <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
         <p className="text-stone-300 text-sm font-medium mb-3">₮{price.toLocaleString()} үнийн задаргаа</p>
-        {[
-          { label: 'QPay (1%)', amt: qpayAmt, color: 'text-stone-400' },
-          { label: 'Платформ (3%)', amt: platAmt, color: 'text-stone-300' },
-          { label: 'Таны хувь (96%)', amt: ownerAmt, color: 'text-amber-400' },
-        ].map(r => (
-          <div key={r.label} className="flex justify-between text-xs mb-1">
-            <span className="text-stone-400">{r.label}</span>
-            <span className={r.color + ' font-medium'}>₮{r.amt.toLocaleString()}</span>
-          </div>
-        ))}
+        <div className="flex justify-between text-xs"><span className="text-stone-400">QPay (1%)</span><span className="text-stone-400">₮{qpayAmt.toLocaleString()}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-stone-400">Платформ (3%)</span><span className="text-stone-400">₮{platAmt.toLocaleString()}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-amber-400">Таны хувь (96%)</span><span className="text-amber-400 font-medium">₮{Math.round(price * OWNER_COMMISSION_OWNED).toLocaleString()}</span></div>
       </div>
     );
   }
-
   const orgAmt = Math.round(price * organizerPercent / 100);
-  const totalPhotoPercent = photographers.reduce((s, p) => s + p.photographer_percent, 0);
-
+  const totalPct = photographers.reduce((s, p) => s + p.photographer_percent, 0);
   return (
     <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
       <p className="text-stone-300 text-sm font-medium mb-3">₮{price.toLocaleString()} үнийн задаргаа</p>
@@ -766,26 +726,22 @@ function FeeBreakdown({ price, revenueModel, organizerPercent, photographers }: 
           <span className="text-green-400 font-medium">₮{Math.round(price * p.photographer_percent / 100).toLocaleString()}</span>
         </div>
       ))}
-      {totalPhotoPercent < (96 - organizerPercent) && (
+      {totalPct < (96 - organizerPercent) && (
         <div className="flex justify-between text-xs">
-          <span className="text-stone-500">Хуваарилагдаагүй ({96 - organizerPercent - totalPhotoPercent}%)</span>
-          <span className="text-stone-500">₮{Math.round(price * (96 - organizerPercent - totalPhotoPercent) / 100).toLocaleString()}</span>
+          <span className="text-stone-500">Хуваарилагдаагүй ({96 - organizerPercent - totalPct}%)</span>
+          <span className="text-stone-500">₮{Math.round(price * (96 - organizerPercent - totalPct) / 100).toLocaleString()}</span>
         </div>
       )}
     </div>
   );
 }
 
-function SuccessModal({ shareLink, copied, onCopy, onDownloadQR, onGoToAlbum, onClose }: {
-  shareLink: string; copied: boolean; onCopy: () => void; onDownloadQR: () => void; onGoToAlbum: () => void; onClose: () => void;
-}) {
+function SuccessModal({ shareLink, copied, onCopy, onDownloadQR, onGoToAlbum, onClose }: { shareLink: string; copied: boolean; onCopy: () => void; onDownloadQR: () => void; onGoToAlbum: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
       <div className="bg-stone-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-6 text-center border-b border-white/10">
-          <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
-            <CheckCircle2 className="w-7 h-7 text-green-400" />
-          </div>
+          <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3"><CheckCircle2 className="w-7 h-7 text-green-400" /></div>
           <h2 className="text-white text-xl font-bold">Цомог үүслээ!</h2>
           <p className="text-stone-400 text-sm mt-1">Холбоос эсвэл QR кодыг зурагчид болон худалдан авагчидтай хуваалцаарай.</p>
         </div>
@@ -797,20 +753,16 @@ function SuccessModal({ shareLink, copied, onCopy, onDownloadQR, onGoToAlbum, on
           </div>
           <div className="bg-white/5 border border-white/10 rounded-xl flex items-center gap-2 px-3 py-2.5 overflow-hidden">
             <span className="text-stone-300 text-sm truncate flex-1 font-mono text-xs">{shareLink}</span>
-            <button onClick={onCopy} className="flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors flex-shrink-0">
+            <button onClick={onCopy} className="flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 flex-shrink-0">
               {copied ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
               {copied ? 'Хуулагдлаа!' : 'Хуулах'}
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={onDownloadQR} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl py-2.5 text-sm font-medium transition-all duration-200">
-              <Download className="w-4 h-4" />QR татах
-            </button>
-            <button onClick={onGoToAlbum} className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-2.5 text-sm font-semibold transition-all duration-200">
-              Цомог харах
-            </button>
+            <button onClick={onDownloadQR} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl py-2.5 text-sm font-medium"><Download className="w-4 h-4" />QR татах</button>
+            <button onClick={onGoToAlbum} className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-2.5 text-sm font-semibold">Цомог харах</button>
           </div>
-          <button onClick={onClose} className="w-full text-stone-500 hover:text-stone-300 text-sm transition-colors py-1">Хяналтын самбар руу буцах</button>
+          <button onClick={onClose} className="w-full text-stone-500 hover:text-stone-300 text-sm py-1">Хяналтын самбар руу буцах</button>
         </div>
       </div>
     </div>
