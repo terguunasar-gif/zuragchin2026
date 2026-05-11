@@ -276,7 +276,7 @@ export default function CreateAlbumPage() {
         watermark_value: watermarkValue,
         watermark_position: activeLayer.position,
         download_price: isFree ? 0 : parseFloat(sizePrices.find(s => s.enabled && s.price)?.price ?? '0'),
-        size_prices: isFree ? null : JSON.stringify(sizePrices.filter(s => s.enabled).map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) }))),
+        size_prices: isFree ? null : sizePrices.filter(s => s.enabled).map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
         is_free: isFree,
         owner_commission: ownerCommission,
         organizer_percent: ownerCommission * 100,
@@ -293,7 +293,9 @@ export default function CreateAlbumPage() {
       }
       setSuccessData({ albumId, shareLink: shareUrl });
     } catch (err: unknown) {
-      setErrors({ name: err instanceof Error ? err.message : 'Алдаа гарлаа' });
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
+      console.error('Album create error:', err);
+      setErrors({ name: msg });
     } finally {
       setSaving(false);
     }
