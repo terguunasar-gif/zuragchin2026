@@ -237,11 +237,11 @@ export default function DashboardPage() {
             <h1 className="text-white text-3xl font-bold mb-1.5">
               Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
             </h1>
-            {/* Role switcher tabs */}
+            {/* Role switcher tabs — дараалал тогтмол: Худалдан авагч → Зурагчин → Зохион байгуулагч */}
             {(isPhotographer || isOrganizer) && (
               <div className="flex gap-1 mt-3 bg-white/5 border border-white/10 rounded-xl p-1 w-fit flex-wrap">
                 <button onClick={() => setActiveRole('buyer')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'buyer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}>
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'buyer' ? 'bg-white/15 text-white' : 'text-stone-400 hover:text-white'}`}>
                   <ShoppingBag className="w-4 h-4" />Худалдан авагч
                 </button>
                 {isPhotographer && (
