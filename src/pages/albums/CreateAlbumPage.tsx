@@ -122,13 +122,13 @@ export default function CreateAlbumPage() {
   const [downloadPrice, setDownloadPrice] = useState('');
 
   const [sizePrices, setSizePrices] = useState([
-    { size: '10x15',  label: '10x15 см  — 1200x1800px  (Стандарт)',      price: '', enabled: true  },
-    { size: '13x18',  label: '13x18 см  — 1535x2126px  (Жижиг)',         price: '', enabled: true  },
-    { size: '15x21',  label: '15x21 см  — 1772x2480px  (A5)',            price: '', enabled: false },
-    { size: '20x30',  label: '20x30 см  — 2362x3543px  (Хагас постер)',  price: '', enabled: false },
-    { size: '30x40',  label: '30x40 см  — 3543x4724px  (Том хэвлэл)',   price: '', enabled: false },
-    { size: '40x60',  label: '40x60 см  — 4724x7087px  (Постер)',        price: '', enabled: false },
-    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Хэвлэлд бэлэн)', price: '', enabled: true  },
+    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Татаж авах)', price: '', enabled: true  },
+    { size: '10x15',  label: '10x15 см  — 1200x1800px  (Стандарт)',          price: '', enabled: true  },
+    { size: '13x18',  label: '13x18 см  — 1535x2126px  (Жижиг)',             price: '', enabled: true  },
+    { size: '15x21',  label: '15x21 см  — 1772x2480px  (A5)',                price: '', enabled: false },
+    { size: '20x30',  label: '20x30 см  — 2362x3543px  (Хагас постер)',      price: '', enabled: false },
+    { size: '30x40',  label: '30x40 см  — 3543x4724px  (Том хэвлэл)',       price: '', enabled: false },
+    { size: '40x60',  label: '40x60 см  — 4724x7087px  (Постер)',            price: '', enabled: false },
   ]);
   function updateSizePrice(size: string, field: 'price' | 'enabled', value: string | boolean) {
     setSizePrices(prev => prev.map(sp => sp.size === size ? { ...sp, [field]: value } : sp));
