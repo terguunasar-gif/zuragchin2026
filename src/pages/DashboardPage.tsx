@@ -75,9 +75,8 @@ export default function DashboardPage() {
   }, []);
 
   async function loadOrganizerAlbums() {
-    const { data: userData } = await supabase.auth.getUser();
-    const uid = userData?.user?.id;
-    if (!uid) return;
+    // profile.id === auth.uid() гэдэг баталгаажсан
+    const uid = profile!.id;
     
     const { data, error } = await supabase
       .from('albums')
@@ -86,7 +85,7 @@ export default function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(20);
     
-    console.log('Albums loaded:', data, 'uid:', uid, 'error:', error);
+    if (error) console.error('loadOrganizerAlbums error:', error);
     setAlbums(data ?? []);
   }
 
