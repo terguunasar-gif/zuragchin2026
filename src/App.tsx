@@ -17,6 +17,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import EventListingsPage from './pages/EventListingsPage';
 import HomePage from './pages/HomePage';
 import PhotographersPage from './pages/PhotographersPage';
+import PhotographerDetailPage from './pages/PhotographerDetailPage';
 
 export default function App() {
   return (
@@ -30,62 +31,35 @@ export default function App() {
           <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/create"
-            element={
-              <ProtectedRoute>
-                <CreateAlbumPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><CreateAlbumPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/:albumId"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/:albumId/upload"
-            element={
-              <ProtectedRoute>
-                <PhotoUploadPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><PhotoUploadPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/:albumId/photos"
-            element={
-              <ProtectedRoute>
-                <AlbumPhotosPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><AlbumPhotosPage /></ProtectedRoute>}
           />
           <Route
             path="/albums"
-            element={
-              <ProtectedRoute>
-                <AlbumsPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><AlbumsPage /></ProtectedRoute>}
           />
           <Route
             path="/admin"
-            element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            }
+            element={<AdminRoute><AdminDashboard /></AdminRoute>}
           />
           <Route path="/listings" element={<EventListingsPage />} />
           <Route path="/photographers" element={<PhotographersPage />} />
+          <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
         </Routes>
