@@ -4,7 +4,7 @@ import {
   Camera, ChevronLeft, AlertCircle, Upload, X,
   Type, Image as ImageIcon, Phone, Mail, Facebook,
   Instagram, Link as LinkIcon, CheckCircle2, Copy,
-  Download, QrCode, UserPlus, Search, Trash2, Users, Plus,
+  Download, QrCode, UserPlus, Search, Trash2, Users, Plus, Clock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -149,6 +149,7 @@ export default function CreateAlbumPage() {
   const [saving, setSaving] = useState(false);
   const [successData, setSuccessData] = useState<{ albumId: string; shareLink: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const fixedFees = QPAY_FEE + PLATFORM_FEE;
   const availableForSplit = 1 - fixedFees;
@@ -721,8 +722,51 @@ export default function CreateAlbumPage() {
                 <div className="flex justify-between text-stone-400"><span>Үнэ</span><span className="text-white">{isFree ? 'Үнэгүй' : `₮${parseFloat(downloadPrice || '0').toLocaleString()}`}</span></div>
               </div>
 
-              <button type="submit" disabled={saving}
-                className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-xl py-3.5 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              {/* 21 хоногийн мэдэгдэл */}
+              <div className="mt-4 bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-2.5 mb-3">
+                  <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-amber-300 text-sm font-semibold mb-1">Үнэгүй байршуулалтын хугацаа</p>
+                    <p className="text-stone-400 text-xs leading-relaxed">
+                      Таны цомог <span className="text-amber-400 font-semibold">21 хоног</span> үнэгүй байршина.
+                      Хугацаа дуусахад цомог автоматаар устана.
+                      Үргэлжлүүлэн байршуулахыг хүсвэл тухайн үед төлбөр төлөх шаардлагатай болно.
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-start gap-2.5 cursor-pointer group">
+                  <div className="relative flex-shrink-0 mt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={agreedToTerms}
+                      onChange={e => setAgreedToTerms(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                      agreedToTerms ? 'bg-amber-500 border-amber-500' : 'border-stone-600 group-hover:border-amber-500/50'
+                    }`}>
+                      {agreedToTerms && (
+                        <svg className="w-3 h-3 text-stone-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-stone-400 text-xs leading-relaxed group-hover:text-stone-300 transition-colors">
+                    Би 21 хоногийн үнэгүй байршуулалтын нөхцөлийг ойлгосон бөгөөд хугацаа дуусахад төлбөр төлөх эсвэл цомог устах болохыг зөвшөөрч байна.
+                  </span>
+                </label>
+              </div>
+
+              <button type="submit" disabled={saving || !agreedToTerms}
+                className={`w-full mt-3 font-semibold rounded-xl py-3.5 transition-all flex items-center justify-center gap-2 ${
+                  agreedToTerms
+                    ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 cursor-pointer'
+                    : 'bg-stone-700 text-stone-500 cursor-not-allowed'
+                } disabled:opacity-60`}>
                 {saving ? <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <><QrCode className="w-5 h-5" />Цомог үүсгэж QR код гаргах</>}
               </button>
               <button type="button" onClick={() => navigate('/dashboard')} className="w-full mt-3 text-stone-400 hover:text-white transition-colors py-2 text-sm">Цуцлах</button>
