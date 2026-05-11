@@ -75,10 +75,14 @@ export default function DashboardPage() {
   }, []);
 
   async function loadOrganizerAlbums() {
+    // Try both profile.id and user.id (auth uid)
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData?.user?.id ?? profile!.id;
+    
     const { data } = await supabase
       .from('albums')
       .select('id, name, title, event_date, status, created_at')
-      .eq('owner_id', profile!.id)
+      .eq('owner_id', uid)
       .order('created_at', { ascending: false })
       .limit(20);
     setAlbums(data ?? []);
@@ -169,6 +173,11 @@ export default function DashboardPage() {
   }
 
   const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
+
+  function albumExpiryDays(createdAt: string): number {
+    const expiry = new Date(new Date(createdAt).getTime() + 21 * 24 * 60 * 60 * 1000);
+    return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  }
   const walletStr = walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0';
 
   const statusLabel: Record<string, { label: string; color: string }> = {
@@ -351,10 +360,25 @@ export default function DashboardPage() {
                         <span className={`text-xs px-2.5 py-1 rounded-full border ${st.color}`}>{st.label}</span>
                       </div>
                       <h3 className="text-white font-semibold mb-1 truncate">{displayName}</h3>
-                      <div className="flex items-center gap-1.5 text-stone-500 text-xs mb-4">
+                      <div className="flex items-center gap-1.5 text-stone-500 text-xs">
                         <Calendar className="w-3.5 h-3.5" />
                         {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </div>
+                      {/* Expiry countdown */}
+                      {(() => {
+                        const days = albumExpiryDays(album.created_at);
+                        return (
+                          <div className={`flex items-center gap-1.5 text-xs mt-1 mb-3 ${
+                            days <= 3 ? 'text-red-400' : days <= 7 ? 'text-amber-400' : 'text-stone-500'
+                          }`}>
+                            <Clock className="w-3 h-3 flex-shrink-0" />
+                            {days === 0
+                              ? <span className="text-red-400 font-semibold">Өнөөдөр дуусна!</span>
+                              : <span>{days} хоног үлдлээ</span>
+                            }
+                          </div>
+                        );
+                      })()}
                       <div className="flex gap-2">
                         <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/upload`); }}
                           className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 rounded-lg transition-colors">
