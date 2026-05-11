@@ -75,21 +75,25 @@ export default function DashboardPage() {
   }, []);
 
   async function loadOrganizerAlbums() {
-    // Try both profile.id and user.id (auth uid)
     const { data: userData } = await supabase.auth.getUser();
-    const uid = userData?.user?.id ?? profile!.id;
+    const uid = userData?.user?.id;
+    if (!uid) return;
     
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('albums')
       .select('id, name, title, event_date, status, created_at')
       .eq('owner_id', uid)
       .order('created_at', { ascending: false })
       .limit(20);
+    
+    console.log('Albums loaded:', data, 'uid:', uid, 'error:', error);
     setAlbums(data ?? []);
   }
 
   async function loadPendingCount() {
-    const albumIds = (await supabase.from('albums').select('id').eq('owner_id', profile!.id))
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData?.user?.id ?? profile!.id;
+    const albumIds = (await supabase.from('albums').select('id').eq('owner_id', uid))
       .data?.map((a: any) => a.id) ?? [];
     if (albumIds.length === 0) return;
     const { count } = await supabase
