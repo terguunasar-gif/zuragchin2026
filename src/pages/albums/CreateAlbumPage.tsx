@@ -122,7 +122,7 @@ export default function CreateAlbumPage() {
   const [downloadPrice, setDownloadPrice] = useState('');
 
   const [sizePrices, setSizePrices] = useState([
-    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Татаж авах)', price: '', enabled: true  },
+    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Татаж авах)', price: '1000', enabled: true  },
     { size: '10x15',  label: '10x15 см  — 1200x1800px  (Стандарт)',          price: '', enabled: true  },
     { size: '13x18',  label: '13x18 см  — 1535x2126px  (Жижиг)',             price: '', enabled: true  },
     { size: '15x21',  label: '15x21 см  — 1772x2480px  (A5)',                price: '', enabled: false },
@@ -617,6 +617,19 @@ export default function CreateAlbumPage() {
                 {!isFree && (
                   <div className="space-y-4">
                     {/* Size-based pricing table */}
+                    {/* Warning notice */}
+                    <div className="bg-red-500/8 border border-red-500/20 rounded-xl p-3 flex items-start gap-2.5">
+                      <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <AlertCircle className="w-3 h-3 text-red-400" />
+                      </div>
+                      <div className="text-xs text-stone-400 leading-relaxed">
+                        <span className="text-red-400 font-semibold">Анхааруулга:</span> Цомог үүсгэснээс хойш <span className="text-amber-400 font-semibold">21 хоног</span> үнэгүй байршина.
+                        21 хоног дууссаны дараа цомог <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй болно.
+                        7 хоног дууссаны дараа цомог <span className="text-red-400 font-semibold">бүр мөсөн устана</span>.
+                        Үргэлжлүүлэн байршуулахыг хүсвэл цаг тухайд нь төлбөр төлнө үү.
+                      </div>
+                    </div>
+
                     <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
                       <div className="grid grid-cols-[80px_1fr_140px_60px] gap-px bg-white/5 text-xs font-medium">
                         <div className="bg-stone-900 px-3 py-2 text-stone-400">Хэмжээ</div>
@@ -625,8 +638,11 @@ export default function CreateAlbumPage() {
                         <div className="bg-stone-900 px-3 py-2 text-stone-400">✓</div>
                       </div>
                       {sizePrices.map((sp, i) => (
-                        <div key={sp.size} className={`grid grid-cols-[80px_1fr_140px_60px] gap-px ${i % 2 === 0 ? 'bg-white/3' : ''}`}>
-                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
+                        <div key={sp.size} className={`grid grid-cols-[80px_1fr_140px_60px] gap-px ${
+                          sp.size === 'digital' ? 'bg-purple-500/8 border-b border-purple-500/20' : i % 2 === 0 ? 'bg-white/3' : ''
+                        }`}>
+                          <div className={`px-3 py-2.5 flex items-center ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
+                            {sp.size === 'digital' && <span className="absolute -mt-5 text-xs text-purple-400 font-semibold"></span>}
                             <span className={`text-xs font-bold px-2 py-0.5 rounded whitespace-nowrap ${
                               sp.size === 'digital' ? 'bg-purple-500/20 text-purple-400' :
                               i === 0 ? 'bg-blue-500/20 text-blue-400' :
@@ -637,10 +653,10 @@ export default function CreateAlbumPage() {
                               'bg-red-500/20 text-red-400'
                             }`}>{sp.size}</span>
                           </div>
-                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
-                            <span className="text-stone-400 text-xs font-mono">{sp.label}</span>
+                          <div className={`px-3 py-2.5 flex items-center ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
+                            <span className={`text-xs font-mono ${sp.size === 'digital' ? 'text-purple-300 font-semibold' : 'text-stone-400'}`}>{sp.label}</span>
                           </div>
-                          <div className="bg-stone-900/60 px-2 py-1.5">
+                          <div className={`px-2 py-1.5 ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
                             <div className="relative">
                               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500 text-xs">₮</span>
                               <input
@@ -654,7 +670,7 @@ export default function CreateAlbumPage() {
                               />
                             </div>
                           </div>
-                          <div className="bg-stone-900/60 px-3 py-2.5 flex items-center">
+                          <div className={`px-3 py-2.5 flex items-center ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
                             <button
                               type="button"
                               onClick={() => updateSizePrice(sp.size, 'enabled', !sp.enabled)}
@@ -752,12 +768,22 @@ export default function CreateAlbumPage() {
                     <Clock className="w-3 h-3 text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-amber-300 text-sm font-semibold mb-1">Үнэгүй байршуулалтын хугацаа</p>
-                    <p className="text-stone-400 text-xs leading-relaxed">
-                      Таны цомог <span className="text-amber-400 font-semibold">21 хоног</span> үнэгүй байршина.
-                      Хугацаа дуусахад цомог автоматаар устана.
-                      Үргэлжлүүлэн байршуулахыг хүсвэл тухайн үед төлбөр төлөх шаардлагатай болно.
-                    </p>
+                    <p className="text-amber-300 text-sm font-semibold mb-2">Үнэгүй байршуулалтын хугацаа</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-bold flex-shrink-0">1</span>
+                        <span className="text-stone-300">Үүсгэснээс <span className="text-green-400 font-semibold">21 хоног</span> үнэгүй бүрэн идэвхтэй байна</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">2</span>
+                        <span className="text-stone-300">21 хоног дуусвал <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй горимд орно — цомог харагдахгүй болно</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center font-bold flex-shrink-0">3</span>
+                        <span className="text-stone-300">7 хоног дуусвал цомог болон бүх зураг <span className="text-red-400 font-semibold">бүр мөсөн устана</span></span>
+                      </div>
+                    </div>
+                    <p className="text-stone-500 text-xs mt-2">Үргэлжлүүлэн байршуулахыг хүсвэл цаг тухайд нь төлбөр төлнө үү.</p>
                   </div>
                 </div>
                 <label className="flex items-start gap-2.5 cursor-pointer group">
