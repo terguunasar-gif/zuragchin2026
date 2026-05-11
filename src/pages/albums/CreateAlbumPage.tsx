@@ -1,4 +1,4 @@
-import { useState, useRef, FormEvent } from 'react';
+import { useState, useRef, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Camera, ChevronLeft, AlertCircle, Upload, X,
@@ -150,6 +150,26 @@ export default function CreateAlbumPage() {
   const [successData, setSuccessData] = useState<{ albumId: string; shareLink: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // Өөрийн ZUR-ID-г автоматаар ачаалах
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('photographer_profiles')
+      .select('user_id, display_name, zur_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.zur_id) {
+          setPhotographers([{
+            zur_id: data.zur_id,
+            user_id: data.user_id,
+            display_name: data.display_name || 'Та',
+            photographer_percent: 0,
+          }]);
+        }
+      });
+  }, [user]);
 
   const fixedFees = QPAY_FEE + PLATFORM_FEE;
   const availableForSplit = 1 - fixedFees;
@@ -422,11 +442,14 @@ export default function CreateAlbumPage() {
                 )}
                 {photographers.length > 0 && (
                   <div className="space-y-2">
-                    {photographers.map(p => (
-                      <div key={p.zur_id} className="bg-stone-900 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
-                        <div className="w-8 h-8 bg-amber-500/10 rounded-full flex items-center justify-center"><Camera className="w-4 h-4 text-amber-400" /></div>
+                    {photographers.map((p, idx) => (
+                      <div key={p.zur_id} className={`border rounded-xl px-4 py-3 flex items-center gap-3 ${idx === 0 && p.user_id === user?.id ? 'bg-amber-500/5 border-amber-500/20' : 'bg-stone-900 border-white/10'}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${idx === 0 && p.user_id === user?.id ? 'bg-amber-500/20' : 'bg-amber-500/10'}`}><Camera className="w-4 h-4 text-amber-400" /></div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white font-medium text-sm truncate">{p.display_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-medium text-sm truncate">{p.display_name}</p>
+                            {p.user_id === user?.id && <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full flex-shrink-0">Та</span>}
+                          </div>
                           <p className="text-stone-500 text-xs font-mono">{p.zur_id}</p>
                         </div>
                         {revenueModel === 'shared' && (
