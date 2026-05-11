@@ -53,8 +53,6 @@ const POSITION_LABEL: Record<WatermarkPosition, string> = {
 // ─── Fee breakdown constants ──────────────────────────────────────────────────
 const QPAY_FEE = 0.01;
 const PLATFORM_FEE = 0.03;
-const OWNER_COMMISSION_SHARED = 0.10;
-const PHOTOGRAPHER_SHARE_DEFAULT = 1 - QPAY_FEE - PLATFORM_FEE - OWNER_COMMISSION_SHARED; // 0.86
 const OWNER_COMMISSION_OWNED = 1 - QPAY_FEE - PLATFORM_FEE; // 0.96
 
 const PREVIEW_IMAGE = 'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop';
@@ -127,6 +125,7 @@ export default function CreateAlbumPage() {
   }
 
   // ── Search photographer by ZUR-ID ─────────────────────────────────────────
+  // ✅ ЗАСВАРЛАСАН: photographer_profiles хүснэгтээс zur_id-аар хайна
   async function addPhotographerByZurId() {
     setZurError('');
     const cleaned = zurIdInput.trim().toUpperCase();
@@ -139,10 +138,11 @@ export default function CreateAlbumPage() {
       return;
     }
     setSearchingZur(true);
+
     const { data, error } = await supabase
-      .from('profiles')
-      .select('id, name, photographer_id')
-      .eq('photographer_id', cleaned)
+      .from('photographer_profiles')
+      .select('user_id, display_name')
+      .eq('zur_id', cleaned)
       .maybeSingle();
 
     if (error || !data) {
@@ -151,14 +151,13 @@ export default function CreateAlbumPage() {
       return;
     }
 
-    // Default photographer percent = remaining / (count+1)
     const defaultPct = Math.floor((photographerPoolFraction * 100) / (photographers.length + 1));
     setPhotographers(prev => [
       ...prev,
       {
         zur_id: cleaned,
-        user_id: data.id,
-        display_name: data.name || cleaned,
+        user_id: data.user_id,
+        display_name: data.display_name || cleaned,
         photographer_percent: defaultPct,
       },
     ]);
@@ -238,7 +237,6 @@ export default function CreateAlbumPage() {
 
       if (error) throw error;
 
-      // Add pre-invited photographers to album_photographers (approved directly)
       if (photographers.length > 0) {
         const rows = photographers.map(p => ({
           album_id: albumId,
@@ -386,7 +384,6 @@ export default function CreateAlbumPage() {
               <div className="space-y-4">
                 <p className="text-stone-500 text-sm">ZUR-ID-ээр зурагчин нэмнэ үү. Нэмэгдсэн зурагчид шууд зөвшөөрөгдсөн байна.</p>
 
-                {/* ZUR-ID search */}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
@@ -420,7 +417,6 @@ export default function CreateAlbumPage() {
                   </div>
                 )}
 
-                {/* Photographer list */}
                 {photographers.length > 0 && (
                   <div className="space-y-2">
                     {photographers.map(p => (
@@ -460,7 +456,6 @@ export default function CreateAlbumPage() {
                       </div>
                     ))}
 
-                    {/* Percent summary */}
                     {revenueModel === 'shared' && (
                       <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs">
                         <div className="flex justify-between text-stone-400 mb-1">
@@ -642,7 +637,6 @@ export default function CreateAlbumPage() {
                 <p className="text-stone-600 text-xs mt-2 text-center">Худалдан авагчид ийм байдлаар усан тэмдэгтэй зурагнуудыг харна</p>
               </div>
 
-              {/* Summary card */}
               <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
                 <p className="text-stone-300 font-medium mb-2">Цомгийн тойм</p>
                 <div className="flex justify-between text-stone-400">
@@ -744,15 +738,13 @@ function FeeBreakdown({ price, revenueModel, organizerPercent, photographers }: 
       <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
         <p className="text-stone-300 text-sm font-medium mb-3">₮{price.toLocaleString()} үнийн задаргаа</p>
         {[
-          { label: 'QPay (1%)', amt: qpayAmt, pct: 1, color: 'text-stone-400' },
-          { label: 'Платформ (3%)', amt: platAmt, pct: 3, color: 'text-stone-300' },
-          { label: 'Таны хувь (96%)', amt: ownerAmt, pct: 96, color: 'text-amber-400' },
+          { label: 'QPay (1%)', amt: qpayAmt, color: 'text-stone-400' },
+          { label: 'Платформ (3%)', amt: platAmt, color: 'text-stone-300' },
+          { label: 'Таны хувь (96%)', amt: ownerAmt, color: 'text-amber-400' },
         ].map(r => (
-          <div key={r.label}>
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-stone-400">{r.label}</span>
-              <span className={r.color + ' font-medium'}>₮{r.amt.toLocaleString()}</span>
-            </div>
+          <div key={r.label} className="flex justify-between text-xs mb-1">
+            <span className="text-stone-400">{r.label}</span>
+            <span className={r.color + ' font-medium'}>₮{r.amt.toLocaleString()}</span>
           </div>
         ))}
       </div>
