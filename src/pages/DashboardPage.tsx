@@ -144,6 +144,14 @@ export default function DashboardPage() {
     await refreshProfile();
   }
 
+  async function addOrganizerRole() {
+    if (!profile || isOrganizer) return;
+    const newRoles = [...(profile.role ?? []), 'organizer'];
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
+    await refreshProfile();
+    setActiveRole('organizer');
+  }
+
   async function loadPublicAlbums() {
     const { data } = await supabase
       .from('albums')
@@ -263,6 +271,11 @@ export default function DashboardPage() {
             {!isPhotographer && (
               <button onClick={addPhotographerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl text-sm">
                 <Camera className="w-4 h-4" />Зурагчин болох
+              </button>
+            )}
+            {!isOrganizer && (
+              <button onClick={addOrganizerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl text-sm">
+                <FolderOpen className="w-4 h-4" />Зохион байгуулагч болох
               </button>
             )}
             <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">
