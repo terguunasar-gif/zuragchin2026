@@ -8,6 +8,7 @@ import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import CreateAlbumPage from './pages/albums/CreateAlbumPage';
+import AlbumEditPage from './pages/albums/AlbumEditPage';
 import AlbumsPage from './pages/albums/AlbumsPage';
 import PhotoUploadPage from './pages/photographer/PhotoUploadPage';
 import AlbumPhotosPage from './pages/photographer/AlbumPhotosPage';
@@ -40,6 +41,10 @@ export default function App() {
           <Route
             path="/dashboard/albums/:albumId"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/albums/:albumId/edit"
+            element={<ProtectedRoute><AlbumEditPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/:albumId/upload"
