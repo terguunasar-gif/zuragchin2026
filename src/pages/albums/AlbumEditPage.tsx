@@ -2,78 +2,88 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Save, AlertCircle, CheckCircle2,
-  Type, Image as ImageIcon, Upload, X, Loader2,
+  Type, Image as ImageIcon, Upload, X, Loader2, Plus,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
-type WatermarkType = 'text' | 'image';
-type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+type WatermarkPosition =
+  | 'top-left'    | 'top-center'    | 'top-right'
+  | 'middle-left' | 'middle-center' | 'middle-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+const POSITION_GRID: WatermarkPosition[][] = [
+  ['top-left',    'top-center',    'top-right'],
+  ['middle-left', 'middle-center', 'middle-right'],
+  ['bottom-left', 'bottom-center', 'bottom-right'],
+];
+
+const POSITION_LABELS: Record<WatermarkPosition, string> = {
+  'top-left': 'Зүүн дээр',    'top-center': 'Дунд дээр',    'top-right': 'Баруун дээр',
+  'middle-left': 'Зүүн дунд', 'middle-center': 'Дунд',       'middle-right': 'Баруун дунд',
+  'bottom-left': 'Зүүн доор', 'bottom-center': 'Дунд доор',  'bottom-right': 'Баруун доор',
+};
+
+interface WatermarkLayer {
+  id: string;
+  type: 'text' | 'logo';
+  text: string;
+  fontSize: number;
+  color: string;
+  logoUrl: string;
+  logoPreview: string;
+  position: WatermarkPosition;
+  opacity: number;
+}
 
 interface SizePrice { size: string; label: string; price: string; enabled: boolean; }
 
 const SIZE_PRICES_DEFAULT: SizePrice[] = [
-  { size: 'digital', label: 'Дижитал файл — Татаж авах',        price: '', enabled: true  },
-  { size: '10x15',   label: '10x15 см — 1200x1800px',           price: '', enabled: true  },
-  { size: '13x18',   label: '13x18 см — 1535x2126px',           price: '', enabled: false },
-  { size: '15x21',   label: '15x21 см — 1772x2480px (A5)',      price: '', enabled: false },
-  { size: '20x30',   label: '20x30 см — 2362x3543px',           price: '', enabled: false },
-  { size: '30x40',   label: '30x40 см — 3543x4724px',           price: '', enabled: false },
-  { size: '40x60',   label: '40x60 см — 4724x7087px (Постер)',  price: '', enabled: false },
+  { size: 'digital', label: 'Дижитал файл — Татаж авах',       price: '', enabled: true  },
+  { size: '10x15',   label: '10x15 см — 1200x1800px',          price: '', enabled: true  },
+  { size: '13x18',   label: '13x18 см — 1535x2126px',          price: '', enabled: false },
+  { size: '15x21',   label: '15x21 см — 1772x2480px (A5)',     price: '', enabled: false },
+  { size: '20x30',   label: '20x30 см — 2362x3543px',          price: '', enabled: false },
+  { size: '30x40',   label: '30x40 см — 3543x4724px',          price: '', enabled: false },
+  { size: '40x60',   label: '40x60 см — 4724x7087px (Постер)', price: '', enabled: false },
 ];
 
-const POSITIONS: { value: WatermarkPosition; label: string }[] = [
-  { value: 'top-left',     label: 'Зүүн дээр'  },
-  { value: 'top-right',    label: 'Баруун дээр' },
-  { value: 'bottom-left',  label: 'Зүүн доор'  },
-  { value: 'bottom-right', label: 'Баруун доор' },
-  { value: 'center',       label: 'Төв'         },
-];
+function makeTextLayer(): WatermarkLayer {
+  return { id: crypto.randomUUID(), type: 'text', text: '© Zuragchin.mn', fontSize: 24, color: '#ffffff', logoUrl: '', logoPreview: '', position: 'bottom-right', opacity: 70 };
+}
+function makeLogoLayer(): WatermarkLayer {
+  return { id: crypto.randomUUID(), type: 'logo', text: '', fontSize: 24, color: '#ffffff', logoUrl: '', logoPreview: '', position: 'bottom-right', opacity: 70 };
+}
 
 export default function AlbumEditPage() {
   const { albumId } = useParams<{ albumId: string }>();
   const { profile } = useAuth();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [error, setError]       = useState('');
 
-  // Basic info
-  const [albumName, setAlbumName] = useState('');
-  const [eventDate, setEventDate] = useState('');
+  const [albumName, setAlbumName]     = useState('');
+  const [eventDate, setEventDate]     = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState('draft');
-  const [isFree, setIsFree] = useState(false);
+  const [status, setStatus]           = useState('draft');
+  const [isFree, setIsFree]           = useState(false);
 
-  // Watermark
-  const [wmType, setWmType] = useState<WatermarkType>('text');
-  const [wmText, setWmText] = useState('');
-  const [wmPosition, setWmPosition] = useState<WatermarkPosition>('bottom-right');
-  const [wmOpacity, setWmOpacity] = useState(70);
-  const [wmLogoUrl, setWmLogoUrl] = useState('');
-  const [wmLogoPreview, setWmLogoPreview] = useState('');
+  const [layers, setLayers]           = useState<WatermarkLayer[]>([makeTextLayer()]);
+  const [activeId, setActiveId]       = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
-
-  // Pricing
-  const [sizePrices, setSizePrices] = useState<SizePrice[]>(SIZE_PRICES_DEFAULT);
-
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!albumId || !profile) return;
-    loadAlbum();
-  }, [albumId, profile]);
+  const [sizePrices, setSizePrices] = useState<SizePrice[]>(SIZE_PRICES_DEFAULT);
+
+  useEffect(() => { if (albumId && profile) loadAlbum(); }, [albumId, profile]);
 
   async function loadAlbum() {
     const { data, error } = await supabase
-      .from('albums')
-      .select('*')
-      .eq('id', albumId)
-      .eq('owner_id', profile!.id)
-      .maybeSingle();
-
+      .from('albums').select('*')
+      .eq('id', albumId).eq('owner_id', profile!.id).maybeSingle();
     if (error || !data) { setError('Цомог олдсонгүй'); setLoading(false); return; }
 
     setAlbumName(data.title || data.name || '');
@@ -81,37 +91,54 @@ export default function AlbumEditPage() {
     setDescription(data.description || '');
     setStatus(data.status || 'draft');
     setIsFree(data.is_free ?? false);
-    setWmType(data.watermark_type || 'text');
-    setWmText(data.watermark_value || '');
-    setWmPosition(data.watermark_position || 'bottom-right');
-    setWmOpacity(Math.round((data.watermark_opacity ?? 0.7) * 100));
-    setWmLogoUrl(data.watermark_logo_url || '');
-    setWmLogoPreview(data.watermark_logo_url || '');
 
-    // Load size_prices
+    if (data.watermark_layers && Array.isArray(data.watermark_layers) && data.watermark_layers.length > 0) {
+      setLayers(data.watermark_layers);
+      setActiveId(data.watermark_layers[0].id);
+    } else {
+      const l = makeTextLayer();
+      l.text     = data.watermark_value || '© Zuragchin.mn';
+      l.position = data.watermark_position || 'bottom-right';
+      l.opacity  = Math.round((data.watermark_opacity ?? 0.7) * 100);
+      if (data.watermark_type === 'image') {
+        l.type = 'logo';
+        l.logoUrl = data.watermark_logo_url || '';
+        l.logoPreview = data.watermark_logo_url || '';
+      }
+      setLayers([l]);
+      setActiveId(l.id);
+    }
+
     if (data.size_prices && Array.isArray(data.size_prices)) {
       const saved: any[] = data.size_prices;
       setSizePrices(SIZE_PRICES_DEFAULT.map(def => {
         const found = saved.find((s: any) => s.size === def.size);
-        if (found) return { ...def, price: String(found.price ?? ''), enabled: true };
-        return def;
+        return found ? { ...def, price: String(found.price ?? ''), enabled: true } : def;
       }));
     } else if (data.download_price) {
       setSizePrices(prev => prev.map(sp =>
-        sp.size === 'digital' ? { ...sp, price: String(data.download_price), enabled: true } : sp
-      ));
+        sp.size === 'digital' ? { ...sp, price: String(data.download_price), enabled: true } : sp));
     }
     setLoading(false);
   }
 
-  async function uploadLogo(file: File) {
+  function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  }
+  function addText() { const l = makeTextLayer(); setLayers(prev => [...prev, l]); setActiveId(l.id); }
+  function addLogo() { const l = makeLogoLayer(); setLayers(prev => [...prev, l]); setActiveId(l.id); }
+  function removeLayer(id: string) {
+    setLayers(prev => { const next = prev.filter(l => l.id !== id); if (activeId === id) setActiveId(next[0]?.id || ''); return next; });
+  }
+
+  async function handleLogoUpload(id: string, file: File) {
     setLogoUploading(true);
+    updateLayer(id, { logoPreview: URL.createObjectURL(file) });
     const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
     const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
     if (error) { setLogoUploading(false); return; }
     const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(path);
-    setWmLogoUrl(publicUrl);
-    setWmLogoPreview(URL.createObjectURL(file));
+    updateLayer(id, { logoUrl: publicUrl });
     setLogoUploading(false);
   }
 
@@ -122,31 +149,28 @@ export default function AlbumEditPage() {
   async function handleSave() {
     if (!albumName.trim()) { setError('Цомгийн нэр оруулна уу'); return; }
     setSaving(true); setError('');
-
+    const first = layers[0];
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
-
     const { error: err } = await supabase.from('albums').update({
-      title: albumName.trim(),
-      name: albumName.trim(),
-      event_date: eventDate,
-      description: description.trim(),
-      status,
-      is_free: isFree,
+      title: albumName.trim(), name: albumName.trim(),
+      event_date: eventDate, description: description.trim(),
+      status, is_free: isFree,
       download_price: isFree ? 0 : parseFloat(digitalPrice?.price || '0') || 0,
       size_prices: isFree ? null : activeSizes.map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
-      watermark_type: wmType,
-      watermark_value: wmType === 'text' ? wmText : wmLogoUrl,
-      watermark_position: wmPosition,
-      watermark_opacity: wmOpacity / 100,
-      watermark_logo_url: wmType === 'image' ? wmLogoUrl : null,
+      watermark_layers: layers,
+      watermark_type: first?.type === 'logo' ? 'image' : 'text',
+      watermark_value: first?.text || '',
+      watermark_position: first?.position || 'bottom-right',
+      watermark_opacity: (first?.opacity ?? 70) / 100,
+      watermark_logo_url: first?.type === 'logo' ? (first.logoUrl || null) : null,
     }).eq('id', albumId).eq('owner_id', profile!.id);
-
     setSaving(false);
     if (err) { setError(err.message); return; }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSaved(true); setTimeout(() => setSaved(false), 3000);
   }
+
+  const activeLayer = layers.find(l => l.id === activeId);
 
   if (loading) return (
     <div className="min-h-screen bg-stone-950 flex items-center justify-center">
@@ -158,6 +182,7 @@ export default function AlbumEditPage() {
 
   return (
     <div className="min-h-screen bg-stone-950">
+      {/* Header */}
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -196,6 +221,7 @@ export default function AlbumEditPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left column */}
           <div className="space-y-6">
+
             {/* Basic info */}
             <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
@@ -212,7 +238,8 @@ export default function AlbumEditPage() {
               </div>
               <div>
                 <label className="text-stone-400 text-xs mb-1.5 block">Тайлбар</label>
-                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Арга хэмжээний тухай…" className={inputCls + ' resize-none'} />
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+                  placeholder="Арга хэмжээний тухай…" className={inputCls + ' resize-none'} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -243,62 +270,146 @@ export default function AlbumEditPage() {
             <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <span className="w-6 h-6 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 text-xs">💧</span>
-                Усан тэмдэг
+                Усан тэмдгийн тохиргоо
               </h2>
 
-              {/* Type toggle */}
-              <div className="flex rounded-xl overflow-hidden border border-white/10">
-                <button type="button" onClick={() => setWmType('text')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-all ${wmType === 'text' ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>
-                  <Type className="w-4 h-4" />Текст
+              {/* Layer tabs */}
+              <div className="flex flex-wrap gap-2">
+                {layers.map((l, i) => {
+                  const sameType = layers.filter((x, j) => x.type === l.type && j <= i);
+                  const label = l.type === 'text' ? `Текст ${sameType.length}` : `Лого ${sameType.length}`;
+                  return (
+                    <button key={l.id} type="button" onClick={() => setActiveId(l.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        activeId === l.id
+                          ? 'bg-amber-500 text-stone-950'
+                          : 'bg-stone-800 text-stone-400 border border-white/10 hover:text-white'
+                      }`}>
+                      {l.type === 'text' ? <Type className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
+                      {label}
+                    </button>
+                  );
+                })}
+                <button type="button" onClick={addText}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 text-stone-400 border border-white/10 hover:text-white transition-all">
+                  <Plus className="w-3 h-3" /><Type className="w-3 h-3" /> Текст нэмэх
                 </button>
-                <button type="button" onClick={() => setWmType('image')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-all ${wmType === 'image' ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>
-                  <ImageIcon className="w-4 h-4" />Лого
+                <button type="button" onClick={addLogo}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 text-stone-400 border border-white/10 hover:text-white transition-all">
+                  <Plus className="w-3 h-3" /><ImageIcon className="w-3 h-3" /> Лого нэмэх
                 </button>
               </div>
 
-              {wmType === 'text' ? (
-                <div>
-                  <label className="text-stone-400 text-xs mb-1.5 block">Текст</label>
-                  <input value={wmText} onChange={e => setWmText(e.target.value)} placeholder="© Zuragchin.mn" className={inputCls} />
-                </div>
-              ) : (
-                <div>
-                  <label className="text-stone-400 text-xs mb-1.5 block">Лого зураг</label>
-                  <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => e.target.files?.[0] && uploadLogo(e.target.files[0])} />
-                  {wmLogoPreview ? (
-                    <div className="relative w-full h-24 bg-stone-900 rounded-xl overflow-hidden border border-white/10">
-                      <img src={wmLogoPreview} alt="logo" className="w-full h-full object-contain p-2" />
-                      <button onClick={() => { setWmLogoUrl(''); setWmLogoPreview(''); }}
-                        className="absolute top-2 right-2 w-6 h-6 bg-red-500/80 rounded-full flex items-center justify-center">
-                        <X className="w-3.5 h-3.5 text-white" />
-                      </button>
+              {/* Active layer editor */}
+              {activeLayer && (
+                <div className="bg-stone-900 border border-white/10 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {activeLayer.type === 'text'
+                        ? <Type className="w-4 h-4 text-amber-400" />
+                        : <ImageIcon className="w-4 h-4 text-amber-400" />}
+                      <span className="text-white text-sm font-medium">
+                        {activeLayer.type === 'text' ? 'Текст усан тэмдэг' : 'Лого усан тэмдэг'}
+                      </span>
                     </div>
-                  ) : (
-                    <button onClick={() => logoInputRef.current?.click()} disabled={logoUploading}
-                      className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-white/15 hover:border-amber-500/50 rounded-xl py-5 text-stone-500 hover:text-stone-300 transition-all text-sm">
-                      {logoUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      {logoUploading ? 'Байршуулж байна…' : 'Лого сонгох'}
-                    </button>
+                    {layers.length > 1 && (
+                      <button type="button" onClick={() => removeLayer(activeLayer.id)}
+                        className="w-6 h-6 flex items-center justify-center text-stone-500 hover:text-red-400 transition-colors">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* TEXT controls */}
+                  {activeLayer.type === 'text' && (
+                    <>
+                      <div>
+                        <label className="text-stone-400 text-xs mb-1.5 block">Текст</label>
+                        <input value={activeLayer.text}
+                          onChange={e => updateLayer(activeLayer.id, { text: e.target.value })}
+                          placeholder="© Zuragchin.mn"
+                          className="w-full bg-stone-800 border border-white/10 focus:border-amber-500/50 text-white rounded-xl px-4 py-2.5 outline-none transition-all placeholder:text-stone-600 text-sm" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-stone-400 text-xs mb-2 block">Фонт: {activeLayer.fontSize}px</label>
+                          <input type="range" min={8} max={72} step={1} value={activeLayer.fontSize}
+                            onChange={e => updateLayer(activeLayer.id, { fontSize: Number(e.target.value) })}
+                            className="w-full accent-amber-500" />
+                        </div>
+                        <div>
+                          <label className="text-stone-400 text-xs mb-2 block">Өнгө</label>
+                          <div className="flex items-center gap-2">
+                            <div className="relative w-9 h-9 rounded-lg overflow-hidden border border-white/20 flex-shrink-0 cursor-pointer">
+                              <div className="w-full h-full" style={{ background: activeLayer.color }} />
+                              <input type="color" value={activeLayer.color}
+                                onChange={e => updateLayer(activeLayer.id, { color: e.target.value })}
+                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                            </div>
+                            <span className="text-stone-400 text-xs font-mono">{activeLayer.color}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
+
+                  {/* LOGO controls */}
+                  {activeLayer.type === 'logo' && (
+                    <div>
+                      <label className="text-stone-400 text-xs mb-1.5 block">Лого зураг</label>
+                      <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
+                        onChange={e => { if (e.target.files?.[0]) handleLogoUpload(activeLayer.id, e.target.files[0]); }} />
+                      {activeLayer.logoPreview ? (
+                        <div className="relative w-full h-24 bg-stone-800 rounded-xl overflow-hidden border border-white/10">
+                          <img src={activeLayer.logoPreview} alt="logo" className="w-full h-full object-contain p-2" />
+                          <button type="button"
+                            onClick={() => updateLayer(activeLayer.id, { logoUrl: '', logoPreview: '' })}
+                            className="absolute top-2 right-2 w-6 h-6 bg-red-500/80 rounded-full flex items-center justify-center">
+                            <X className="w-3.5 h-3.5 text-white" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploading}
+                          className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-white/15 hover:border-amber-500/50 rounded-xl py-5 text-stone-500 hover:text-stone-300 transition-all text-sm">
+                          {logoUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          {logoUploading ? 'Байршуулж байна…' : 'Лого сонгох'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Opacity */}
+                  <div>
+                    <label className="text-stone-400 text-xs mb-2 block">
+                      Тунгалаг байдал: {activeLayer.opacity}%
+                    </label>
+                    <input type="range" min={10} max={100} step={1} value={activeLayer.opacity}
+                      onChange={e => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })}
+                      className="w-full accent-amber-500" />
+                  </div>
+
+                  {/* 3×3 Position grid */}
+                  <div>
+                    <label className="text-stone-400 text-xs mb-2 block">Байршил</label>
+                    <div className="inline-grid grid-cols-3 gap-2">
+                      {POSITION_GRID.flat().map(pos => (
+                        <button key={pos} type="button"
+                          onClick={() => updateLayer(activeLayer.id, { position: pos })}
+                          className={`w-11 h-11 rounded-lg flex items-center justify-center transition-all ${
+                            activeLayer.position === pos
+                              ? 'bg-amber-500'
+                              : 'bg-stone-800 border border-white/10 hover:border-amber-500/40'
+                          }`}>
+                          <span className={`w-2 h-2 rounded-full ${
+                            activeLayer.position === pos ? 'bg-stone-950' : 'bg-stone-500'
+                          }`} />
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-stone-500 text-xs mt-1.5">{POSITION_LABELS[activeLayer.position]}</p>
+                  </div>
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-stone-400 text-xs mb-1.5 block">Байршил</label>
-                  <select value={wmPosition} onChange={e => setWmPosition(e.target.value as WatermarkPosition)} className={inputCls}>
-                    {POSITIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-stone-400 text-xs mb-1.5 block">Тунгалаг байдал: {wmOpacity}%</label>
-                  <input type="range" min={10} max={100} value={wmOpacity} onChange={e => setWmOpacity(Number(e.target.value))}
-                    className="w-full accent-amber-500 mt-2" />
-                </div>
-              </div>
             </section>
           </div>
 
@@ -309,7 +420,6 @@ export default function AlbumEditPage() {
                 <span className="w-6 h-6 bg-green-500/20 rounded-lg flex items-center justify-center text-green-400 text-xs">₮</span>
                 Үнэ тариф
               </h2>
-
               {isFree ? (
                 <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-center">
                   <p className="text-green-400 text-sm font-medium">Үнэгүй татах идэвхтэй</p>
@@ -321,30 +431,27 @@ export default function AlbumEditPage() {
                     <span>Хэмжээ</span><span>Үнэ (₮)</span><span className="text-center">✓</span>
                   </div>
                   {sizePrices.map((sp) => (
-                    <div key={sp.size} className={`grid grid-cols-[1fr_130px_52px] items-center gap-1 px-3 py-2 border-b border-white/5 last:border-0 ${sp.size === 'digital' ? 'bg-purple-500/5' : ''}`}>
-                      <div>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                          sp.size === 'digital' ? 'bg-purple-500/20 text-purple-400' :
-                          sp.size === '10x15' ? 'bg-blue-500/20 text-blue-400' :
-                          sp.size === '13x18' ? 'bg-cyan-500/20 text-cyan-400' :
-                          sp.size === '15x21' ? 'bg-green-500/20 text-green-400' :
-                          sp.size === '20x30' ? 'bg-amber-500/20 text-amber-400' :
-                          sp.size === '30x40' ? 'bg-orange-500/20 text-orange-400' :
-                          'bg-red-500/20 text-red-400'
-                        }`}>{sp.size}</span>
-                      </div>
+                    <div key={sp.size} className="grid grid-cols-[1fr_130px_52px] items-center gap-1 px-3 py-2 border-b border-white/5 last:border-0">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded w-fit ${
+                        sp.size === 'digital' ? 'bg-purple-500/20 text-purple-400' :
+                        sp.size === '10x15'   ? 'bg-blue-500/20   text-blue-400'   :
+                        sp.size === '13x18'   ? 'bg-cyan-500/20   text-cyan-400'   :
+                        sp.size === '15x21'   ? 'bg-green-500/20  text-green-400'  :
+                        sp.size === '20x30'   ? 'bg-amber-500/20  text-amber-400'  :
+                        sp.size === '30x40'   ? 'bg-orange-500/20 text-orange-400' :
+                                                'bg-red-500/20    text-red-400'
+                      }`}>{sp.size}</span>
                       <div className="relative">
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500 text-xs">₮</span>
-                        <input type="number" value={sp.price} min={0}
+                        <input type="number" value={sp.price} min={0} placeholder="0"
                           onChange={e => updateSizePrice(sp.size, 'price', e.target.value)}
                           disabled={!sp.enabled}
-                          placeholder="0"
                           className="w-full bg-stone-800 disabled:bg-stone-900 disabled:text-stone-600 border border-white/10 focus:border-amber-500/50 text-white rounded-lg pl-6 pr-2 py-1.5 text-xs outline-none transition-all" />
                       </div>
                       <div className="flex justify-center">
                         <button type="button" onClick={() => updateSizePrice(sp.size, 'enabled', !sp.enabled)}
-                          className={`w-8 h-4.5 rounded-full transition-all relative flex-shrink-0 ${sp.enabled ? 'bg-amber-500' : 'bg-stone-700'}`}
-                          style={{ height: '18px' }}>
+                          style={{ height: '18px' }}
+                          className={`w-8 rounded-full transition-all relative flex-shrink-0 ${sp.enabled ? 'bg-amber-500' : 'bg-stone-700'}`}>
                           <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-all ${sp.enabled ? 'left-4' : 'left-0.5'}`} />
                         </button>
                       </div>
@@ -357,7 +464,7 @@ export default function AlbumEditPage() {
           </div>
         </div>
 
-        {/* Save button bottom */}
+        {/* Bottom buttons */}
         <div className="flex gap-3 pt-2">
           <button onClick={() => navigate('/dashboard')}
             className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-medium py-3 rounded-xl text-sm transition-all">
