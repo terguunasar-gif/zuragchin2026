@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -34,6 +34,16 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [qrModal, setQrModal] = useState<{ id: string; name: string } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function copyAlbumLink(albumId: string) {
+    const url = `${window.location.origin}/album/${albumId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
   const [pendingCount, setPendingCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -405,6 +415,10 @@ export default function DashboardPage() {
                           className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Eye className="w-3.5 h-3.5" />Харах
                         </button>
+                        <button onClick={e => { e.stopPropagation(); setQrModal({ id: album.id, name: album.title || album.name || '—' }); }}
+                          className="flex items-center justify-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <QrCode className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={e => { e.stopPropagation(); deleteAlbum(album.id); }}
                           className="flex items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
@@ -497,6 +511,56 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* QR Modal */}
+      {qrModal && (
+        <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setQrModal(null)}>
+          <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg truncate pr-4">{qrModal.name}</h3>
+              <button onClick={() => setQrModal(null)} className="text-stone-500 hover:text-white flex-shrink-0">
+                <Trash2 className="w-0 h-0" />
+                <span className="text-xl leading-none">×</span>
+              </button>
+            </div>
+
+            {/* QR Code using Google Charts API */}
+            <div className="bg-white rounded-xl p-4 flex items-center justify-center mb-4">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/album/${qrModal.id}`)}`}
+                alt="QR код"
+                className="w-48 h-48"
+              />
+            </div>
+
+            {/* Link */}
+            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
+              <Link className="w-4 h-4 text-stone-500 flex-shrink-0" />
+              <span className="text-stone-400 text-xs flex-1 truncate font-mono">
+                {window.location.origin}/album/{qrModal.id}
+              </span>
+              <button
+                onClick={() => copyAlbumLink(qrModal.id)}
+                className="flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 flex-shrink-0 transition-colors">
+                {linkCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {linkCopied ? 'Хуулагдлаа!' : 'Хуулах'}
+              </button>
+            </div>
+
+            {/* Download QR */}
+            <a
+              href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`${window.location.origin}/album/${qrModal.id}`)}`}
+              download={`qr-${qrModal.id}.png`}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold py-3 rounded-xl text-sm transition-colors">
+              <QrCode className="w-4 h-4" />QR код татаж авах
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
