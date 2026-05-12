@@ -160,7 +160,7 @@ export default function AlbumEditPage() {
       status, is_free: isFree,
       download_price: isFree ? 0 : parseFloat(digitalPrice?.price || '0') || 0,
       size_prices: isFree ? null : activeSizes.map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
-      watermark_layers: layers,
+      watermark_layers: layers.map(l => ({ ...l, logoPreview: '' })),
       watermark_type: first?.type === 'logo' ? 'image' : 'text',
       watermark_value: first?.text || '',
       watermark_position: first?.position || 'bottom-right',
