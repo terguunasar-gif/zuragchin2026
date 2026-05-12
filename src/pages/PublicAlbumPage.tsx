@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
- 
+
 export interface AlbumData {
   id: string;
   name: string;
@@ -25,7 +25,7 @@ export interface AlbumData {
   watermark_opacity?: number;
   watermark_logo_url?: string;
 }
- 
+
 export interface PhotoData {
   id: string;
   watermarked_url: string;
@@ -33,7 +33,7 @@ export interface PhotoData {
   photographer_id: string;
   print_prices: Record<string, number>;
 }
- 
+
 export interface CartItem {
   id: string;
   photoId: string;
@@ -44,7 +44,7 @@ export interface CartItem {
   printSize?: string;
   price: number;
 }
- 
+
 interface WatermarkLayer {
   id: string;
   type: 'text' | 'logo';
@@ -55,13 +55,13 @@ interface WatermarkLayer {
   position: string;
   opacity: number;
 }
- 
+
 const PRINT_SIZE_LABELS: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см (A5)',
   '20x30': '20×30 см', '30x40': '30×40 см', '40x60': '40×60 см',
   'A4': 'A4 (21×29.7)', '21x30': '21×30 см', 'digital': 'Дижитал файл',
 };
- 
+
 // Position → CSS classes
 const POS_STYLE: Record<string, React.CSSProperties> = {
   'top-left':      { top: '8%', left: '5%' },
@@ -80,55 +80,55 @@ const POS_STYLE: Record<string, React.CSSProperties> = {
   'bottom-right-legacy': { bottom: '8%', right: '5%' },
   'center':        { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' },
 };
- 
+
 function getPosStyle(pos: string): React.CSSProperties {
   return POS_STYLE[pos] ?? POS_STYLE['bottom-right'];
 }
- 
+
 export default function PublicAlbumPage() {
   const { shareLink } = useParams<{ shareLink: string }>();
   const navigate = useNavigate();
- 
+
   const [album, setAlbum] = useState<AlbumData | null>(null);
   const [photos, setPhotos] = useState<PhotoData[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
- 
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
- 
+
   useEffect(() => { if (shareLink) loadAlbum(shareLink); }, [shareLink]);
- 
+
   async function loadAlbum(link: string) {
     setLoading(true);
- 
+
     const { data: albumData } = await supabase
       .from('albums')
       .select('id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url')
       .or(`share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`)
       .eq('status', 'active')
       .maybeSingle();
- 
+
     if (!albumData) { setNotFound(true); setLoading(false); return; }
- 
+
     const { data: ownerData } = await supabase
       .from('profiles').select('name')
       .eq('id', albumData.owner_id).maybeSingle();
- 
+
     setAlbum({
       ...albumData,
       name: albumData.title || albumData.name,
       organizer_name: ownerData?.name ?? 'Зохион байгуулагч',
     });
- 
+
     const { data: photoData } = await supabase
       .from('photo_uploads')
       .select('id, preview_url, filename, photographer_id, print_prices')
       .eq('album_id', albumData.id)
       .order('created_at', { ascending: true });
- 
+
     const mapped: PhotoData[] = (photoData ?? []).map((p: any) => ({
       id: p.id,
       watermarked_url: p.preview_url,
@@ -136,11 +136,11 @@ export default function PublicAlbumPage() {
       photographer_id: p.photographer_id,
       print_prices: p.print_prices ?? {},
     }));
- 
+
     setPhotos(mapped);
     setLoading(false);
   }
- 
+
   const addToCart = useCallback((item: Omit<CartItem, 'id'>) => {
     const dup = cart.find(c =>
       c.photoId === item.photoId && c.type === item.type && c.printSize === item.printSize
@@ -148,10 +148,10 @@ export default function PublicAlbumPage() {
     if (dup) return;
     setCart(prev => [...prev, { ...item, id: crypto.randomUUID() }]);
   }, [cart]);
- 
+
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
   const cartTotal = cart.reduce((s, i) => s + i.price, 0);
- 
+
   if (loading) {
     return (
       <div className="min-h-screen bg-stone-950 flex items-center justify-center">
@@ -159,7 +159,7 @@ export default function PublicAlbumPage() {
       </div>
     );
   }
- 
+
   if (notFound || !album) {
     return (
       <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
@@ -173,10 +173,16 @@ export default function PublicAlbumPage() {
       </div>
     );
   }
- 
+
   // Build watermark layers for overlay
-  const wmLayers: WatermarkLayer[] = album.watermark_layers && Array.isArray(album.watermark_layers) && album.watermark_layers.length > 0
-    ? album.watermark_layers
+  // Supabase sometimes returns JSONB as string — parse if needed
+  let parsedLayers = album.watermark_layers;
+  if (typeof parsedLayers === 'string') {
+    try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
+  }
+
+  const wmLayers: WatermarkLayer[] = parsedLayers && Array.isArray(parsedLayers) && parsedLayers.length > 0
+    ? parsedLayers
     : album.watermark_type || album.watermark_value
       ? [{
           id: 'legacy',
@@ -189,7 +195,7 @@ export default function PublicAlbumPage() {
           opacity: (album.watermark_opacity ?? 0.7),
         }]
       : [];
- 
+
   return (
     <div className="min-h-screen bg-stone-950">
       {/* Header */}
@@ -216,7 +222,7 @@ export default function PublicAlbumPage() {
           </button>
         </div>
       </header>
- 
+
       {/* Album info */}
       <div className="max-w-7xl mx-auto px-6 py-8 border-b border-white/5">
         <h1 className="text-white text-3xl font-bold mb-3">{album.name}</h1>
@@ -243,7 +249,7 @@ export default function PublicAlbumPage() {
           </span>
         )}
       </div>
- 
+
       {/* Photos */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {photos.length === 0 ? (
@@ -292,7 +298,7 @@ export default function PublicAlbumPage() {
           </div>
         )}
       </main>
- 
+
       {/* Cart sidebar */}
       {cartOpen && (
         <CartSidebar
@@ -302,7 +308,7 @@ export default function PublicAlbumPage() {
           onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }}
         />
       )}
- 
+
       {checkoutOpen && album && (
         <CheckoutModal
           cart={cart} album={album}
@@ -317,7 +323,7 @@ export default function PublicAlbumPage() {
     </div>
   );
 }
- 
+
 // ─── PhotoCard ────────────────────────────────────────────────────────────────
 function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
   photo: PhotoData;
@@ -332,7 +338,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
   const downloadInCart  = inCart.some(c => c.type === 'download');
   const hasPrintPrices  = photo.print_prices && Object.keys(photo.print_prices).length > 0;
   const downloadPrice   = album.is_free ? 0 : album.download_price;
- 
+
   return (
     <div className="group bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden transition-all duration-200">
       {/* Image + watermark overlay */}
@@ -345,7 +351,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
           draggable={false}
           onContextMenu={e => e.preventDefault()}
         />
- 
+
         {/* Watermark layers overlay */}
         {wmLayers.map(layer => (
           <div
@@ -389,7 +395,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
             )}
           </div>
         ))}
- 
+
         {/* Cart badge */}
         {inCart.length > 0 && (
           <div className="absolute top-2 right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center z-10">
@@ -397,7 +403,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
           </div>
         )}
       </div>
- 
+
       {/* Buttons */}
       <div className="p-3 space-y-2">
         <button onClick={onAddDownload} disabled={downloadInCart}
@@ -414,7 +420,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
             {downloadPrice === 0 ? 'Үнэгүй' : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
- 
+
         {hasPrintPrices && (
           <div>
             <button onClick={onTogglePrintSelector}
@@ -452,7 +458,7 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
     </div>
   );
 }
- 
+
 // ─── CartSidebar ──────────────────────────────────────────────────────────────
 function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
   cart: CartItem[]; total: number;
