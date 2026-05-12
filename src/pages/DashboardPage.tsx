@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -407,6 +407,10 @@ export default function DashboardPage() {
                         );
                       })()}
                       <div className="flex gap-2">
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/edit`); }}
+                          className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/upload`); }}
                           className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Upload className="w-3.5 h-3.5" />Зураг нэмэх
