@@ -4,7 +4,7 @@ import {
   Camera, ChevronLeft, AlertCircle, Upload, X,
   Type, Image as ImageIcon, Phone, Mail, Facebook,
   Instagram, Link as LinkIcon, CheckCircle2, Copy,
-  Download, QrCode, UserPlus, Search, Trash2, Users, Plus, Clock,
+  Download, QrCode, UserPlus, Search, Trash2, Users, Plus, Clock, Info,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -150,6 +150,7 @@ export default function CreateAlbumPage() {
   const [successData, setSuccessData] = useState<{ albumId: string; shareLink: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   // Өөрийн ZUR-ID-г автоматаар ачаалах
   useEffect(() => {
@@ -819,6 +820,87 @@ export default function CreateAlbumPage() {
                 {saving ? <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <><QrCode className="w-5 h-5" />Цомог үүсгэж QR код гаргах</>}
               </button>
               <button type="button" onClick={() => navigate('/dashboard')} className="w-full mt-3 text-stone-400 hover:text-white transition-colors py-2 text-sm">Цуцлах</button>
+
+              {/* Pricing info button */}
+              <button type="button" onClick={() => setPricingOpen(true)}
+                className="w-full mt-2 flex items-center justify-center gap-2 text-stone-500 hover:text-amber-400 transition-colors py-2 text-xs">
+                <Info className="w-3.5 h-3.5" />Үнэ тариф харах
+              </button>
+
+              {/* Pricing modal */}
+              {pricingOpen && (
+                <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPricingOpen(false)}>
+                  <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-5">
+                      <h3 className="text-white font-bold text-lg">Үнэ тариф</h3>
+                      <button onClick={() => setPricingOpen(false)} className="text-stone-500 hover:text-white transition-colors">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Hosting duration */}
+                    <div className="mb-5">
+                      <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Байршуулалтын хугацаа</p>
+                      <div className="space-y-2">
+                        {[
+                          { period: '21 хоног', price: 'Үнэгүй', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' },
+                          { period: '1 сар',    price: '₮9,900',  color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+                          { period: '3 сар',    price: '₮24,900', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+                          { period: '6 сар',    price: '₮44,900', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+                          { period: '1 жил',    price: '₮79,900', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
+                        ].map(r => (
+                          <div key={r.period} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${r.bg}`}>
+                            <span className="text-stone-300 text-sm">{r.period}</span>
+                            <span className={`text-sm font-bold ${r.color}`}>{r.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Photo count pricing */}
+                    <div className="mb-5">
+                      <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Зургийн тоогоор (сарын)</p>
+                      <div className="space-y-2">
+                        {[
+                          { range: 'Хүртэл 500 зураг',  price: 'Багтсан',   color: 'text-green-400' },
+                          { range: '500–2,000 зураг',    price: '+₮5,000',   color: 'text-stone-300' },
+                          { range: '2,000–10,000 зураг', price: '+₮15,000',  color: 'text-stone-300' },
+                          { range: '10,000+ зураг',      price: '+₮35,000',  color: 'text-stone-300' },
+                        ].map(r => (
+                          <div key={r.range} className="flex items-center justify-between px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+                            <span className="text-stone-400 text-xs">{r.range}</span>
+                            <span className={`text-xs font-semibold ${r.color}`}>{r.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Platform commission */}
+                    <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
+                      <p className="text-amber-300 text-xs font-semibold mb-2">Платформын шимтгэл</p>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-stone-400">QPay шимтгэл</span>
+                          <span className="text-stone-300">1.5%</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-stone-400">Zuragchin.mn</span>
+                          <span className="text-stone-300">5%</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-semibold pt-1 border-t border-white/10">
+                          <span className="text-stone-300">Нийт</span>
+                          <span className="text-amber-400">6.5%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button onClick={() => setPricingOpen(false)}
+                      className="w-full mt-5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                      Хаах
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
