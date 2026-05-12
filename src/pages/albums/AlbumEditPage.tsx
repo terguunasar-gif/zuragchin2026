@@ -55,6 +55,12 @@ function makeLogoLayer(): WatermarkLayer {
   return { id: crypto.randomUUID(), type: 'logo', text: '', fontSize: 24, color: '#ffffff', logoUrl: '', logoPreview: '', position: 'bottom-right', opacity: 70 };
 }
 
+// DB-д хадгалахаас өмнө logoPreview-г хасна (blob URL хадгалагдахаас сэргийлэх)
+function stripPreview(layer: WatermarkLayer) {
+  const { logoPreview, ...rest } = layer;
+  return rest;
+}
+
 export default function AlbumEditPage() {
   const { albumId } = useParams<{ albumId: string }>();
   const { profile } = useAuth();
@@ -71,8 +77,8 @@ export default function AlbumEditPage() {
   const [status, setStatus]           = useState('draft');
   const [isFree, setIsFree]           = useState(false);
 
-  const [layers, setLayers]           = useState<WatermarkLayer[]>([makeTextLayer()]);
-  const [activeId, setActiveId]       = useState('');
+  const [layers, setLayers]               = useState<WatermarkLayer[]>([makeTextLayer()]);
+  const [activeId, setActiveId]           = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,34 +98,43 @@ export default function AlbumEditPage() {
     setStatus(data.status || 'draft');
     setIsFree(data.is_free ?? false);
 
+    // watermark_layers — JSONB string байж болно, parse хийнэ
     let wml = data.watermark_layers;
     if (typeof wml === 'string') { try { wml = JSON.parse(wml); } catch { wml = null; } }
+
     if (wml && Array.isArray(wml) && wml.length > 0) {
-      setLayers(wml);
-      setActiveId(wml[0].id);
+      // logoPreview-г logoUrl-аас дүүргэнэ (blob биш)
+      const restored = wml.map((l: WatermarkLayer) => ({
+        ...l,
+        logoPreview: l.logoUrl || '',
+      }));
+      setLayers(restored);
+      setActiveId(restored[0].id);
     } else {
+      // Legacy single watermark
       const l = makeTextLayer();
       l.text     = data.watermark_value || '© Zuragchin.mn';
-      l.position = data.watermark_position || 'bottom-right';
+      l.position = (data.watermark_position as WatermarkPosition) || 'bottom-right';
       l.opacity  = Math.round((data.watermark_opacity ?? 0.7) * 100);
-      if (data.watermark_type === 'image') {
-        l.type = 'logo';
-        l.logoUrl = data.watermark_logo_url || '';
-        l.logoPreview = data.watermark_logo_url || '';
+      if (data.watermark_type === 'image' && data.watermark_logo_url) {
+        l.type        = 'logo';
+        l.logoUrl     = data.watermark_logo_url;
+        l.logoPreview = data.watermark_logo_url;
       }
       setLayers([l]);
       setActiveId(l.id);
     }
 
+    // Pricing
     if (data.size_prices && Array.isArray(data.size_prices)) {
-      const saved: any[] = data.size_prices;
+      const sp: any[] = data.size_prices;
       setSizePrices(SIZE_PRICES_DEFAULT.map(def => {
-        const found = saved.find((s: any) => s.size === def.size);
+        const found = sp.find((s: any) => s.size === def.size);
         return found ? { ...def, price: String(found.price ?? ''), enabled: true } : def;
       }));
     } else if (data.download_price) {
-      setSizePrices(prev => prev.map(sp =>
-        sp.size === 'digital' ? { ...sp, price: String(data.download_price), enabled: true } : sp));
+      setSizePrices(prev => prev.map(s =>
+        s.size === 'digital' ? { ...s, price: String(data.download_price), enabled: true } : s));
     }
     setLoading(false);
   }
@@ -130,17 +145,33 @@ export default function AlbumEditPage() {
   function addText() { const l = makeTextLayer(); setLayers(prev => [...prev, l]); setActiveId(l.id); }
   function addLogo() { const l = makeLogoLayer(); setLayers(prev => [...prev, l]); setActiveId(l.id); }
   function removeLayer(id: string) {
-    setLayers(prev => { const next = prev.filter(l => l.id !== id); if (activeId === id) setActiveId(next[0]?.id || ''); return next; });
+    setLayers(prev => {
+      const next = prev.filter(l => l.id !== id);
+      if (activeId === id) setActiveId(next[0]?.id || '');
+      return next;
+    });
   }
 
   async function handleLogoUpload(id: string, file: File) {
     setLogoUploading(true);
+    // Blob preview харуулна
     updateLayer(id, { logoPreview: URL.createObjectURL(file) });
-    const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
-    const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
-    if (error) { setLogoUploading(false); return; }
+
+    const ext  = file.name.split('.').pop();
+    const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.${ext}`;
+    const { error: uploadErr } = await supabase.storage
+      .from('covers').upload(path, file, { upsert: true });
+
+    if (uploadErr) {
+      console.error('Logo upload error:', uploadErr);
+      setLogoUploading(false);
+      setError('Лого байршуулахад алдаа гарлаа: ' + uploadErr.message);
+      return;
+    }
+
     const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(path);
-    updateLayer(id, { logoUrl: publicUrl });
+    // publicUrl-г хадгална, logoPreview-г мөн publicUrl болгоно
+    updateLayer(id, { logoUrl: publicUrl, logoPreview: publicUrl });
     setLogoUploading(false);
   }
 
@@ -151,25 +182,38 @@ export default function AlbumEditPage() {
   async function handleSave() {
     if (!albumName.trim()) { setError('Цомгийн нэр оруулна уу'); return; }
     setSaving(true); setError('');
-    const first = layers[0];
+
+    const first       = layers[0];
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
+
+    // logoPreview хасаад DB-д хадгална
+    const layersToSave = layers.map(stripPreview);
+
     const { error: err } = await supabase.from('albums').update({
-      title: albumName.trim(), name: albumName.trim(),
-      event_date: eventDate, description: description.trim(),
-      status, is_free: isFree,
+      title:          albumName.trim(),
+      name:           albumName.trim(),
+      event_date:     eventDate || null,
+      description:    description.trim(),
+      status,
+      is_free:        isFree,
       download_price: isFree ? 0 : parseFloat(digitalPrice?.price || '0') || 0,
-      size_prices: isFree ? null : activeSizes.map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
-      watermark_layers: layers.map(l => ({ ...l, logoPreview: '' })),
-      watermark_type: first?.type === 'logo' ? 'image' : 'text',
-      watermark_value: first?.text || '',
+      size_prices:    isFree ? null : activeSizes.map(s => ({
+        size: s.size, label: s.label, price: parseFloat(s.price) || 0,
+      })),
+      watermark_layers:  layersToSave,
+      // Legacy compat
+      watermark_type:    first?.type === 'logo' ? 'image' : 'text',
+      watermark_value:   first?.type === 'text' ? (first?.text || '') : '',
       watermark_position: first?.position || 'bottom-right',
-      watermark_opacity: (first?.opacity ?? 70) / 100,
-      watermark_logo_url: first?.type === 'logo' ? (first.logoUrl || null) : null,
+      watermark_opacity:  (first?.opacity ?? 70) / 100,
+      watermark_logo_url: first?.type === 'logo' ? (first?.logoUrl || null) : null,
     }).eq('id', albumId).eq('owner_id', profile!.id);
+
     setSaving(false);
     if (err) { setError(err.message); return; }
-    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
   }
 
   const activeLayer = layers.find(l => l.id === activeId);
@@ -376,6 +420,12 @@ export default function AlbumEditPage() {
                           {logoUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                           {logoUploading ? 'Байршуулж байна…' : 'Лого сонгох'}
                         </button>
+                      )}
+                      {logoUploading && (
+                        <p className="text-amber-400 text-xs mt-2">Лого байршуулж байна…</p>
+                      )}
+                      {activeLayer.logoUrl && !logoUploading && (
+                        <p className="text-green-400 text-xs mt-2 truncate">✓ {activeLayer.logoUrl}</p>
                       )}
                     </div>
                   )}
