@@ -92,9 +92,11 @@ export default function AlbumEditPage() {
     setStatus(data.status || 'draft');
     setIsFree(data.is_free ?? false);
 
-    if (data.watermark_layers && Array.isArray(data.watermark_layers) && data.watermark_layers.length > 0) {
-      setLayers(data.watermark_layers);
-      setActiveId(data.watermark_layers[0].id);
+    let wml = data.watermark_layers;
+    if (typeof wml === 'string') { try { wml = JSON.parse(wml); } catch { wml = null; } }
+    if (wml && Array.isArray(wml) && wml.length > 0) {
+      setLayers(wml);
+      setActiveId(wml[0].id);
     } else {
       const l = makeTextLayer();
       l.text     = data.watermark_value || '© Zuragchin.mn';
