@@ -29,13 +29,11 @@ export async function applyWatermark(
   opts: WatermarkOptions,
 ): Promise<Blob> {
   const img = await loadImage(sourceFile);
-
   const canvas = document.createElement('canvas');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, 0, 0);
-
   ctx.globalAlpha = opts.opacity ?? 0.70;
 
   if (opts.type === 'text' && opts.value) {
@@ -44,11 +42,9 @@ export async function applyWatermark(
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     ctx.lineWidth = Math.max(1, fontSize / 10);
-
     const metrics = ctx.measureText(opts.value);
     const textW = metrics.width;
     const textH = fontSize;
-
     const { x, y } = getPositionCoords(opts.position, canvas.width, canvas.height, textW, textH);
     ctx.strokeText(opts.value, x, y + textH);
     ctx.fillText(opts.value, x, y + textH);
@@ -59,16 +55,14 @@ export async function applyWatermark(
       const scale = Math.min(1, maxWmW / wmImg.naturalWidth);
       const wmW = Math.round(wmImg.naturalWidth * scale);
       const wmH = Math.round(wmImg.naturalHeight * scale);
-
       const { x, y } = getPositionCoords(opts.position, canvas.width, canvas.height, wmW, wmH);
       ctx.drawImage(wmImg, x, y, wmW, wmH);
-    } catch {
-      // fallback: skip watermark if image fails to load
+    } catch (err) {
+      console.error('Watermark image failed to load, skipping:', err);
     }
   }
 
   ctx.globalAlpha = 1.0;
-
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       blob => (blob ? resolve(blob) : reject(new Error('Canvas toBlob failed'))),
@@ -88,12 +82,25 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
+// fetch ашиглан CORS-оос зайлсхийж, blob URL болгон ачаалдаг
+async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Watermark fetch failed: ${response.status} ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(img);
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(err);
+    };
+    img.src = objectUrl;
   });
 }
