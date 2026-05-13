@@ -107,14 +107,15 @@ export default function PublicAlbumPage() {
 
     if (!albumData) { setNotFound(true); setLoading(false); return; }
 
+    // ✅ ЗАСАГДСАН МӨР: select('name') → select('*')
     const { data: ownerData } = await supabase
-      .from('profiles').select('name')
+      .from('profiles').select('*')
       .eq('id', albumData.owner_id).maybeSingle();
 
     setAlbum({
       ...albumData,
       name: albumData.title || albumData.name,
-      organizer_name: ownerData?.name ?? 'Зохион байгуулагч',
+      organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? 'Зохион байгуулагч',
     });
 
     const { data: photoData } = await supabase
@@ -166,7 +167,6 @@ export default function PublicAlbumPage() {
     );
   }
 
-  // Parse watermark layers
   let parsedLayers = album.watermark_layers;
   if (typeof parsedLayers === 'string') {
     try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
@@ -313,7 +313,6 @@ export default function PublicAlbumPage() {
   );
 }
 
-// ─── PhotoCard ────────────────────────────────────────────────────────────────
 function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
   photo: PhotoData;
   album: AlbumData;
@@ -339,8 +338,6 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
           draggable={false}
           onContextMenu={e => e.preventDefault()}
         />
-
-        {/* Watermark layers */}
         {wmLayers.map(layer => {
           const opacityVal = typeof layer.opacity === 'number'
             ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity)
@@ -352,42 +349,29 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
               style={{ ...getPosStyle(layer.position), opacity: opacityVal }}
             >
               {layer.type === 'text' && layer.text && (
-                <span
-                  style={{
-                    fontSize: `clamp(8px, ${(layer.fontSize ?? 20) * 0.22}vw, ${layer.fontSize ?? 20}px)`,
-                    color: layer.color || '#ffffff',
-                    textShadow: '0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)',
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    letterSpacing: '0.03em',
-                    userSelect: 'none',
-                    display: 'block',
-                  }}
-                >
+                <span style={{
+                  fontSize: `clamp(8px, ${(layer.fontSize ?? 20) * 0.22}vw, ${layer.fontSize ?? 20}px)`,
+                  color: layer.color || '#ffffff',
+                  textShadow: '0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)',
+                  fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: '0.03em',
+                  userSelect: 'none', display: 'block',
+                }}>
                   {layer.text}
                 </span>
               )}
               {layer.type === 'logo' && layer.logoUrl && (
-                <img
-                  src={layer.logoUrl}
-                  alt="watermark"
-                  draggable={false}
+                <img src={layer.logoUrl} alt="watermark" draggable={false}
                   style={{
-                    width: `${layer.logoSize ?? 20}%`,
-                    maxWidth: `${layer.logoSize ?? 20}%`,
-                    minWidth: '20px',
-                    height: 'auto',
-                    objectFit: 'contain',
+                    width: `${layer.logoSize ?? 20}%`, maxWidth: `${layer.logoSize ?? 20}%`,
+                    minWidth: '20px', height: 'auto', objectFit: 'contain',
                     filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.8))',
-                    userSelect: 'none',
-                    display: 'block',
+                    userSelect: 'none', display: 'block',
                   }}
                 />
               )}
             </div>
           );
         })}
-
         {inCart.length > 0 && (
           <div className="absolute top-2 right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center z-10">
             <span className="text-stone-950 text-xs font-bold">{inCart.length}</span>
@@ -449,7 +433,6 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
   );
 }
 
-// ─── CartSidebar ──────────────────────────────────────────────────────────────
 function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
   cart: CartItem[]; total: number;
   onRemove: (id: string) => void;
