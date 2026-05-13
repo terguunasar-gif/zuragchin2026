@@ -52,6 +52,7 @@ interface WatermarkLayer {
   fontSize: number;
   color: string;
   logoUrl: string;
+  logoSize?: number;
   position: string;
   opacity: number;
 }
@@ -385,8 +386,10 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
                 alt="watermark"
                 draggable={false}
                 style={{
-                  height: 'clamp(20px, 6%, 40px)',
-                  maxWidth: '30%',
+                  width: `${layer.logoSize ?? 20}%`,
+                  maxWidth: `${layer.logoSize ?? 20}%`,
+                  minWidth: '20px',
+                  height: 'auto',
                   objectFit: 'contain',
                   filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))',
                   userSelect: 'none',
