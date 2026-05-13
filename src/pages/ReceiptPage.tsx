@@ -37,6 +37,7 @@ interface PurchaseRow {
   created_at: string;
   photo_uploads: {
     preview_url: string;
+    original_url: string;
     filename: string;
   } | null;
 }
@@ -57,29 +58,27 @@ export default function ReceiptPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
-  const [signedUrls, setSignedUrls] = useState<SignedUrlItem[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState('');
+  const [purchases, setPurchases]     = useState<PurchaseRow[]>([]);
+  const [signedUrls, setSignedUrls]   = useState<SignedUrlItem[]>([]);
   const [photographers, setPhotographers] = useState<Record<string, PhotographerContact>>({});
   const [albumShareLink, setAlbumShareLink] = useState('');
+  const [downloading, setDownloading] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    if (invoiceId) load(invoiceId);
-  }, [invoiceId]);
+  useEffect(() => { if (invoiceId) load(invoiceId); }, [invoiceId]);
 
   async function load(id: string) {
     setLoading(true);
     setError('');
-
     try {
-      // Fetch purchases from DB
+      // purchases + photo_uploads (original_url нэмэгдсэн)
       const { data, error: dbErr } = await supabase
         .from('purchases')
         .select(`
           id, photo_id, type, print_size, gross_amount, payment_status,
           photographer_id, buyer_name, buyer_phone, album_id, created_at,
-          photo_uploads ( preview_url, filename )
+          photo_uploads ( preview_url, original_url, filename )
         `)
         .eq('qpay_invoice_id', id);
 
@@ -89,36 +88,32 @@ export default function ReceiptPage() {
       const rows = data as unknown as PurchaseRow[];
       setPurchases(rows);
 
-      // Fetch album share link
+      // Album share link
       if (rows[0]?.album_id) {
         const { data: albumData } = await supabase
-          .from('albums')
-          .select('share_link')
-          .eq('id', rows[0].album_id)
-          .maybeSingle();
+          .from('albums').select('share_link')
+          .eq('id', rows[0].album_id).maybeSingle();
         setAlbumShareLink(albumData?.share_link ?? '');
       }
 
-      // Fetch photographer contacts for print orders
+      // Photographer contacts for print orders
       const printPhotographerIds = [...new Set(
         rows.filter(r => r.type === 'print').map(r => r.photographer_id),
       )];
       if (printPhotographerIds.length > 0) {
         const { data: pData } = await supabase
-          .from('users')
-          .select('id, name, contact_info')
+          .from('users').select('id, name, contact_info')
           .in('id', printPhotographerIds);
         const map: Record<string, PhotographerContact> = {};
         for (const p of pData ?? []) map[p.id] = { name: p.name, contact_info: p.contact_info ?? {} };
         setPhotographers(map);
       }
 
-      // Fetch signed download URLs for paid download purchases
+      // Signed URLs (Edge Function) — fallback хэрэглэнэ
       const hasPaidDownloads = rows.some(r => r.type === 'download' && r.payment_status === 'paid');
       if (hasPaidDownloads) {
         const res = await fetch(`${QPAY_FN_URL}/signed-urls`, {
-          method: 'POST',
-          headers: fnHeaders,
+          method: 'POST', headers: fnHeaders,
           body: JSON.stringify({ invoiceId: id }),
         });
         if (res.ok) {
@@ -133,17 +128,78 @@ export default function ReceiptPage() {
     }
   }
 
-  const isPaid = purchases.every(p => p.payment_status === 'paid');
-  const buyerName = purchases[0]?.buyer_name ?? '';
-  const orderDate = purchases[0]?.created_at
+  // original_url-аас шууд татах
+  async function handleDownload(p: PurchaseRow) {
+    const originalUrl = p.photo_uploads?.original_url;
+    const filename    = p.photo_uploads?.filename ?? `photo_${p.id}`;
+
+    if (!originalUrl) {
+      // Edge Function signed URL-рүү буцна
+      const urlItem = signedUrls.find(u => u.purchaseId === p.id);
+      if (urlItem?.signedUrl) {
+        const a = document.createElement('a');
+        a.href = urlItem.signedUrl;
+        a.download = urlItem.filename || filename;
+        a.click();
+      }
+      return;
+    }
+
+    setDownloading(prev => ({ ...prev, [p.id]: true }));
+    try {
+      // Supabase storage path-аас татах
+      const url = new URL(originalUrl);
+      const pathParts = url.pathname.split('/object/public/');
+      if (pathParts.length === 2) {
+        const [bucketAndPath] = pathParts[1].split('?');
+        const slashIdx = bucketAndPath.indexOf('/');
+        const bucket = bucketAndPath.slice(0, slashIdx);
+        const filePath = bucketAndPath.slice(slashIdx + 1);
+        const { data, error } = await supabase.storage.from(bucket).download(filePath);
+        if (!error && data) {
+          const blobUrl = URL.createObjectURL(data);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+      }
+      // Fallback: шууд fetch
+      const res = await fetch(originalUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Edge Function signed URL fallback
+      const urlItem = signedUrls.find(u => u.purchaseId === p.id);
+      if (urlItem?.signedUrl) {
+        const a = document.createElement('a');
+        a.href = urlItem.signedUrl;
+        a.download = urlItem.filename || filename;
+        a.click();
+      }
+    } finally {
+      setDownloading(prev => ({ ...prev, [p.id]: false }));
+    }
+  }
+
+  const isPaid      = purchases.every(p => p.payment_status === 'paid');
+  const buyerName   = purchases[0]?.buyer_name ?? '';
+  const orderDate   = purchases[0]?.created_at
     ? new Date(purchases[0].created_at).toLocaleDateString('mn-MN', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
       })
     : '';
-  const totalPaid = purchases.reduce((s, p) => s + Number(p.gross_amount), 0);
-
+  const totalPaid   = purchases.reduce((s, p) => s + Number(p.gross_amount), 0);
   const downloadPurchases = purchases.filter(p => p.type === 'download');
-  const printPurchases = purchases.filter(p => p.type === 'print');
+  const printPurchases    = purchases.filter(p => p.type === 'print');
 
   const contactIcons: Record<string, React.ReactNode> = {
     phone:     <Phone className="w-4 h-4" />,
@@ -152,30 +208,27 @@ export default function ReceiptPage() {
     instagram: <Instagram className="w-4 h-4" />,
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-stone-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-stone-950 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-7 h-7 text-red-400" />
-          </div>
-          <p className="text-white font-semibold text-lg mb-2">Баримт олдсонгүй</p>
-          <p className="text-stone-400 text-sm mb-5">{error}</p>
-          <button onClick={() => navigate(-1)} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm">
-            Буцах
-          </button>
+  if (error) return (
+    <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
+      <div className="text-center max-w-sm">
+        <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertCircle className="w-7 h-7 text-red-400" />
         </div>
+        <p className="text-white font-semibold text-lg mb-2">Баримт олдсонгүй</p>
+        <p className="text-stone-400 text-sm mb-5">{error}</p>
+        <button onClick={() => navigate(-1)}
+          className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm">
+          Буцах
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -185,12 +238,8 @@ export default function ReceiptPage() {
           <div className="flex items-center gap-3">
             {albumShareLink && (
               <button
-                onClick={() => {
-                  const link = albumShareLink.replace(/^\/album\//, '');
-                  navigate(`/album/${link}`);
-                }}
-                className="text-stone-400 hover:text-white transition-colors"
-              >
+                onClick={() => navigate(`/album/${albumShareLink.replace(/^\/album\//, '')}`)}
+                className="text-stone-400 hover:text-white transition-colors">
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
@@ -209,19 +258,23 @@ export default function ReceiptPage() {
 
       <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
         {/* Status banner */}
-        <div className={`rounded-2xl p-6 flex items-start gap-4 ${isPaid ? 'bg-green-500/10 border border-green-500/20' : 'bg-amber-500/10 border border-amber-500/20'}`}>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${isPaid ? 'bg-green-500/15' : 'bg-amber-500/15'}`}>
+        <div className={`rounded-2xl p-6 flex items-start gap-4 ${isPaid
+          ? 'bg-green-500/10 border border-green-500/20'
+          : 'bg-amber-500/10 border border-amber-500/20'}`}>
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isPaid ? 'bg-green-500/15' : 'bg-amber-500/15'}`}>
             {isPaid
               ? <CheckCircle2 className="w-6 h-6 text-green-400" />
-              : <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
-            }
+              : <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />}
           </div>
           <div>
             <p className={`font-semibold text-lg ${isPaid ? 'text-green-400' : 'text-amber-400'}`}>
               {isPaid ? 'Төлбөр амжилттай хийгдлээ!' : 'Төлбөр хүлээгдэж байна'}
             </p>
             <p className="text-stone-400 text-sm mt-0.5">
-              {isPaid ? `Баярлалаа, ${buyerName}!` : 'Төлбөр баталгаажсаны дараа баримт харагдана.'}
+              {isPaid
+                ? `Баярлалаа, ${buyerName}! Усан тэмдэггүй зургуудаа доороос татаарай.`
+                : 'Төлбөр баталгаажсаны дараа баримт харагдана.'}
             </p>
           </div>
         </div>
@@ -253,42 +306,76 @@ export default function ReceiptPage() {
               <h3 className="text-white font-semibold">Татан авах зурагнууд</h3>
               <span className="ml-auto text-stone-500 text-xs">{downloadPurchases.length} зураг</span>
             </div>
+
+            {isPaid && (
+              <div className="px-5 py-3 bg-green-500/5 border-b border-green-500/10 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <p className="text-green-400 text-xs">
+                  Усан тэмдэггүй өндөр нарийвчлалтай зургуудыг татаж авах боломжтой болсон!
+                </p>
+              </div>
+            )}
+
             <div className="divide-y divide-white/5">
               {downloadPurchases.map(p => {
-                const urlItem = signedUrls.find(u => u.purchaseId === p.id);
+                const hasOriginal = !!p.photo_uploads?.original_url;
+                const urlItem     = signedUrls.find(u => u.purchaseId === p.id);
+                const canDownload = isPaid && (hasOriginal || !!urlItem?.signedUrl);
+                const isLoading   = downloading[p.id];
+
                 return (
                   <div key={p.id} className="flex items-center gap-4 px-5 py-3">
-                    {p.photo_uploads?.preview_url && (
-                      <img
-                        src={p.photo_uploads.preview_url}
-                        alt={p.photo_uploads.filename}
-                        className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
-                      />
-                    )}
+                    {/* Preview thumbnail (усан тэмдэгтэй) */}
+                    <div className="relative flex-shrink-0">
+                      {p.photo_uploads?.preview_url && (
+                        <img
+                          src={p.photo_uploads.preview_url}
+                          alt={p.photo_uploads.filename}
+                          className="w-14 h-14 object-cover rounded-lg"
+                        />
+                      )}
+                      {isPaid && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-white" />
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm truncate">{p.photo_uploads?.filename ?? 'Photo'}</p>
                       <p className="text-stone-500 text-xs">₮{Number(p.gross_amount).toLocaleString()}</p>
+                      {isPaid && (
+                        <p className="text-green-400 text-xs mt-0.5">✓ Усан тэмдэггүй</p>
+                      )}
                     </div>
-                    {isPaid && urlItem?.signedUrl ? (
-                      <a
-                        href={urlItem.signedUrl}
-                        download={urlItem.filename}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-stone-950 bg-amber-500 hover:bg-amber-400 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+
+                    {canDownload ? (
+                      <button
+                        onClick={() => handleDownload(p)}
+                        disabled={isLoading}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-stone-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 px-3 py-2 rounded-lg transition-colors flex-shrink-0"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        Татах
-                      </a>
+                        {isLoading
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Download className="w-3.5 h-3.5" />}
+                        {isLoading ? 'Татаж байна…' : 'Татах'}
+                      </button>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
-                        {isPaid ? 'Холбоос байхгүй' : 'Хүлээгдэж байна'}
+                        {isPaid ? 'Боломжгүй' : 'Хүлээгдэж байна'}
                       </span>
                     )}
                   </div>
                 );
               })}
             </div>
+
             <div className="px-5 py-3 bg-stone-950/30 border-t border-white/5">
-              <p className="text-stone-500 text-xs">Татах холбоосууд 24 цагийн дотор хүчинтэй.</p>
+              <p className="text-stone-500 text-xs">
+                {isPaid
+                  ? 'Татсан зургууд усан тэмдэггүй бөгөөд өндөр нарийвчлалтай байна.'
+                  : 'Татах холбоосууд 24 цагийн дотор хүчинтэй.'}
+              </p>
             </div>
           </div>
         )}
@@ -324,7 +411,7 @@ export default function ReceiptPage() {
                     {pg && (
                       <div className="bg-stone-950/40 rounded-xl p-3 space-y-1.5">
                         <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-2">
-                          Фотографчтой холбоо барих
+                          Фотографчтай холбоо барих
                         </p>
                         <p className="text-white text-sm font-medium">{pg.name}</p>
                         {Object.entries(pg.contact_info).map(([key, val]) => val ? (
@@ -349,12 +436,8 @@ export default function ReceiptPage() {
         {/* Back to album */}
         {albumShareLink && (
           <button
-            onClick={() => {
-              const link = albumShareLink.replace(/^\/album\//, '');
-              navigate(`/album/${link}`);
-            }}
-            className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3 rounded-xl transition-colors text-sm"
-          >
+            onClick={() => navigate(`/album/${albumShareLink.replace(/^\/album\//, '')}`)}
+            className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3 rounded-xl transition-colors text-sm">
             <ArrowLeft className="w-4 h-4" />
             Цомог руу буцах
           </button>
