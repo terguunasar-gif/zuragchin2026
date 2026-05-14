@@ -708,11 +708,11 @@ export default function CreateAlbumPage() {
             <div className="sticky top-24">
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <p className="text-stone-300 text-sm font-medium mb-3">Усан тэмдгийн урьдчилан харах</p>
-                {/* ── ЗАСВАР: overflow-hidden → overflow-clip (байршил зөв харагдана) ── */}
-                <div className="relative rounded-xl overflow-clip aspect-[3/2]">
+                <div className="relative rounded-xl overflow-hidden aspect-[3/2]">
                   <img src={PREVIEW_IMAGE} alt="preview" className="w-full h-full object-cover" />
                   {wmLayers.map(layer => (
-                    <div key={layer.id} className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`}>
+                    <div key={layer.id} className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`}
+                      style={{ maxWidth: '45%' }}>
                       {layer.type === 'text' && layer.text && (
                         <span className="font-semibold px-1 select-none whitespace-nowrap drop-shadow"
                           style={{ fontSize: `${Math.max(8, Math.round(layer.fontSize * 0.4))}px`, color: layer.color, opacity: layer.opacity / 100 }}>
@@ -726,8 +726,7 @@ export default function CreateAlbumPage() {
                           className="object-contain drop-shadow block"
                           style={{
                             opacity: layer.opacity / 100,
-                            width: `${Math.max(5, layer.imageSize * 0.6)}%`,
-                            maxWidth: '50%',
+                            width: `${layer.imageSize * 2}px`,
                             height: 'auto',
                           }}
                         />
