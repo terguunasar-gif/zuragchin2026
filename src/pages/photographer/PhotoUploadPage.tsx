@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, DragEvent, ChangeEvent } from
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, X, CheckCircle2, AlertCircle,
-  LogOut, User, Image as ImageIcon, Loader2, Tag, ChevronDown,
+  LogOut, User, Loader2, Tag, ChevronDown,
   ChevronUp, Eye,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,7 +13,7 @@ interface AlbumInfo {
   id: string;
   name: string;
   event_date: string;
-  watermark_type: 'text' | 'image';
+  watermark_type: 'text' | 'image' | 'layers';
   watermark_value: string;
   watermark_position: WatermarkPosition;
   owner_id: string;
@@ -64,7 +64,6 @@ export default function PhotoUploadPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Load album + verify access ─────────────────────────────────────────────
   useEffect(() => {
     if (!albumId || !profile) return;
     (async () => {
@@ -80,14 +79,12 @@ export default function PhotoUploadPage() {
         return;
       }
 
-      // ✅ Цомгийн эзэмшигч шууд нэвтэрч болно
       if (albumData.owner_id === profile.id) {
         setAlbum(albumData);
         setCheckingAccess(false);
         return;
       }
 
-      // Зурагчин бол album_photographers-с шалгана
       const { data: membership } = await supabase
         .from('album_photographers')
         .select('status')
@@ -104,7 +101,6 @@ export default function PhotoUploadPage() {
     })();
   }, [albumId, profile]);
 
-  // ── File handling ──────────────────────────────────────────────────────────
   function addFiles(incoming: File[]) {
     const valid = incoming.filter(f => ACCEPTED.includes(f.type) && f.size <= MAX_SIZE);
     const entries: FileEntry[] = valid.map(f => ({
@@ -157,7 +153,6 @@ export default function PhotoUploadPage() {
     });
   }
 
-  // ── Upload ─────────────────────────────────────────────────────────────────
   function setFileStatus(id: string, patch: Partial<FileEntry>) {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
   }
@@ -240,7 +235,6 @@ export default function PhotoUploadPage() {
   const anyUploading = files.some(f => f.status === 'uploading' || f.status === 'processing');
   const pendingCount = files.filter(f => f.status === 'idle').length;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   if (checkingAccess) {
     return (
       <div className="min-h-screen bg-stone-950 flex items-center justify-center">
@@ -268,6 +262,17 @@ export default function PhotoUploadPage() {
       </div>
     );
   }
+
+  // Усан тэмдгийн мэдээлэл харуулах
+  const wmTypeLabel = () => {
+    if (album?.watermark_type === 'layers') {
+      try {
+        const layers = JSON.parse(album.watermark_value);
+        return `${layers.length} давхарга`;
+      } catch { return 'Давхарга'; }
+    }
+    return album?.watermark_type === 'text' ? 'Текст' : 'Зураг';
+  };
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -397,8 +402,7 @@ export default function PhotoUploadPage() {
                 <Eye className="w-4 h-4 text-amber-400" />Усан тэмдэг
               </h3>
               <div className="space-y-2 text-sm">
-                <Row label="Төрөл" value={album?.watermark_type === 'text' ? 'Текст' : 'Зураг'} />
-                <Row label="Байршил" value={(album?.watermark_position ?? '').replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())} />
+                <Row label="Төрөл" value={wmTypeLabel()} />
                 <Row label="Тунгалаг байдал" value="70%" />
               </div>
             </div>
