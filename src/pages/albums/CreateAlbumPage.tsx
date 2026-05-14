@@ -19,15 +19,13 @@ type WatermarkPosition =
 interface WatermarkLayer {
   id: string;
   type: WatermarkType;
-  // text fields
   text: string;
   fontSize: number;
   opacity: number;
   color: string;
-  // image fields
   imagePreview: string;
-  // common
   position: WatermarkPosition;
+  imageSize: number;
 }
 
 interface FormErrors {
@@ -85,6 +83,7 @@ function newTextLayer(): WatermarkLayer {
     color: '#ffffff',
     imagePreview: '',
     position: 'bottom-right',
+    imageSize: 20,
   };
 }
 
@@ -98,6 +97,7 @@ function newImageLayer(): WatermarkLayer {
     color: '#ffffff',
     imagePreview: '',
     position: 'top-left',
+    imageSize: 20,
   };
 }
 
@@ -111,7 +111,6 @@ export default function CreateAlbumPage() {
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('draft');
 
-  // Multiple watermark layers
   const [wmLayers, setWmLayers] = useState<WatermarkLayer[]>([newTextLayer()]);
   const [activeLayerId, setActiveLayerId] = useState<string>(() => wmLayers[0].id);
   const imageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -122,13 +121,13 @@ export default function CreateAlbumPage() {
   const [downloadPrice, setDownloadPrice] = useState('');
 
   const [sizePrices, setSizePrices] = useState([
-    { size: 'digital',label: 'Дижитал файл — Оригинал хэмжээ (Татаж авах)', price: '1000', enabled: true  },
-    { size: '10x15',  label: '10x15 см  — 1200x1800px  (Стандарт)',          price: '', enabled: true  },
-    { size: '13x18',  label: '13x18 см  — 1535x2126px  (Жижиг)',             price: '', enabled: true  },
-    { size: '15x21',  label: '15x21 см  — 1772x2480px  (A5)',                price: '', enabled: false },
-    { size: '20x30',  label: '20x30 см  — 2362x3543px  (Хагас постер)',      price: '', enabled: false },
-    { size: '30x40',  label: '30x40 см  — 3543x4724px  (Том хэвлэл)',       price: '', enabled: false },
-    { size: '40x60',  label: '40x60 см  — 4724x7087px  (Постер)',            price: '', enabled: false },
+    { size: 'digital', label: 'Дижитал файл — Оригинал хэмжээ (Татаж авах)', price: '1000', enabled: true  },
+    { size: '10x15',   label: '10x15 см  — 1200x1800px  (Стандарт)',          price: '',     enabled: true  },
+    { size: '13x18',   label: '13x18 см  — 1535x2126px  (Жижиг)',             price: '',     enabled: true  },
+    { size: '15x21',   label: '15x21 см  — 1772x2480px  (A5)',                price: '',     enabled: false },
+    { size: '20x30',   label: '20x30 см  — 2362x3543px  (Хагас постер)',      price: '',     enabled: false },
+    { size: '30x40',   label: '30x40 см  — 3543x4724px  (Том хэвлэл)',        price: '',     enabled: false },
+    { size: '40x60',   label: '40x60 см  — 4724x7087px  (Постер)',            price: '',     enabled: false },
   ]);
   function updateSizePrice(size: string, field: 'price' | 'enabled', value: string | boolean) {
     setSizePrices(prev => prev.map(sp => sp.size === size ? { ...sp, [field]: value } : sp));
@@ -152,7 +151,6 @@ export default function CreateAlbumPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
 
-  // Өөрийн ZUR-ID-г автоматаар ачаалах
   useEffect(() => {
     if (!user) return;
     supabase
@@ -179,7 +177,6 @@ export default function CreateAlbumPage() {
 
   const activeLayer = wmLayers.find(l => l.id === activeLayerId) ?? wmLayers[0];
 
-  // ── Layer helpers ──────────────────────────────────────────────────────────
   function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
     setWmLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
   }
@@ -211,20 +208,17 @@ export default function CreateAlbumPage() {
     reader.readAsDataURL(file);
   }
 
-  // ── Photographer search ────────────────────────────────────────────────────
   async function addPhotographerByZurId() {
     setZurError('');
     const cleaned = zurIdInput.trim().toUpperCase();
     if (!cleaned.startsWith('ZUR-')) { setZurError('ZUR-XXXXX форматаар оруулна уу'); return; }
     if (photographers.find(p => p.zur_id === cleaned)) { setZurError('Энэ зурагчин аль хэдийн нэмэгдсэн байна'); return; }
     setSearchingZur(true);
-
     const { data, error } = await supabase
       .from('photographer_profiles')
       .select('user_id, display_name')
       .eq('zur_id', cleaned)
       .maybeSingle();
-
     if (error || !data) {
       setZurError('Энэ ZUR-ID-тэй зурагчин олдсонгүй');
       setSearchingZur(false);
@@ -232,10 +226,8 @@ export default function CreateAlbumPage() {
     }
     const defaultPct = Math.floor((photographerPoolFraction * 100) / (photographers.length + 1));
     setPhotographers(prev => [...prev, {
-      zur_id: cleaned,
-      user_id: data.user_id,
-      display_name: data.display_name || cleaned,
-      photographer_percent: defaultPct,
+      zur_id: cleaned, user_id: data.user_id,
+      display_name: data.display_name || cleaned, photographer_percent: defaultPct,
     }]);
     setZurIdInput('');
     setSearchingZur(false);
@@ -246,7 +238,6 @@ export default function CreateAlbumPage() {
     setPhotographers(prev => prev.map(p => p.zur_id === zur_id ? { ...p, photographer_percent: pct } : p));
   }
 
-  // ── Validation ─────────────────────────────────────────────────────────────
   function validate(): boolean {
     const errs: FormErrors = {};
     if (!albumName.trim()) errs.name = 'Цомгийн нэр оруулна уу';
@@ -265,7 +256,6 @@ export default function CreateAlbumPage() {
     return Object.keys(errs).length === 0;
   }
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
@@ -275,7 +265,6 @@ export default function CreateAlbumPage() {
       const shareLink = `/album/${albumId}`;
       const shareUrl = `${window.location.origin}${shareLink}`;
 
-      // Serialize all layers as JSON
       const watermarkValue = JSON.stringify(wmLayers.map(l => ({
         id: l.id,
         type: l.type,
@@ -285,6 +274,7 @@ export default function CreateAlbumPage() {
         color: l.color,
         imagePreview: l.imagePreview,
         position: l.position,
+        imageSize: l.imageSize,
       })));
 
       const contactInfo = { phone: contactPhone, email: contactEmail, facebook: contactFacebook, instagram: contactInstagram, other: contactOther };
@@ -336,7 +326,6 @@ export default function CreateAlbumPage() {
     window.open(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(successData.shareLink)}`, '_blank');
   }
 
-  // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-stone-950">
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
@@ -361,7 +350,6 @@ export default function CreateAlbumPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
 
-            {/* Basic Info */}
             <Section title="Үндсэн мэдээлэл" icon={<Camera className="w-4 h-4" />}>
               <div className="space-y-5">
                 <Field label="Цомгийн нэр" error={errors.name} required>
@@ -385,7 +373,6 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* Revenue Model */}
             <Section title="Орлогын загвар" icon={<span className="text-xs font-bold text-stone-400">%</span>}>
               <div className="space-y-4">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
@@ -417,7 +404,6 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* Photographers */}
             <Section title="Зурагчин нэмэх" icon={<Users className="w-4 h-4" />}>
               <div className="space-y-4">
                 <p className="text-stone-500 text-sm">ZUR-ID-ээр зурагчин нэмнэ үү. Нэмэгдсэн зурагчид шууд зөвшөөрөгдсөн байна.</p>
@@ -482,8 +468,6 @@ export default function CreateAlbumPage() {
             {/* ── Watermark Layers ── */}
             <Section title="Усан тэмдгийн тохиргоо" icon={<Type className="w-4 h-4" />}>
               <div className="space-y-4">
-
-                {/* Layer tabs */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {wmLayers.map((layer, idx) => (
                     <button key={layer.id} type="button"
@@ -503,7 +487,6 @@ export default function CreateAlbumPage() {
                       )}
                     </button>
                   ))}
-                  {/* Add buttons */}
                   <button type="button" onClick={() => addLayer('text')}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-dashed border-white/20 text-stone-500 hover:text-white hover:border-white/40 transition-all">
                     <Plus className="w-3 h-3" /><Type className="w-3 h-3" /> Текст нэмэх
@@ -514,7 +497,6 @@ export default function CreateAlbumPage() {
                   </button>
                 </div>
 
-                {/* Active layer editor */}
                 {activeLayer && (
                   <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
                     <div className="flex items-center gap-2 mb-1">
@@ -580,6 +562,16 @@ export default function CreateAlbumPage() {
                             <p className="text-xs opacity-70">Тунгалаг PNG зураг ашиглахыг зөвлөж байна</p>
                           </button>
                         )}
+                        {/* ── Лого хэмжээ slider ── */}
+                        <Field label={`Лого хэмжээ: ${activeLayer.imageSize}% (зургийн өргөнөөс)`}>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-stone-600 text-xs flex-shrink-0">5% жижиг</span>
+                            <input type="range" min={5} max={50} value={activeLayer.imageSize}
+                              onChange={e => updateLayer(activeLayer.id, { imageSize: Number(e.target.value) })}
+                              className="flex-1 accent-amber-500" />
+                            <span className="text-stone-600 text-xs flex-shrink-0">50% том</span>
+                          </div>
+                        </Field>
                         <Field label={`Тунгалаг байдал: ${activeLayer.opacity}%`}>
                           <input type="range" min={10} max={100} value={activeLayer.opacity}
                             onChange={e => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })}
@@ -588,7 +580,6 @@ export default function CreateAlbumPage() {
                       </>
                     )}
 
-                    {/* Position grid */}
                     <Field label="Байршил">
                       <div className="grid grid-cols-3 gap-1.5 w-fit mt-1">
                         {POSITIONS.map(pos => (
@@ -608,7 +599,6 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* Pricing */}
             <Section title="Үнэлгээ" icon={<span className="text-xs font-bold text-stone-400">₮</span>}>
               <div className="space-y-5">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
@@ -617,8 +607,6 @@ export default function CreateAlbumPage() {
                 </div>
                 {!isFree && (
                   <div className="space-y-4">
-                    {/* Size-based pricing table */}
-                    {/* Warning notice */}
                     <div className="bg-red-500/8 border border-red-500/20 rounded-xl p-3 flex items-start gap-2.5">
                       <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                         <AlertCircle className="w-3 h-3 text-red-400" />
@@ -627,10 +615,8 @@ export default function CreateAlbumPage() {
                         <span className="text-red-400 font-semibold">Анхааруулга:</span> Цомог үүсгэснээс хойш <span className="text-amber-400 font-semibold">21 хоног</span> үнэгүй байршина.
                         21 хоног дууссаны дараа цомог <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй болно.
                         7 хоног дууссаны дараа цомог <span className="text-red-400 font-semibold">бүр мөсөн устана</span>.
-                        Үргэлжлүүлэн байршуулахыг хүсвэл цаг тухайд нь төлбөр төлнө үү.
                       </div>
                     </div>
-
                     <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
                       <div className="grid grid-cols-[80px_1fr_140px_60px] gap-px bg-white/5 text-xs font-medium">
                         <div className="bg-stone-900 px-3 py-2 text-stone-400">Хэмжээ</div>
@@ -643,7 +629,6 @@ export default function CreateAlbumPage() {
                           sp.size === 'digital' ? 'bg-purple-500/8 border-b border-purple-500/20' : i % 2 === 0 ? 'bg-white/3' : ''
                         }`}>
                           <div className={`px-3 py-2.5 flex items-center ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
-                            {sp.size === 'digital' && <span className="absolute -mt-5 text-xs text-purple-400 font-semibold"></span>}
                             <span className={`text-xs font-bold px-2 py-0.5 rounded whitespace-nowrap ${
                               sp.size === 'digital' ? 'bg-purple-500/20 text-purple-400' :
                               i === 0 ? 'bg-blue-500/20 text-blue-400' :
@@ -660,23 +645,14 @@ export default function CreateAlbumPage() {
                           <div className={`px-2 py-1.5 ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
                             <div className="relative">
                               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500 text-xs">₮</span>
-                              <input
-                                type="number"
-                                value={sp.price}
-                                onChange={e => updateSizePrice(sp.size, 'price', e.target.value)}
-                                disabled={!sp.enabled}
-                                placeholder="10000"
-                                min={0}
-                                className="w-full bg-stone-800 disabled:bg-stone-900 disabled:text-stone-600 border border-white/10 focus:border-amber-500/50 text-white rounded-lg pl-6 pr-2 py-1.5 text-sm outline-none transition-all"
-                              />
+                              <input type="number" value={sp.price} onChange={e => updateSizePrice(sp.size, 'price', e.target.value)}
+                                disabled={!sp.enabled} placeholder="10000" min={0}
+                                className="w-full bg-stone-800 disabled:bg-stone-900 disabled:text-stone-600 border border-white/10 focus:border-amber-500/50 text-white rounded-lg pl-6 pr-2 py-1.5 text-sm outline-none transition-all" />
                             </div>
                           </div>
                           <div className={`px-3 py-2.5 flex items-center ${sp.size === 'digital' ? 'bg-purple-500/5' : 'bg-stone-900/60'}`}>
-                            <button
-                              type="button"
-                              onClick={() => updateSizePrice(sp.size, 'enabled', !sp.enabled)}
-                              className={`w-9 h-5 rounded-full transition-all relative flex-shrink-0 ${sp.enabled ? 'bg-amber-500' : 'bg-stone-700'}`}
-                            >
+                            <button type="button" onClick={() => updateSizePrice(sp.size, 'enabled', !sp.enabled)}
+                              className={`w-9 h-5 rounded-full transition-all relative flex-shrink-0 ${sp.enabled ? 'bg-amber-500' : 'bg-stone-700'}`}>
                               <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${sp.enabled ? 'left-4' : 'left-0.5'}`} />
                             </button>
                           </div>
@@ -696,7 +672,6 @@ export default function CreateAlbumPage() {
               </div>
             </Section>
 
-            {/* Contact */}
             <Section title="Холбоо барих мэдээлэл" icon={<Phone className="w-4 h-4" />}>
               <p className="text-stone-500 text-sm mb-4">Таны цомогт нэгдэх зурагчидад харагдана.</p>
               <div className="space-y-4">
@@ -731,7 +706,6 @@ export default function CreateAlbumPage() {
           {/* Right column */}
           <div className="space-y-6">
             <div className="sticky top-24">
-              {/* Watermark preview */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <p className="text-stone-300 text-sm font-medium mb-3">Усан тэмдгийн урьдчилан харах</p>
                 <div className="relative rounded-xl overflow-hidden aspect-[3/2]">
@@ -745,7 +719,16 @@ export default function CreateAlbumPage() {
                         </span>
                       )}
                       {layer.type === 'image' && layer.imagePreview && (
-                        <img src={layer.imagePreview} alt="wm" className="h-8 object-contain drop-shadow" style={{ opacity: layer.opacity / 100 }} />
+                        <img
+                          src={layer.imagePreview}
+                          alt="wm"
+                          className="object-contain drop-shadow"
+                          style={{
+                            opacity: layer.opacity / 100,
+                            width: `${Math.max(5, layer.imageSize * 0.6)}%`,
+                            maxWidth: '50%',
+                          }}
+                        />
                       )}
                     </div>
                   ))}
@@ -753,7 +736,6 @@ export default function CreateAlbumPage() {
                 <p className="text-stone-600 text-xs mt-2 text-center">Бүх усан тэмдэг зэрэг харагдаж байна</p>
               </div>
 
-              {/* Summary */}
               <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
                 <p className="text-stone-300 font-medium mb-2">Цомгийн тойм</p>
                 <div className="flex justify-between text-stone-400"><span>Усан тэмдэг</span><span className="text-white">{wmLayers.length} давхарга</span></div>
@@ -762,7 +744,6 @@ export default function CreateAlbumPage() {
                 <div className="flex justify-between text-stone-400"><span>Үнэ</span><span className="text-white">{isFree ? 'Үнэгүй' : `₮${parseFloat(downloadPrice || '0').toLocaleString()}`}</span></div>
               </div>
 
-              {/* 21 хоногийн мэдэгдэл */}
               <div className="mt-4 bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
                 <div className="flex items-start gap-2.5 mb-3">
                   <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -777,7 +758,7 @@ export default function CreateAlbumPage() {
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">2</span>
-                        <span className="text-stone-300">21 хоног дуусвал <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй горимд орно — цомог харагдахгүй болно</span>
+                        <span className="text-stone-300">21 хоног дуусвал <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй горимд орно</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center font-bold flex-shrink-0">3</span>
@@ -789,15 +770,8 @@ export default function CreateAlbumPage() {
                 </div>
                 <label className="flex items-start gap-2.5 cursor-pointer group">
                   <div className="relative flex-shrink-0 mt-0.5">
-                    <input
-                      type="checkbox"
-                      checked={agreedToTerms}
-                      onChange={e => setAgreedToTerms(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                      agreedToTerms ? 'bg-amber-500 border-amber-500' : 'border-stone-600 group-hover:border-amber-500/50'
-                    }`}>
+                    <input type="checkbox" checked={agreedToTerms} onChange={e => setAgreedToTerms(e.target.checked)} className="sr-only" />
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${agreedToTerms ? 'bg-amber-500 border-amber-500' : 'border-stone-600 group-hover:border-amber-500/50'}`}>
                       {agreedToTerms && (
                         <svg className="w-3 h-3 text-stone-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -812,33 +786,23 @@ export default function CreateAlbumPage() {
               </div>
 
               <button type="submit" disabled={saving || !agreedToTerms}
-                className={`w-full mt-3 font-semibold rounded-xl py-3.5 transition-all flex items-center justify-center gap-2 ${
-                  agreedToTerms
-                    ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 cursor-pointer'
-                    : 'bg-stone-700 text-stone-500 cursor-not-allowed'
-                } disabled:opacity-60`}>
+                className={`w-full mt-3 font-semibold rounded-xl py-3.5 transition-all flex items-center justify-center gap-2 ${agreedToTerms ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 cursor-pointer' : 'bg-stone-700 text-stone-500 cursor-not-allowed'} disabled:opacity-60`}>
                 {saving ? <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" /> : <><QrCode className="w-5 h-5" />Цомог үүсгэж QR код гаргах</>}
               </button>
               <button type="button" onClick={() => navigate('/dashboard')} className="w-full mt-3 text-stone-400 hover:text-white transition-colors py-2 text-sm">Цуцлах</button>
 
-              {/* Pricing info button */}
               <button type="button" onClick={() => setPricingOpen(true)}
                 className="w-full mt-2 flex items-center justify-center gap-2 text-stone-500 hover:text-amber-400 transition-colors py-2 text-xs">
                 <Info className="w-3.5 h-3.5" />Үнэ тариф харах
               </button>
 
-              {/* Pricing modal */}
               {pricingOpen && (
                 <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPricingOpen(false)}>
                   <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-5">
                       <h3 className="text-white font-bold text-lg">Үнэ тариф</h3>
-                      <button onClick={() => setPricingOpen(false)} className="text-stone-500 hover:text-white transition-colors">
-                        <X className="w-5 h-5" />
-                      </button>
+                      <button onClick={() => setPricingOpen(false)} className="text-stone-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
                     </div>
-
-                    {/* Hosting duration */}
                     <div className="mb-5">
                       <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Байршуулалтын хугацаа</p>
                       <div className="space-y-2">
@@ -856,16 +820,14 @@ export default function CreateAlbumPage() {
                         ))}
                       </div>
                     </div>
-
-                    {/* Photo count pricing */}
                     <div className="mb-5">
                       <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Зургийн тоогоор (сарын)</p>
                       <div className="space-y-2">
                         {[
-                          { range: 'Хүртэл 500 зураг',  price: 'Багтсан',   color: 'text-green-400' },
-                          { range: '500–2,000 зураг',    price: '+₮5,000',   color: 'text-stone-300' },
-                          { range: '2,000–10,000 зураг', price: '+₮15,000',  color: 'text-stone-300' },
-                          { range: '10,000+ зураг',      price: '+₮35,000',  color: 'text-stone-300' },
+                          { range: 'Хүртэл 500 зураг',  price: 'Багтсан',  color: 'text-green-400' },
+                          { range: '500–2,000 зураг',    price: '+₮5,000',  color: 'text-stone-300' },
+                          { range: '2,000–10,000 зураг', price: '+₮15,000', color: 'text-stone-300' },
+                          { range: '10,000+ зураг',      price: '+₮35,000', color: 'text-stone-300' },
                         ].map(r => (
                           <div key={r.range} className="flex items-center justify-between px-4 py-2 rounded-xl bg-white/5 border border-white/10">
                             <span className="text-stone-400 text-xs">{r.range}</span>
@@ -874,30 +836,15 @@ export default function CreateAlbumPage() {
                         ))}
                       </div>
                     </div>
-
-                    {/* Platform commission */}
                     <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
                       <p className="text-amber-300 text-xs font-semibold mb-2">Платформын шимтгэл</p>
                       <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-stone-400">QPay шимтгэл</span>
-                          <span className="text-stone-300">1.5%</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-stone-400">Zuragchin.mn</span>
-                          <span className="text-stone-300">5%</span>
-                        </div>
-                        <div className="flex justify-between text-xs font-semibold pt-1 border-t border-white/10">
-                          <span className="text-stone-300">Нийт</span>
-                          <span className="text-amber-400">6.5%</span>
-                        </div>
+                        <div className="flex justify-between text-xs"><span className="text-stone-400">QPay шимтгэл</span><span className="text-stone-300">1.5%</span></div>
+                        <div className="flex justify-between text-xs"><span className="text-stone-400">Zuragchin.mn</span><span className="text-stone-300">5%</span></div>
+                        <div className="flex justify-between text-xs font-semibold pt-1 border-t border-white/10"><span className="text-stone-300">Нийт</span><span className="text-amber-400">6.5%</span></div>
                       </div>
                     </div>
-
-                    <button onClick={() => setPricingOpen(false)}
-                      className="w-full mt-5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 py-2.5 rounded-xl text-sm font-medium transition-colors">
-                      Хаах
-                    </button>
+                    <button onClick={() => setPricingOpen(false)} className="w-full mt-5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 py-2.5 rounded-xl text-sm font-medium transition-colors">Хаах</button>
                   </div>
                 </div>
               )}
