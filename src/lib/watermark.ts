@@ -1,10 +1,24 @@
-export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+  | 'top-center' | 'middle-left' | 'middle-right' | 'bottom-center';
+
+interface WatermarkLayer {
+  id: string;
+  type: 'text' | 'image';
+  text: string;
+  fontSize: number;
+  opacity: number;
+  color: string;
+  imagePreview: string;
+  position: WatermarkPosition;
+  imageSize: number;
+}
 
 interface WatermarkOptions {
-  type: 'text' | 'image';
+  type: 'text' | 'image' | 'layers';
   value: string;
   position: WatermarkPosition;
   opacity?: number;
+  imageSize?: number;
 }
 
 export async function applyWatermark(
@@ -18,10 +32,23 @@ export async function applyWatermark(
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, 0, 0);
 
-  if (opts.type === 'text' && opts.value) {
+  if (opts.type === 'layers') {
+    try {
+      const layers: WatermarkLayer[] = JSON.parse(opts.value);
+      for (const layer of layers) {
+        if (layer.type === 'text' && layer.text) {
+          await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, layer.text, layer.opacity, layer.fontSize, layer.color);
+        } else if (layer.type === 'image' && layer.imagePreview) {
+          await applyImageWatermarkTiled(ctx, canvas.width, canvas.height, layer.imagePreview, layer.opacity, layer.imageSize ?? 20);
+        }
+      }
+    } catch (err) {
+      console.error('Layers parse error:', err);
+    }
+  } else if (opts.type === 'text' && opts.value) {
     await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35);
   } else if (opts.type === 'image' && opts.value) {
-    await applyImageWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35);
+    await applyImageWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35, opts.imageSize ?? 20);
   }
 
   return new Promise<Blob>((resolve, reject) => {
@@ -33,19 +60,22 @@ export async function applyWatermark(
   });
 }
 
-// ── Текст тамга — бүх зургийг бүрхэх ─────────────────────────────────────────
 async function applyTextWatermarkTiled(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   text: string,
   opacity: number,
+  fontSizePx?: number,
+  color: string = '#ffffff',
 ) {
-  const fontSize = Math.max(16, Math.round(w * 0.025));
+  const fontSize = fontSizePx
+    ? Math.max(12, Math.round((fontSizePx / 60) * w * 0.04))
+    : Math.max(16, Math.round(w * 0.025));
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = color;
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
   ctx.lineWidth = Math.max(1, fontSize / 12);
 
@@ -55,37 +85,31 @@ async function applyTextWatermarkTiled(
   const spacingX = textW + fontSize * 3;
   const spacingY = textH + fontSize * 3;
 
-  // 45 градус эргүүлж давтах
   ctx.translate(w / 2, h / 2);
   ctx.rotate(-Math.PI / 6);
   ctx.translate(-w / 2, -h / 2);
 
-  const startX = -w;
-  const startY = -h;
-
-  for (let y = startY; y < h * 2; y += spacingY) {
-    for (let x = startX; x < w * 2; x += spacingX) {
+  for (let y = -h; y < h * 2; y += spacingY) {
+    for (let x = -w; x < w * 2; x += spacingX) {
       ctx.strokeText(text, x, y);
       ctx.fillText(text, x, y);
     }
   }
-
   ctx.restore();
 }
 
-// ── Зураг тамга — бүх зургийг бүрхэх ────────────────────────────────────────
 async function applyImageWatermarkTiled(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   url: string,
   opacity: number,
+  imageSizePct: number = 20,
 ) {
   try {
     const wmImg = await loadImageFromUrl(url);
-    const maxWmW = Math.round(w * 0.18);
-    const scale = Math.min(1, maxWmW / wmImg.naturalWidth);
-    const wmW = Math.round(wmImg.naturalWidth * scale);
+    const wmW = Math.round(w * (imageSizePct / 100));
+    const scale = wmW / wmImg.naturalWidth;
     const wmH = Math.round(wmImg.naturalHeight * scale);
     const spacingX = wmW + Math.round(w * 0.08);
     const spacingY = wmH + Math.round(h * 0.08);
@@ -96,22 +120,17 @@ async function applyImageWatermarkTiled(
     ctx.rotate(-Math.PI / 6);
     ctx.translate(-w / 2, -h / 2);
 
-    const startX = -w;
-    const startY = -h;
-
-    for (let y = startY; y < h * 2; y += spacingY) {
-      for (let x = startX; x < w * 2; x += spacingX) {
+    for (let y = -h; y < h * 2; y += spacingY) {
+      for (let x = -w; x < w * 2; x += spacingX) {
         ctx.drawImage(wmImg, x, y, wmW, wmH);
       }
     }
-
     ctx.restore();
   } catch (err) {
     console.error('Watermark image failed to load, skipping:', err);
   }
 }
 
-// ── Туслах функцүүд ───────────────────────────────────────────────────────────
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -123,13 +142,19 @@ function loadImage(file: File): Promise<HTMLImageElement> {
 }
 
 async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Watermark fetch failed: ${response.status} ${response.statusText}`);
+  // base64 data URL бол fetch хийхгүй шууд ачаална
+  if (url.startsWith('data:')) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
   }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Watermark fetch failed: ${response.status}`);
   const blob = await response.blob();
   const objectUrl = URL.createObjectURL(blob);
-
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
