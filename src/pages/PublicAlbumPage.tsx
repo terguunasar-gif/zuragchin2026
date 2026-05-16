@@ -46,7 +46,7 @@ export interface CartItem {
 
 interface WatermarkLayer {
   id: string;
-  type: 'text' | 'logo';
+  type: 'text' | 'logo' | 'tiled-text';
   text: string;
   fontSize: number;
   color: string;
@@ -165,27 +165,52 @@ export default function PublicAlbumPage() {
     );
   }
 
-  let parsedLayers = album.watermark_layers;
-  if (typeof parsedLayers === 'string') {
-    try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
+  // watermark_value-с layers parse хийх (шинэ формат)
+  let wmLayers: WatermarkLayer[] = [];
+  if (album.watermark_type === 'layers' && album.watermark_value) {
+    try {
+      const parsed = JSON.parse(album.watermark_value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        wmLayers = parsed.map((l: any) => ({
+          id: l.id || crypto.randomUUID(),
+          type: l.type === 'image' ? 'logo' : l.type,
+          text: l.text || '',
+          fontSize: l.fontSize || 20,
+          color: l.color || '#ffffff',
+          logoUrl: l.imagePreview || '',
+          logoSize: l.imageSize || 20,
+          position: l.position || 'bottom-right',
+          opacity: typeof l.opacity === 'number' ? (l.opacity <= 1 ? l.opacity : l.opacity / 100) : 0.7,
+        }));
+      }
+    } catch { wmLayers = []; }
   }
 
-  const wmLayers: WatermarkLayer[] =
-    parsedLayers && Array.isArray(parsedLayers) && parsedLayers.length > 0
-      ? parsedLayers
-      : album.watermark_type || album.watermark_value
-        ? [{
-            id: 'legacy',
-            type: album.watermark_type === 'image' ? 'logo' : 'text',
-            text: album.watermark_value || '',
-            fontSize: 20,
-            color: '#ffffff',
-            logoUrl: album.watermark_logo_url || '',
-            logoSize: 20,
-            position: album.watermark_position || 'bottom-right',
-            opacity: album.watermark_opacity ?? 0.7,
-          }]
-        : [];
+  // watermark_layers column (хуучин формат)
+  if (wmLayers.length === 0) {
+    let parsedLayers = album.watermark_layers;
+    if (typeof parsedLayers === 'string') {
+      try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
+    }
+    if (parsedLayers && Array.isArray(parsedLayers) && parsedLayers.length > 0) {
+      wmLayers = parsedLayers;
+    }
+  }
+
+  // Хамгийн хуучин нэг layer формат
+  if (wmLayers.length === 0 && (album.watermark_type || album.watermark_value)) {
+    wmLayers = [{
+      id: 'legacy',
+      type: album.watermark_type === 'image' ? 'logo' : 'text',
+      text: album.watermark_value || '',
+      fontSize: 20,
+      color: '#ffffff',
+      logoUrl: album.watermark_logo_url || '',
+      logoSize: 20,
+      position: album.watermark_position || 'bottom-right',
+      opacity: album.watermark_opacity ?? 0.7,
+    }];
+  }
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -344,37 +369,32 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
           draggable={false}
           onContextMenu={e => e.preventDefault()}
         />
-        {wmLayers.map(layer => {
-          const opacityVal = typeof layer.opacity === 'number'
-            ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity)
-            : 0.7;
+        {/* Булангийн layer-үүд */}
+        {wmLayers.filter(l => l.type !== 'tiled-text').map(layer => {
+          const opacityVal = typeof layer.opacity === 'number' ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity) : 0.7;
           return (
-            <div
-              key={layer.id}
-              className="absolute pointer-events-none"
-              style={{ ...getPosStyle(layer.position), opacity: opacityVal }}
-            >
+            <div key={layer.id} className="absolute pointer-events-none" style={{ ...getPosStyle(layer.position), opacity: opacityVal, maxWidth: '45%' }}>
               {layer.type === 'text' && layer.text && (
-                <span style={{
-                  fontSize: `clamp(8px, ${(layer.fontSize ?? 20) * 0.22}vw, ${layer.fontSize ?? 20}px)`,
-                  color: layer.color || '#ffffff',
-                  textShadow: '0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)',
-                  fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: '0.03em',
-                  userSelect: 'none', display: 'block',
-                }}>
+                <span style={{ fontSize: `clamp(8px, ${(layer.fontSize ?? 20) * 0.22}vw, ${layer.fontSize ?? 20}px)`, color: layer.color || '#ffffff', textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontWeight: 700, whiteSpace: 'nowrap', userSelect: 'none', display: 'block' }}>
                   {layer.text}
                 </span>
               )}
               {layer.type === 'logo' && layer.logoUrl && (
-                <img src={layer.logoUrl} alt="watermark" draggable={false}
-                  style={{
-                    width: `${layer.logoSize ?? 20}%`, maxWidth: `${layer.logoSize ?? 20}%`,
-                    minWidth: '20px', height: 'auto', objectFit: 'contain',
-                    filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.8))',
-                    userSelect: 'none', display: 'block',
-                  }}
-                />
+                <img src={layer.logoUrl} alt="wm" draggable={false} style={{ width: `${(layer.logoSize ?? 20) * 2}px`, height: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.8))', userSelect: 'none', display: 'block' }} />
               )}
+            </div>
+          );
+        })}
+        {/* Битүү tiled-text layer-үүд */}
+        {wmLayers.filter(l => l.type === 'tiled-text').map(layer => {
+          const op = typeof layer.opacity === 'number' ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity) : 0.3;
+          const items = [];
+          for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) {
+            items.push(<span key={`${r}-${c}`} style={{ fontSize: `${Math.max(6, (layer.fontSize ?? 16) * 0.28)}px`, color: layer.color || '#ffffff', opacity: op, transform: 'rotate(-30deg)', display: 'block', padding: '3px 6px', whiteSpace: 'nowrap', fontWeight: 600, userSelect: 'none' }}>{layer.text}</span>);
+          }
+          return (
+            <div key={layer.id} className="absolute inset-0 pointer-events-none overflow-hidden" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(4, 1fr)', alignItems: 'center', justifyItems: 'center' }}>
+              {items}
             </div>
           );
         })}
