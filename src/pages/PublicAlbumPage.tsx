@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, ChevronLeft,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
@@ -97,7 +97,6 @@ export default function PublicAlbumPage() {
 
   async function loadAlbum(link: string) {
     setLoading(true);
-
     const { data: albumData } = await supabase
       .from('albums')
       .select('id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url')
@@ -107,7 +106,6 @@ export default function PublicAlbumPage() {
 
     if (!albumData) { setNotFound(true); setLoading(false); return; }
 
-    // ✅ ЗАСАГДСАН МӨР: select('name') → select('*')
     const { data: ownerData } = await supabase
       .from('profiles').select('*')
       .eq('id', albumData.owner_id).maybeSingle();
@@ -194,6 +192,14 @@ export default function PublicAlbumPage() {
       <header className="border-b border-white/10 sticky top-0 z-30 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
+            {/* ── Буцах товч ── */}
+            <button
+              onClick={() => navigate(-1)}
+              className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-white transition-colors flex-shrink-0"
+              title="Буцах"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
             <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center flex-shrink-0">
               <Camera className="w-5 h-5 text-stone-950" />
             </div>
