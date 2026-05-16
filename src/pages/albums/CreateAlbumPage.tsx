@@ -92,7 +92,8 @@ export default function CreateAlbumPage() {
   const [albumName, setAlbumName] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('draft');
+  // ✅ ЗАСВАР: 'draft' → 'active' (цомог үүссэний дараа шууд нийтэд харагдана)
+  const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('active');
 
   const [wmLayers, setWmLayers] = useState<WatermarkLayer[]>([newTextLayer()]);
   const [activeLayerId, setActiveLayerId] = useState<string>(() => wmLayers[0].id);
@@ -240,7 +241,6 @@ export default function CreateAlbumPage() {
     window.open(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(successData.shareLink)}`, '_blank');
   }
 
-  // Preview дахь tiled-text рендерлэх
   function renderTiledTextPreview(layer: WatermarkLayer) {
     const items = [];
     for (let r = 0; r < 4; r++) {
@@ -398,7 +398,6 @@ export default function CreateAlbumPage() {
             {/* ── Watermark Layers ── */}
             <Section title="Усан тэмдгийн тохиргоо" icon={<Type className="w-4 h-4" />}>
               <div className="space-y-4">
-                {/* Layer tabs */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {wmLayers.map((layer, idx) => (
                     <button key={layer.id} type="button" onClick={() => setActiveLayerId(layer.id)}
@@ -427,7 +426,6 @@ export default function CreateAlbumPage() {
                   </button>
                 </div>
 
-                {/* Active layer editor */}
                 {activeLayer && (
                   <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
                     <div className="flex items-center gap-2 mb-1">
@@ -436,7 +434,6 @@ export default function CreateAlbumPage() {
                       {activeLayer.type === 'tiled-text' && <><Grid className="w-4 h-4 text-amber-400" /><span className="text-white text-sm font-semibold">Битүү давтагдах тамга</span></>}
                     </div>
 
-                    {/* Text layer */}
                     {activeLayer.type === 'text' && (
                       <>
                         <Field label="Текст">
@@ -470,7 +467,6 @@ export default function CreateAlbumPage() {
                       </>
                     )}
 
-                    {/* Image layer */}
                     {activeLayer.type === 'image' && (
                       <>
                         <input ref={el => { imageInputRefs.current[activeLayer.id] = el; }} type="file" accept="image/png,image/svg+xml,image/webp" className="hidden" onChange={e => handleImageUpload(activeLayer.id, e)} />
@@ -513,7 +509,6 @@ export default function CreateAlbumPage() {
                       </>
                     )}
 
-                    {/* Tiled-text layer */}
                     {activeLayer.type === 'tiled-text' && (
                       <>
                         <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 text-xs text-amber-300">
@@ -620,7 +615,6 @@ export default function CreateAlbumPage() {
                 <p className="text-stone-300 text-sm font-medium mb-3">Усан тэмдгийн урьдчилан харах</p>
                 <div className="relative rounded-xl overflow-hidden aspect-[3/2]">
                   <img src={PREVIEW_IMAGE} alt="preview" className="w-full h-full object-cover" />
-                  {/* Булангийн layer-үүд */}
                   {wmLayers.filter(l => l.type !== 'tiled-text').map(layer => (
                     <div key={layer.id} className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`} style={{ maxWidth: '45%' }}>
                       {layer.type === 'text' && layer.text && (
@@ -635,7 +629,6 @@ export default function CreateAlbumPage() {
                       )}
                     </div>
                   ))}
-                  {/* Битүү давтагдах tiled-text layer-үүд */}
                   {wmLayers.filter(l => l.type === 'tiled-text').map(layer => renderTiledTextPreview(layer))}
                 </div>
                 <p className="text-stone-600 text-xs mt-2 text-center">Бүх усан тэмдэг зэрэг харагдаж байна</p>
