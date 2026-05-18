@@ -21,12 +21,21 @@ const OWNER_COMMISSION_RATE = 0.10;
 
 async function qpayToken(): Promise<string> {
   const creds = btoa(`${QPAY_USERNAME}:${QPAY_PASSWORD}`);
+  console.log("===== QPAY TOKEN REQUEST =====");
+  console.log("QPAY_USERNAME EXISTS:", !!QPAY_USERNAME);
+  console.log("QPAY_PASSWORD EXISTS:", !!QPAY_PASSWORD);
   const res = await fetch(`${QPAY_BASE}/auth/token`, {
     method: "POST",
     headers: { Authorization: `Basic ${creds}` },
   });
-  if (!res.ok) throw new Error(`QPay token авч чадсангүй: ${await res.text()}`);
+  console.log("TOKEN RESPONSE STATUS:", res.status);
+  if (!res.ok) {
+    const txt = await res.text();
+    console.log("TOKEN ERROR:", txt);
+    throw new Error(`QPay token авч чадсангүй: ${txt}`);
+  }
   const data = await res.json();
+  console.log("TOKEN SUCCESS");
   return data.access_token as string;
 }
 
@@ -38,28 +47,34 @@ async function qpayCreateInvoice(token: string, params: {
   amount: number;
   callbackUrl: string;
 }) {
+  const payload = {
+    invoice_code: params.invoiceCode,
+    sender_invoice_no: crypto.randomUUID().slice(0, 16),
+    invoice_receiver_code: "terminal",
+    sender_branch_code: "BRANCH1",
+    invoice_description: params.description,
+    sender_staff_code: "online",
+    amount: params.amount,
+    callback_url: params.callbackUrl,
+  };
+  console.log("INVOICE PAYLOAD:", JSON.stringify(payload));
   const res = await fetch(`${QPAY_BASE}/invoice`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      invoice_code: params.invoiceCode,
-      sender_invoice_no: crypto.randomUUID().slice(0, 16),
-      invoice_receiver_code: "terminal",
-      sender_branch_code: "BRANCH1",
-      invoice_description: params.description,
-      sender_staff_code: "online",
-      amount: params.amount,
-      callback_url: params.callbackUrl,
-    }),
+    body: JSON.stringify(payload),
   });
+  console.log("INVOICE RESPONSE STATUS:", res.status);
   if (!res.ok) {
     const body = await res.text();
+    console.log("INVOICE RESPONSE DATA:", body);
     throw new Error(`QPay invoice үүсгэж чадсангүй: ${res.status} ${body}`);
   }
-  return res.json();
+  const data = await res.json();
+  console.log("INVOICE SUCCESS, id:", data.invoice_id);
+  return data;
 }
 
 async function qpayCheckPayment(token: string, invoiceId: string) {
@@ -86,15 +101,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const url = new URL(req.url);
-    const path = url.pathname.replace(/^\/qpay/, "");
+    const path = url.pathname.replace(/^\/functions\/v1\/qpay/, "").replace(/^\/qpay/, "");
 
-    // CALLBACK — QPay төлбөр хийгдсэний дараа дуудна
+    console.log("REQUEST PATH:", path, "METHOD:", req.method);
+
+    // CALLBACK
     if (req.method === "POST" && path === "/callback") {
       const body = await req.json().catch(() => ({}));
       const invoiceId: string = body.invoice_id ?? "";
-
       if (!invoiceId) return json({ ok: true });
-
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       await processPayment(db, invoiceId, "");
       return json({ ok: true });
@@ -110,25 +125,35 @@ Deno.serve(async (req: Request) => {
         albumId: string;
       };
 
+      console.log("ALBUM:", albumId);
+      console.log("CART ITEMS COUNT:", cartItems?.length);
+
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-      const { data: album } = await db
+      const { data: album, error: albumErr } = await db
         .from("albums")
         .select("id, owner_id, owner_commission")
         .eq("id", albumId)
         .maybeSingle();
 
+      if (albumErr) {
+        console.log("ALBUM FETCH ERROR:", albumErr.message);
+        return json({ error: "Album fetch failed: " + albumErr.message }, 500);
+      }
+
       if (!album) {
+        console.log("ALBUM NOT FOUND:", albumId);
         return json({ error: "Album not found" }, 404);
       }
 
       const ownerCommission: number = album.owner_commission ?? OWNER_COMMISSION_RATE;
-
       const grossTotal = cartItems.reduce((s, i) => s + i.price, 0);
       const qpayFee = Math.round(grossTotal * QPAY_FEE_RATE * 100) / 100;
       const platformFee = Math.round(grossTotal * PLATFORM_FEE_RATE * 100) / 100;
       const ownerTotal = Math.round(grossTotal * ownerCommission * 100) / 100;
       const photographerPool = grossTotal - qpayFee - platformFee - ownerTotal;
+
+      console.log("QPAY_INVOICE_CODE:", QPAY_INVOICE_CODE);
 
       const token = await qpayToken();
       const callbackUrl = `${SUPABASE_URL}/functions/v1/qpay/callback`;
@@ -154,7 +179,7 @@ Deno.serve(async (req: Request) => {
           buyer_id: null,
           photo_id: item.photoId,
           album_id: albumId,
-          photographer_id: item.photographerId,
+          photographer_id: item.photographerId ?? album.owner_id,
           type: item.type,
           print_size: item.printSize ?? "",
           gross_amount: item.price,
@@ -173,7 +198,10 @@ Deno.serve(async (req: Request) => {
       });
 
       const { error: insertErr } = await db.from("purchases").insert(purchaseRows);
-      if (insertErr) throw new Error(`DB insert failed: ${insertErr.message}`);
+      if (insertErr) {
+        console.log("DB INSERT ERROR:", insertErr.message);
+        throw new Error(`DB insert failed: ${insertErr.message}`);
+      }
 
       return json({
         invoiceId,
@@ -203,8 +231,8 @@ Deno.serve(async (req: Request) => {
         if (isPaid && result.rows?.[0]) {
           qpayTransactionId = result.rows[0].payment_id ?? "";
         }
-      } catch {
-        // DB-с status харна
+      } catch (e) {
+        console.log("CHECK PAYMENT ERROR:", e);
       }
 
       if (isPaid) {
@@ -258,7 +286,7 @@ Deno.serve(async (req: Request) => {
       return json({ signedUrls });
     }
 
-    return json({ error: "Not found" }, 404);
+    return json({ error: "Not found", path }, 404);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
     console.error("QPay function error:", msg);
@@ -266,7 +294,6 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Төлбөр баталгаажуулах нийтлэг функц (callback + check-payment хоёулаа ашиглана)
 async function processPayment(db: ReturnType<typeof createClient>, invoiceId: string, qpayTransactionId: string) {
   const { data: purchases } = await db
     .from("purchases")
@@ -285,8 +312,10 @@ async function processPayment(db: ReturnType<typeof createClient>, invoiceId: st
   let totalPlatformFee = 0;
 
   for (const p of purchases) {
-    photographerCredits[p.photographer_id] =
-      (photographerCredits[p.photographer_id] ?? 0) + p.photographer_pool_amount;
+    if (p.photographer_id) {
+      photographerCredits[p.photographer_id] =
+        (photographerCredits[p.photographer_id] ?? 0) + p.photographer_pool_amount;
+    }
     totalPlatformFee += p.platform_fee_amount ?? 0;
   }
 
