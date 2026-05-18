@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const QPAY_BASE = "https://merchant-sandbox.qpay.mn/v2";
+const QPAY_BASE = "https://merchant.qpay.mn/v2";
 const QPAY_USERNAME = Deno.env.get("QPAY_USERNAME") ?? "";
 const QPAY_PASSWORD = Deno.env.get("QPAY_PASSWORD") ?? "";
 const QPAY_INVOICE_CODE = Deno.env.get("QPAY_INVOICE_CODE") ?? "";
@@ -63,8 +63,17 @@ async function qpayCreateInvoice(token: string, params: {
 }
 
 async function qpayCheckPayment(token: string, invoiceId: string) {
-  const res = await fetch(`${QPAY_BASE}/payment/check/${invoiceId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await fetch(`${QPAY_BASE}/payment/check`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      object_type: "INVOICE",
+      object_id: invoiceId,
+      offset: { page_number: 1, page_limit: 100 },
+    }),
   });
   if (!res.ok) throw new Error(`QPay шалгаж чадсангүй: ${res.status}`);
   return res.json();
@@ -79,6 +88,19 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/qpay/, "");
 
+    // CALLBACK — QPay төлбөр хийгдсэний дараа дуудна
+    if (req.method === "POST" && path === "/callback") {
+      const body = await req.json().catch(() => ({}));
+      const invoiceId: string = body.invoice_id ?? "";
+
+      if (!invoiceId) return json({ ok: true });
+
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      await processPayment(db, invoiceId, "");
+      return json({ ok: true });
+    }
+
+    // CREATE INVOICE
     if (req.method === "POST" && path === "/create-invoice") {
       const body = await req.json();
       const { cartItems, buyerName, buyerPhone, albumId } = body as {
@@ -166,6 +188,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // CHECK PAYMENT
     if (req.method === "GET" && path.startsWith("/check-payment/")) {
       const invoiceId = path.replace("/check-payment/", "").split("?")[0];
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -181,77 +204,11 @@ Deno.serve(async (req: Request) => {
           qpayTransactionId = result.rows[0].payment_id ?? "";
         }
       } catch {
-        // fall back to DB status
+        // DB-с status харна
       }
 
       if (isPaid) {
-        const { data: purchases } = await db
-          .from("purchases")
-          .select("id, photographer_id, album_id, photographer_pool_amount, owner_amount")
-          .eq("qpay_invoice_id", invoiceId)
-          .eq("payment_status", "pending");
-
-        if (purchases && purchases.length > 0) {
-          await db
-            .from("purchases")
-            .update({ payment_status: "paid", qpay_transaction_id: qpayTransactionId })
-            .eq("qpay_invoice_id", invoiceId);
-
-          const photographerCredits: Record<string, number> = {};
-          let totalPlatformFee = 0;
-
-          for (const p of purchases) {
-            photographerCredits[p.photographer_id] =
-              (photographerCredits[p.photographer_id] ?? 0) + p.photographer_pool_amount;
-            totalPlatformFee += p.platform_fee_amount ?? 0;
-          }
-
-          const albumIds = [...new Set(purchases.map((p: { album_id: string }) => p.album_id))];
-          const { data: albums } = await db.from("albums").select("id, owner_id, name").in("id", albumIds);
-          const albumOwnerMap: Record<string, string> = {};
-          const albumNameMap: Record<string, string> = {};
-          for (const a of albums ?? []) {
-            albumOwnerMap[a.id] = a.owner_id;
-            albumNameMap[a.id] = a.name;
-          }
-
-          const ownerCredits: Record<string, number> = {};
-          for (const p of purchases) {
-            const ownerId = albumOwnerMap[p.album_id];
-            if (ownerId) ownerCredits[ownerId] = (ownerCredits[ownerId] ?? 0) + p.owner_amount;
-          }
-
-          for (const [userId, amount] of Object.entries(photographerCredits)) {
-            if (amount > 0) {
-              await db.rpc("increment_wallet_pending", { p_user_id: userId, p_amount: amount });
-              const photoPurchase = purchases.find((p: { photographer_id: string }) => p.photographer_id === userId);
-              await db.from("wallet_transactions").insert({
-                user_id: userId,
-                amount,
-                type: "sale",
-                photo_id: photoPurchase?.photo_id ?? null,
-                description: `Photo sale — ${albumNameMap[photoPurchase?.album_id] ?? "album"}`,
-              });
-            }
-          }
-
-          for (const [userId, amount] of Object.entries(ownerCredits)) {
-            if (amount > 0) {
-              await db.rpc("increment_wallet_pending", { p_user_id: userId, p_amount: amount });
-              const ownerPurchase = purchases.find((p: { album_id: string }) => albumOwnerMap[p.album_id] === userId);
-              await db.from("wallet_transactions").insert({
-                user_id: userId,
-                amount,
-                type: "commission",
-                description: `Owner commission — ${albumNameMap[ownerPurchase?.album_id] ?? "album"}`,
-              });
-            }
-          }
-
-          if (totalPlatformFee > 0) {
-            await db.rpc("increment_platform_wallet", { p_amount: totalPlatformFee });
-          }
-        }
+        await processPayment(db, invoiceId, qpayTransactionId);
       }
 
       const { data: purchases } = await db
@@ -262,6 +219,7 @@ Deno.serve(async (req: Request) => {
       return json({ isPaid, purchases: purchases ?? [] });
     }
 
+    // SIGNED URLS
     if (req.method === "POST" && path === "/signed-urls") {
       const { invoiceId } = await req.json() as { invoiceId: string };
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -307,6 +265,77 @@ Deno.serve(async (req: Request) => {
     return json({ error: msg }, 500);
   }
 });
+
+// Төлбөр баталгаажуулах нийтлэг функц (callback + check-payment хоёулаа ашиглана)
+async function processPayment(db: ReturnType<typeof createClient>, invoiceId: string, qpayTransactionId: string) {
+  const { data: purchases } = await db
+    .from("purchases")
+    .select("id, photographer_id, album_id, photographer_pool_amount, owner_amount, platform_fee_amount, photo_id")
+    .eq("qpay_invoice_id", invoiceId)
+    .eq("payment_status", "pending");
+
+  if (!purchases || purchases.length === 0) return;
+
+  await db
+    .from("purchases")
+    .update({ payment_status: "paid", qpay_transaction_id: qpayTransactionId })
+    .eq("qpay_invoice_id", invoiceId);
+
+  const photographerCredits: Record<string, number> = {};
+  let totalPlatformFee = 0;
+
+  for (const p of purchases) {
+    photographerCredits[p.photographer_id] =
+      (photographerCredits[p.photographer_id] ?? 0) + p.photographer_pool_amount;
+    totalPlatformFee += p.platform_fee_amount ?? 0;
+  }
+
+  const albumIds = [...new Set(purchases.map((p: { album_id: string }) => p.album_id))];
+  const { data: albums } = await db.from("albums").select("id, owner_id, name").in("id", albumIds);
+  const albumOwnerMap: Record<string, string> = {};
+  const albumNameMap: Record<string, string> = {};
+  for (const a of albums ?? []) {
+    albumOwnerMap[a.id] = a.owner_id;
+    albumNameMap[a.id] = a.name;
+  }
+
+  const ownerCredits: Record<string, number> = {};
+  for (const p of purchases) {
+    const ownerId = albumOwnerMap[p.album_id];
+    if (ownerId) ownerCredits[ownerId] = (ownerCredits[ownerId] ?? 0) + p.owner_amount;
+  }
+
+  for (const [userId, amount] of Object.entries(photographerCredits)) {
+    if (amount > 0) {
+      await db.rpc("increment_wallet_pending", { p_user_id: userId, p_amount: amount });
+      const photoPurchase = purchases.find((p: { photographer_id: string }) => p.photographer_id === userId);
+      await db.from("wallet_transactions").insert({
+        user_id: userId,
+        amount,
+        type: "sale",
+        photo_id: photoPurchase?.photo_id ?? null,
+        description: `Photo sale — ${albumNameMap[photoPurchase?.album_id] ?? "album"}`,
+      });
+    }
+  }
+
+  for (const [userId, amount] of Object.entries(ownerCredits)) {
+    if (amount > 0) {
+      await db.rpc("increment_wallet_pending", { p_user_id: userId, p_amount: amount });
+      const ownerPurchase = purchases.find((p: { album_id: string }) => albumOwnerMap[p.album_id] === userId);
+      await db.from("wallet_transactions").insert({
+        user_id: userId,
+        amount,
+        type: "commission",
+        description: `Owner commission — ${albumNameMap[ownerPurchase?.album_id] ?? "album"}`,
+      });
+    }
+  }
+
+  if (totalPlatformFee > 0) {
+    await db.rpc("increment_platform_wallet", { p_amount: totalPlatformFee });
+  }
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
