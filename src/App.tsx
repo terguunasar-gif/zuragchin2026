@@ -19,6 +19,9 @@ import EventListingsPage from './pages/EventListingsPage';
 import HomePage from './pages/HomePage';
 import PhotographersPage from './pages/PhotographersPage';
 import PhotographerDetailPage from './pages/PhotographerDetailPage';
+import BoothPage from './pages/booth/BoothPage';
+import BoothResultPage from './pages/booth/BoothResultPage';
+import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
 
 export default function App() {
   return (
@@ -55,6 +58,10 @@ export default function App() {
             element={<ProtectedRoute><AlbumPhotosPage /></ProtectedRoute>}
           />
           <Route
+            path="/dashboard/albums/:albumId/ai-booth"
+            element={<ProtectedRoute><AiBoothSettingsPage /></ProtectedRoute>}
+          />
+          <Route
             path="/albums"
             element={<ProtectedRoute><AlbumsPage /></ProtectedRoute>}
           />
@@ -67,6 +74,8 @@ export default function App() {
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
+          <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
+          <Route path="/booth/:token" element={<BoothPage />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
