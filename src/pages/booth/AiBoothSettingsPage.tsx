@@ -42,6 +42,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   general: 'Бусад',
 };
 
+const CATEGORY_GRADIENT: Record<string, string> = {
+  winter: 'from-sky-900 via-indigo-900 to-stone-900',
+  party: 'from-amber-700 via-rose-900 to-stone-900',
+  mongolian: 'from-red-800 via-amber-800 to-stone-900',
+  fun: 'from-fuchsia-800 via-violet-900 to-stone-900',
+};
+
 const DEFAULTS: Omit<BoothRow, 'album_id' | 'booth_token'> = {
   enabled: true,
   price_mnt: 5000,
@@ -311,19 +318,34 @@ export default function AiBoothSettingsPage() {
             {Object.entries(grouped).map(([cat, list]) => (
               <div key={cat}>
                 <p className="text-xs uppercase tracking-wider text-stone-500 mb-2">{CATEGORY_LABELS[cat] ?? cat}</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {list.map(t => (
-                    <button key={t.id} onClick={() => toggleTemplate(t.id)}
-                      className={`text-left rounded-xl border p-3 transition-all ${
-                        isSelected(t.id) ? 'border-amber-500/60 bg-amber-500/10' : 'border-white/10 bg-white/5 opacity-60'
-                      }`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium leading-tight">{t.name}</p>
-                        {isSelected(t.id) && <Check className="w-4 h-4 text-amber-400 flex-shrink-0" />}
-                      </div>
-                      {t.description && <p className="text-xs text-stone-500 mt-1 line-clamp-2">{t.description}</p>}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {list.map(t => {
+                    const on = isSelected(t.id);
+                    return (
+                      <button key={t.id} onClick={() => toggleTemplate(t.id)}
+                        className={`group relative text-left rounded-xl overflow-hidden border-2 transition-all ${
+                          on ? 'border-amber-500' : 'border-transparent opacity-50 hover:opacity-80'
+                        }`}>
+                        {t.preview_url ? (
+                          <img src={t.preview_url} alt={t.name} loading="lazy"
+                            className="w-full aspect-[3/4] object-cover group-hover:scale-[1.03] transition-transform" />
+                        ) : (
+                          <div className={`w-full aspect-[3/4] bg-gradient-to-br ${CATEGORY_GRADIENT[t.category] ?? 'from-stone-700 to-stone-900'} flex items-center justify-center`}>
+                            <Sparkles className="w-7 h-7 text-white/50" />
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-2.5 pt-8">
+                          <p className="text-sm font-semibold leading-tight text-white">{t.name}</p>
+                          {t.description && <p className="text-[11px] text-stone-300 mt-0.5 line-clamp-1">{t.description}</p>}
+                        </div>
+                        <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center ${
+                          on ? 'bg-amber-500' : 'bg-black/50 border border-white/40'
+                        }`}>
+                          {on && <Check className="w-4 h-4 text-stone-950" />}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
