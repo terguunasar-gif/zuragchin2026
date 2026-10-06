@@ -15,7 +15,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
+import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
 
 const corsHeaders = {
@@ -114,6 +114,9 @@ Deno.serve(async (req: Request) => {
     }
     if (req.method === "POST" && path === "/generate") {
       return json(await generate(await readJson(req)));
+    }
+    if (req.method === "POST" && path === "/admin/preview") {
+      return json(await adminPreview(req, await readJson(req)));
     }
     if (req.method === "POST" && path === "/finalize") {
       return json(await finalize(await readJson(req)));
@@ -509,6 +512,75 @@ async function cleanupExpired() {
       updated_at: now(),
     }).eq("id", j.id);
   }
+}
+
+// ── 9. Admin: темплетийн жишээ зургийг AI-аар үүсгэх ─────────────────────────
+async function requireAdmin(req: Request): Promise<string> {
+  const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jwt) throw new HttpError(401, "Нэвтэрнэ үү");
+  const { data, error } = await db.auth.getUser(jwt);
+  if (error || !data?.user) throw new HttpError(401, "Нэвтэрнэ үү");
+  const { data: u } = await db.from("users").select("role").eq("id", data.user.id).maybeSingle();
+  const roles: string[] = Array.isArray(u?.role) ? u!.role : [String(u?.role ?? "")];
+  if (!roles.includes("admin")) throw new HttpError(403, "Зөвхөн админ");
+  return data.user.id;
+}
+
+async function adminPreview(req: Request, body: Record<string, unknown>) {
+  await requireAdmin(req);
+  if (!GEMINI_API_KEY) throw new HttpError(500, "GEMINI_API_KEY тохируулаагүй байна");
+  const templateId = str(body.templateId);
+  if (!isUuid(templateId)) throw new HttpError(400, "Темплет буруу");
+  const { data: tpl } = await db.from("ai_templates").select("*").eq("id", templateId).maybeSingle();
+  if (!tpl) throw new HttpError(404, "Темплет олдсонгүй");
+
+  const people = typeof body.peopleCount === "number" ? body.peopleCount : 2;
+  const prompt = buildPreviewPrompt({
+    scenePrompt: tpl.scene_prompt,
+    peopleCount: people,
+    compositionOverrides: tpl.composition_overrides,
+  });
+  const images: InlineImage[] = [];
+  if (tpl.style_ref_url) {
+    const ref = await fetchAsInline(tpl.style_ref_url).catch(() => null);
+    if (ref) images.push(ref);
+  }
+
+  let result;
+  try {
+    result = await generateImage({
+      apiKey: GEMINI_API_KEY,
+      model: GEMINI_MODEL,
+      prompt: images.length
+        ? `${prompt}\nImage 1 is a scene and style reference only.`
+        : prompt,
+      images,
+      aspectRatio: tpl.aspect_ratio || "3:4",
+      imageSize: "1K",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("preview failed:", msg);
+    throw new HttpError(502, friendlyError(msg) || "Зураг үүсгэж чадсангүй");
+  }
+
+  const bytes = base64ToBytes(result.image.data);
+  const path = `templates/${tpl.slug}-preview-${Date.now()}.${extFor(result.image.mimeType)}`;
+  const { error: upErr } = await db.storage.from("ai-booth-assets")
+    .upload(path, bytes, { contentType: result.image.mimeType, upsert: true });
+  if (upErr) throw new Error(`preview upload failed: ${upErr.message}`);
+  const { data: { publicUrl } } = db.storage.from("ai-booth-assets").getPublicUrl(path);
+
+  // Хуучин жишээ зургийг устгана (зөвхөн манай templates/ хавтсанд байгаа бол)
+  const oldUrl: string = tpl.preview_url ?? "";
+  const marker = "/ai-booth-assets/";
+  if (oldUrl.includes(marker + "templates/")) {
+    const oldPath = oldUrl.slice(oldUrl.indexOf(marker) + marker.length).split("?")[0];
+    await db.storage.from("ai-booth-assets").remove([oldPath]).catch(() => undefined);
+  }
+
+  await db.from("ai_templates").update({ preview_url: publicUrl, updated_at: now() }).eq("id", tpl.id);
+  return { previewUrl: publicUrl };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

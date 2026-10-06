@@ -97,3 +97,29 @@ export function buildPrompt(input: PromptInput): string {
 export function imageSizeFor(peopleCount: number | null | undefined): "1K" | "2K" {
   return clampPeople(peopleCount) >= 3 || clampPeople(peopleCount) === 0 ? "2K" : "1K";
 }
+
+const PREVIEW_PEOPLE: Record<number, string> = {
+  1: "one fictional adult Mongolian woman in her late 20s",
+  2: "two fictional adult Mongolians, a man and a woman in their 30s",
+  3: "three fictional adult Mongolian friends (two women and one man) in their 20s–30s",
+  4: "four fictional adult Mongolian colleagues (two women and two men) of mixed ages",
+};
+
+/**
+ * Темплетийн жишээ зураг (preview) үүсгэх prompt. Жинхэнэ хүний зураг ашиглахгүй —
+ * зохиомол хүмүүсээр темплетийн хэв маягийг харуулна.
+ */
+export function buildPreviewPrompt(input: {
+  scenePrompt: string;
+  peopleCount: number;
+  compositionOverrides?: Record<string, string> | null;
+}): string {
+  const n = Math.min(Math.max(Math.floor(input.peopleCount) || 2, 1), MAX_PEOPLE);
+  return [
+    `Create a high-quality example portrait image showing ${PREVIEW_PEOPLE[n]}, in this scene: ${input.scenePrompt.trim()}`,
+    `Composition: ${compositionFor(n, input.compositionOverrides)}`,
+    "Framing: chest-up portrait (head, shoulders and upper chest), faces large, sharp, natural and well lit, everyone looking at the camera with a friendly expression.",
+    "The people must be entirely fictional and must not resemble any real or famous person.",
+    "Do not draw any text, letters, numbers, logos, signatures or watermarks anywhere in the image.",
+  ].join("\n");
+}
