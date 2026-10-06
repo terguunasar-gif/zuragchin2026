@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -418,6 +418,11 @@ export default function DashboardPage() {
                         <button onClick={e => { e.stopPropagation(); navigate(`/album/${album.id}`); }}
                           className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Eye className="w-3.5 h-3.5" />Харах
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/ai-booth`); }}
+                          title="AI бүүт"
+                          className="flex items-center justify-center gap-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/20 text-fuchsia-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Sparkles className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={e => { e.stopPropagation(); setQrModal({ id: album.id, name: album.title || album.name || '—' }); }}
                           className="flex items-center justify-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">

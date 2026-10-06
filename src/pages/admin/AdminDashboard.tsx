@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Camera, LogOut, LayoutDashboard, Users, FolderOpen,
-  ArrowUpCircle, Wallet, ChevronRight, Shield,
+  ArrowUpCircle, Wallet, ChevronRight, Shield, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminOverviewTab from './AdminOverviewTab';
@@ -10,8 +10,9 @@ import AdminUsersTab from './AdminUsersTab';
 import AdminAlbumsTab from './AdminAlbumsTab';
 import AdminPayoutsTab from './AdminPayoutsTab';
 import AdminWalletTab from './AdminWalletTab';
+import AdminAiTemplatesTab from './AdminAiTemplatesTab';
 
-type AdminTab = 'overview' | 'users' | 'albums' | 'payouts' | 'wallet';
+type AdminTab = 'overview' | 'users' | 'albums' | 'payouts' | 'wallet' | 'ai';
 
 const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Нэгдсэн',   icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -19,6 +20,7 @@ const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'albums',   label: 'Цомог',      icon: <FolderOpen className="w-4 h-4" /> },
   { id: 'payouts',  label: 'Мөнгө татах', icon: <ArrowUpCircle className="w-4 h-4" /> },
   { id: 'wallet',   label: 'Платформ',   icon: <Wallet className="w-4 h-4" /> },
+  { id: 'ai',       label: 'AI темплет', icon: <Sparkles className="w-4 h-4" /> },
 ];
 
 export default function AdminDashboard() {
@@ -110,6 +112,7 @@ export default function AdminDashboard() {
           {activeTab === 'albums'   && <AdminAlbumsTab />}
           {activeTab === 'payouts'  && <AdminPayoutsTab />}
           {activeTab === 'wallet'   && <AdminWalletTab />}
+          {activeTab === 'ai'       && <AdminAiTemplatesTab />}
         </div>
       </div>
     </div>
