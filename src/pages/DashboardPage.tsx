@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
 import PhotographerProfileTab from './photographer/PhotographerProfileTab';
+import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
 
 interface Album {
   id: string;
@@ -48,6 +49,9 @@ export default function DashboardPage() {
   const [walletBalance, setWalletBalance] = useState(0);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [printOrders, setPrintOrders] = useState<any[]>([]);
+  const sales = useMySales();
+  const photographerSum = summarize(sales.rows.filter(r => r.is_my_photo));
+  const organizerSum = summarize(sales.rows.filter(r => r.is_my_album));
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [activeRole, setActiveRole] = useState<'buyer' | 'photographer' | 'organizer'>('buyer');
@@ -330,8 +334,8 @@ export default function DashboardPage() {
           )}
           {activeRole === 'photographer' && isPhotographer && (
             <>
-              <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Миний зураг" value="—" />
-              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
             </>
           )}
@@ -339,7 +343,7 @@ export default function DashboardPage() {
             <>
               <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Нийт цомог" value={albums.length} />
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} />
-              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Тооцоо" value="—" />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
             </>
           )}
@@ -439,6 +443,16 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ── ORGANIZER: Цомгуудын борлуулалт ── */}
+        {activeRole === 'organizer' && isOrganizer && (
+          <SalesPanel mode="organizer" sales={sales} />
+        )}
+
+        {/* ── PHOTOGRAPHER: Борлуулалт ба угаалгах захиалга ── */}
+        {activeRole === 'photographer' && isPhotographer && (
+          <SalesPanel mode="photographer" sales={sales} />
         )}
 
         {/* ── PHOTOGRAPHER: Profile tab ── */}
