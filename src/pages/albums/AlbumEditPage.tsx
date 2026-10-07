@@ -3,9 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Save, AlertCircle, CheckCircle2,
   Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid,
+  Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+
+interface AlbumPhotographer {
+  photographer_id: string;
+  display_name: string;
+  zur_id: string;
+  status: string;
+}
 
 type WatermarkPosition =
   | 'top-left'    | 'top-center'    | 'top-right'
@@ -197,6 +205,15 @@ export default function AlbumEditPage() {
   const logoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [sizePrices, setSizePrices] = useState<SizePrice[]>(SIZE_PRICES_DEFAULT);
 
+  // Холбоо барих мэдээлэл (угаалгах захиалгын баримт дээр харагдана)
+  const [contact, setContact] = useState({ phone: '', email: '', facebook: '', instagram: '', other: '' });
+
+  // Цомгийн зурагчид
+  const [albumPhotographers, setAlbumPhotographers] = useState<AlbumPhotographer[]>([]);
+  const [zurInput, setZurInput] = useState('');
+  const [zurError, setZurError] = useState('');
+  const [zurBusy, setZurBusy] = useState(false);
+
   useEffect(() => { if (albumId && profile) loadAlbum(); }, [albumId, profile]);
 
   async function loadAlbum() {
@@ -236,6 +253,13 @@ export default function AlbumEditPage() {
       }
     }
 
+    const ci = data.contact_info && typeof data.contact_info === 'object' ? data.contact_info : {};
+    setContact({
+      phone: ci.phone ?? '', email: ci.email ?? '', facebook: ci.facebook ?? '',
+      instagram: ci.instagram ?? '', other: ci.other ?? '',
+    });
+    await loadPhotographers();
+
     if (data.size_prices && Array.isArray(data.size_prices)) {
       setSizePrices(SIZE_PRICES_DEFAULT.map(def => {
         const found = data.size_prices.find((s: any) => s.size === def.size);
@@ -245,6 +269,36 @@ export default function AlbumEditPage() {
       setSizePrices(prev => prev.map(s => s.size === 'digital' ? { ...s, price: String(data.download_price), enabled: true } : s));
     }
     setLoading(false);
+  }
+
+  async function loadPhotographers() {
+    const { data } = await supabase.rpc('album_photographer_list', { p_album_id: albumId });
+    setAlbumPhotographers((data ?? []) as AlbumPhotographer[]);
+  }
+
+  async function addPhotographer() {
+    setZurError('');
+    const cleaned = zurInput.trim().toUpperCase();
+    if (!/^ZUR-[A-Z0-9]+$/.test(cleaned)) { setZurError('ZUR-XXXXX форматаар оруулна уу'); return; }
+    if (albumPhotographers.some(p => p.zur_id === cleaned)) { setZurError('Энэ зурагчин аль хэдийн нэмэгдсэн байна'); return; }
+    setZurBusy(true);
+    const { data: found, error: findErr } = await supabase.rpc('find_photographer_by_zur_id', { p_zur_id: cleaned });
+    const row = Array.isArray(found) ? found[0] : null;
+    if (findErr || !row) { setZurError('Энэ ZUR-ID-тэй зурагчин олдсонгүй'); setZurBusy(false); return; }
+    const { error: insErr } = await supabase.from('album_photographers')
+      .upsert({ album_id: albumId, photographer_id: row.user_id, status: 'approved' }, { onConflict: 'album_id,photographer_id' });
+    if (insErr) { setZurError('Нэмэхэд алдаа гарлаа: ' + insErr.message); setZurBusy(false); return; }
+    setZurInput('');
+    await loadPhotographers();
+    setZurBusy(false);
+  }
+
+  async function removePhotographer(photographerId: string, name: string) {
+    if (!window.confirm(`${name}-г энэ цомгоос хасах уу? Өмнө байршуулсан зургууд нь цомогт хэвээр үлдэнэ.`)) return;
+    const { error: delErr } = await supabase.from('album_photographers')
+      .delete().eq('album_id', albumId).eq('photographer_id', photographerId);
+    if (delErr) { setError('Хасахад алдаа гарлаа: ' + delErr.message); return; }
+    await loadPhotographers();
   }
 
   function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
@@ -290,6 +344,10 @@ export default function AlbumEditPage() {
       status, is_free: isFree,
       download_price: isFree ? 0 : parseFloat(digitalPrice?.price || '0') || 0,
       size_prices: isFree ? null : activeSizes.map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
+      contact_info: {
+        phone: contact.phone.trim(), email: contact.email.trim(), facebook: contact.facebook.trim(),
+        instagram: contact.instagram.trim(), other: contact.other.trim(),
+      },
       watermark_type: 'layers',
       watermark_value: watermarkValue,
       watermark_position: first?.position || 'bottom-right',
@@ -569,6 +627,79 @@ export default function AlbumEditPage() {
                 </div>
               )}
               <p className="text-stone-600 text-xs">Идэвхтэй хэмжээнүүд худалдан авагчид харагдана</p>
+            </section>
+
+            {/* Холбоо барих мэдээлэл */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+              <h2 className="text-white font-semibold flex items-center gap-2">
+                <span className="w-7 h-7 bg-sky-500/20 rounded-lg flex items-center justify-center"><Phone className="w-3.5 h-3.5 text-sky-400" /></span>
+                Холбоо барих мэдээлэл
+              </h2>
+              <p className="text-stone-500 text-xs -mt-2">
+                Угаалгах зураг захиалсан хүний баримт дээр харагдана. Зурагчны профайлд утас байхгүй үед үүнийг харуулна.
+              </p>
+              {([
+                ['phone', 'Утасны дугаар', '+976 9900 0000', Phone, 'tel'],
+                ['email', 'Имэйл', 'organizer@example.com', Mail, 'email'],
+                ['facebook', 'Facebook', 'https://facebook.com/...', Facebook, 'url'],
+                ['instagram', 'Instagram', 'https://instagram.com/...', Instagram, 'url'],
+                ['other', 'Бусад холбоос', 'https://...', LinkIcon, 'url'],
+              ] as const).map(([key, label, ph, Icon, type]) => (
+                <div key={key}>
+                  <label className="block text-stone-400 text-xs mb-1.5">{label}</label>
+                  <div className="relative">
+                    <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
+                    <input type={type} value={contact[key]} placeholder={ph}
+                      onChange={e => setContact(prev => ({ ...prev, [key]: e.target.value }))}
+                      className={inputCls + ' pl-10'} />
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            {/* Зурагчид */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+              <h2 className="text-white font-semibold flex items-center gap-2">
+                <span className="w-7 h-7 bg-violet-500/20 rounded-lg flex items-center justify-center"><Users className="w-3.5 h-3.5 text-violet-400" /></span>
+                Зурагчид
+              </h2>
+              <p className="text-stone-500 text-xs -mt-2">
+                Энд нэмсэн зурагчид энэ цомогт зураг байршуулж чадна. Та өөрөө (цомгийн эзэн) үргэлж байршуулж болно.
+              </p>
+              <div className="flex gap-2">
+                <input value={zurInput} onChange={e => setZurInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addPhotographer(); }}
+                  placeholder="ZUR-XXXXX" className={inputCls + ' uppercase'} />
+                <button type="button" onClick={addPhotographer} disabled={zurBusy || !zurInput.trim()}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 rounded-xl text-sm flex-shrink-0">
+                  {zurBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Нэмэх
+                </button>
+              </div>
+              {zurError && <p className="text-red-400 text-xs">{zurError}</p>}
+              {albumPhotographers.length === 0 ? (
+                <p className="text-stone-600 text-sm">Нэмэгдсэн зурагчин алга.</p>
+              ) : (
+                <div className="divide-y divide-white/5 border border-white/10 rounded-xl overflow-hidden">
+                  {albumPhotographers.map(p => (
+                    <div key={p.photographer_id} className="flex items-center gap-3 px-3 py-2.5">
+                      <div className="w-8 h-8 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                        {(p.display_name || '?').slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white text-sm truncate">{p.display_name}</p>
+                        <p className="text-stone-500 text-xs">
+                          {p.zur_id || '—'}{p.status !== 'approved' ? ` · ${p.status === 'pending' ? 'Хүлээгдэж буй' : 'Татгалзсан'}` : ''}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => removePhotographer(p.photographer_id, p.display_name)}
+                        className="text-stone-500 hover:text-red-400 p-1.5" title="Хасах">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           </div>
         </div>
