@@ -40,11 +40,13 @@ export default function CheckoutModal({
   album,
   onClose,
   onSuccess,
+  onInvoiceCreated,
 }: {
   cart: CartItem[];
   album: AlbumData;
   onClose: () => void;
   onSuccess: (invoiceId: string) => void;
+  onInvoiceCreated?: (invoiceId: string) => void;
 }) {
   const [step, setStep] = useState<Step>('summary');
   const [buyerName, setBuyerName] = useState('');
@@ -105,6 +107,7 @@ export default function CheckoutModal({
       if (!res.ok || data.error) throw new Error(data.error ?? 'Failed to create invoice');
 
       setInvoice(data);
+      onInvoiceCreated?.(data.invoiceId);
       setStep('qpay');
       startPolling(data.invoiceId);
     } catch (err) {
