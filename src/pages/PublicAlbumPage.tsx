@@ -99,7 +99,7 @@ export default function PublicAlbumPage() {
     setLoading(true);
     const { data: albumData } = await supabase
       .from('albums')
-      .select('id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url')
+      .select('id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices')
       .or(`share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`)
       .eq('status', 'active')
       .maybeSingle();
@@ -122,13 +122,18 @@ export default function PublicAlbumPage() {
       .eq('album_id', albumData.id)
       .order('created_at', { ascending: true });
 
-    setPhotos((photoData ?? []).map((p: any) => ({
-      id: p.id,
-      watermarked_url: p.preview_url,
-      title: p.filename ?? p.id,
-      photographer_id: p.photographer_id,
-      print_prices: p.print_prices ?? {},
-    })));
+    // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
+    const albumPrint = albumPrintPrices((albumData as any).size_prices);
+    setPhotos((photoData ?? []).map((p: any) => {
+      const own = p.print_prices && typeof p.print_prices === 'object' ? p.print_prices : {};
+      return {
+        id: p.id,
+        watermarked_url: p.preview_url,
+        title: p.filename ?? p.id,
+        photographer_id: p.photographer_id,
+        print_prices: Object.keys(own).length > 0 ? own : albumPrint,
+      };
+    }));
     setLoading(false);
   }
 
@@ -518,4 +523,17 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
       </div>
     </>
   );
+}
+
+/** Цомгийн size_prices ([{size, price, enabled?}]) → {"10x15": 10000, ...}. digital-ийг оруулахгүй. */
+function albumPrintPrices(sizePrices: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!Array.isArray(sizePrices)) return out;
+  for (const sp of sizePrices as { size?: string; price?: number; enabled?: boolean }[]) {
+    const size = String(sp?.size ?? '');
+    const price = Number(sp?.price ?? 0);
+    if (sp?.enabled === false) continue;
+    if (size && size !== 'digital' && price > 0) out[size] = price;
+  }
+  return out;
 }
