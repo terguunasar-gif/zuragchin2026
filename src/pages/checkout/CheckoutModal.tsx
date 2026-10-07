@@ -60,9 +60,6 @@ export default function CheckoutModal({
   const pollCount = useRef(0);
 
   const grossTotal = cart.reduce((s, i) => s + i.price, 0);
-  const qpayFee    = Math.round(grossTotal * 0.01 * 100) / 100;
-  const platformFee = Math.round(grossTotal * 0.03 * 100) / 100;
-  const ownerAmt   = Math.round(grossTotal * 0.10 * 100) / 100;
   const youPay     = grossTotal; // buyer pays gross; fees come out of that
 
   function stopPolling() {
@@ -180,11 +177,7 @@ export default function CheckoutModal({
 
               {/* Fee breakdown */}
               <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
-                <FeeRow label="Нийт дүн" value={grossTotal} />
-                <FeeRow label="QPay шимтгэл (1%)" value={qpayFee} muted />
-                <FeeRow label="Платформ шимтгэл (3%)" value={platformFee} muted />
-                <FeeRow label="Зохион байгуулагчийн хувь (10%)" value={ownerAmt} muted />
-                <div className="border-t border-white/10 pt-2 mt-1 flex justify-between font-semibold">
+                <div className="flex justify-between font-semibold">
                   <span className="text-white">Нийт төлөх</span>
                   <span className="text-amber-400 text-base">₮{youPay.toLocaleString()}</span>
                 </div>
@@ -298,9 +291,7 @@ export default function CheckoutModal({
 
               {/* Fee summary */}
               <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
-                <FeeRow label="Нийт дүн" value={invoice.grossTotal} />
-                <FeeRow label="QPay шимтгэл (1%)" value={invoice.qpayFee} muted />
-                <FeeRow label="Платформ шимтгэл (3%)" value={invoice.platformFee} muted />
+                <FeeRow label="Нийт төлөх" value={invoice.grossTotal} />
               </div>
             </>
           )}
