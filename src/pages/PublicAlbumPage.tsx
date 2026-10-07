@@ -104,8 +104,16 @@ export default function PublicAlbumPage() {
     if (album && cartReady) saveCart(album.id, cart);
   }, [album, cart, cartReady]);
 
-  async function restoreCart(albumId: string, photoIds: Set<string>) {
-    const saved = loadCart<CartItem>(albumId).filter(c => photoIds.has(c.photoId));
+  async function restoreCart(albumId: string, current: PhotoData[], downloadPrice: number) {
+    // Хадгалсан сагсны үнийг одоогийн үнээр шинэчилнэ (үнэ өөрчлөгдсөн байж болно)
+    const byId = new Map(current.map(p => [p.id, p]));
+    const saved = loadCart<CartItem>(albumId).flatMap(c => {
+      const photo = byId.get(c.photoId);
+      if (!photo) return [];
+      if (c.type === 'download') return [{ ...c, price: downloadPrice }];
+      const price = Number(photo.print_prices?.[c.printSize ?? ''] ?? 0);
+      return price > 0 ? [{ ...c, price }] : [];
+    });
     // Өмнө нь QPay нэхэмжлэх үүсгээд хуудаснаас гарсан бол төлөгдсөн эсэхийг шалгана.
     const pending = getPendingInvoice(albumId);
     if (pending) {
@@ -157,7 +165,7 @@ export default function PublicAlbumPage() {
 
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
-    setPhotos((photoData ?? []).map((p: any) => {
+    const mapped: PhotoData[] = (photoData ?? []).map((p: any) => {
       const own = p.print_prices && typeof p.print_prices === 'object' ? p.print_prices : {};
       return {
         id: p.id,
@@ -166,8 +174,9 @@ export default function PublicAlbumPage() {
         photographer_id: p.photographer_id,
         print_prices: Object.keys(own).length > 0 ? own : albumPrint,
       };
-    }));
-    await restoreCart(albumData.id, new Set((photoData ?? []).map((p: any) => p.id as string)));
+    });
+    setPhotos(mapped);
+    await restoreCart(albumData.id, mapped, albumData.is_free ? 0 : Number(albumData.download_price ?? 0));
     setLoading(false);
   }
 
