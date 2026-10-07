@@ -22,6 +22,8 @@ interface WatermarkOptions {
   imageSize?: number;
 }
 
+const DEFAULT_TILED_TEXT = 'zuragchin.mn';
+
 export async function applyWatermark(
   sourceFile: File,
   opts: WatermarkOptions,
@@ -34,8 +36,10 @@ export async function applyWatermark(
   ctx.drawImage(img, 0, 0);
 
   if (opts.type === 'layers') {
+    let hasTiled = false;
     try {
       const layers: WatermarkLayer[] = JSON.parse(opts.value);
+      hasTiled = layers.some(l => l.type === 'tiled-text' && !!l.text);
       for (const layer of layers) {
         if (layer.type === 'tiled-text' && layer.text) {
           // Бүх зургийг бүрхэх давтагдах текст тамга
@@ -59,6 +63,11 @@ export async function applyWatermark(
       }
     } catch (err) {
       console.error('Layers parse error:', err);
+    }
+    // Цомогт давтагдах тамга тохируулаагүй ч зургийг хамгаалахын тулд
+    // бүх зургийг бүрхэх нарийн "zuragchin.mn" тамгыг заавал нэмнэ.
+    if (!hasTiled) {
+      await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, DEFAULT_TILED_TEXT, 0.3);
     }
   } else if (opts.type === 'text' && opts.value) {
     await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35);
