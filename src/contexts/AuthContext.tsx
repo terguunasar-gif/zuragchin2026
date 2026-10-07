@@ -25,7 +25,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('id', userId)
       .maybeSingle();
-    setProfile(data);
+    // Таб руу буцаж ороход Supabase токеноо шинэчилж дахин дуудагддаг.
+    // Профайл өөрчлөгдөөгүй бол шинэ объект өгөхгүй — эс тэгвээс хуудсууд
+    // дахин ачаалагдаж бөглөж байсан маягт арилдаг.
+    setProfile(prev => (prev && JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
   }
 
   async function refreshProfile() {
@@ -43,9 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser(prev => (prev && session?.user && prev.id === session.user.id ? prev : session?.user ?? null));
+      // Токен шинэчлэгдэх нь профайл өөрчлөгдсөн гэсэн үг биш.
+      if (event === 'TOKEN_REFRESHED') return;
       if (session?.user) {
         (async () => {
           await fetchProfile(session.user.id);
