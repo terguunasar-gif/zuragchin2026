@@ -178,7 +178,8 @@ export default function CreateAlbumPage() {
     if (!cleaned.startsWith('ZUR-')) { setZurError('ZUR-XXXXX форматаар оруулна уу'); return; }
     if (photographers.find(p => p.zur_id === cleaned)) { setZurError('Энэ зурагчин аль хэдийн нэмэгдсэн байна'); return; }
     setSearchingZur(true);
-    const { data, error } = await supabase.from('photographer_profiles').select('user_id, display_name').eq('zur_id', cleaned).maybeSingle();
+    const { data: found, error } = await supabase.rpc('find_photographer_by_zur_id', { p_zur_id: cleaned });
+    const data = Array.isArray(found) ? found[0] as { user_id: string; display_name: string } | undefined : undefined;
     if (error || !data) { setZurError('Энэ ZUR-ID-тэй зурагчин олдсонгүй'); setSearchingZur(false); return; }
     const defaultPct = Math.floor((photographerPoolFraction * 100) / (photographers.length + 1));
     setPhotographers(prev => [...prev, { zur_id: cleaned, user_id: data.user_id, display_name: data.display_name || cleaned, photographer_percent: defaultPct }]);
