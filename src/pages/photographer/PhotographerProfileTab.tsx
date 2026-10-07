@@ -96,15 +96,25 @@ export default function PhotographerProfileTab() {
   async function save() {
     if (!profile) return;
     setSaving(true);
+    let errMsg = '';
     if (data.id) {
-      await supabase.from('photographer_profiles').update({ ...data, user_id: profile.id }).eq('id', data.id);
+      const { error } = await supabase.from('photographer_profiles').update({ ...data, user_id: profile.id }).eq('id', data.id);
+      if (error) errMsg = error.message;
     } else {
-      const { data: zurResult } = await supabase.rpc('generate_zur_id');
-      const { data: created } = await supabase.from('photographer_profiles')
-        .insert({ ...data, user_id: profile.id, zur_id: zurResult }).select().single();
-      if (created) setData(created);
+      const { data: zurResult, error: zurErr } = await supabase.rpc('generate_zur_id');
+      if (zurErr) errMsg = zurErr.message;
+      else {
+        const { data: created, error } = await supabase.from('photographer_profiles')
+          .insert({ ...data, user_id: profile.id, zur_id: zurResult }).select().single();
+        if (error) errMsg = error.message;
+        if (created) setData(created);
+      }
     }
     setSaving(false);
+    if (errMsg) {
+      window.alert('Профайл хадгалахад алдаа гарлаа: ' + errMsg);
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   }
