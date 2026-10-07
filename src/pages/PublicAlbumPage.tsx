@@ -3,10 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft,
+  ChevronDown, ChevronUp, ChevronLeft, Receipt,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
+const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
+import { loadCart, saveCart, getPendingInvoice, setPendingInvoice } from '../lib/purchaseHistory';
 
 export interface AlbumData {
   id: string;
@@ -93,7 +95,38 @@ export default function PublicAlbumPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
 
+  const [cartReady, setCartReady] = useState(false);
+
   useEffect(() => { if (shareLink) loadAlbum(shareLink); }, [shareLink]);
+
+  // Сагсыг браузерт хадгална — өөр хуудас руу ороод буцаж ирэхэд хэвээр байна.
+  useEffect(() => {
+    if (album && cartReady) saveCart(album.id, cart);
+  }, [album, cart, cartReady]);
+
+  async function restoreCart(albumId: string, photoIds: Set<string>) {
+    const saved = loadCart<CartItem>(albumId).filter(c => photoIds.has(c.photoId));
+    // Өмнө нь QPay нэхэмжлэх үүсгээд хуудаснаас гарсан бол төлөгдсөн эсэхийг шалгана.
+    const pending = getPendingInvoice(albumId);
+    if (pending) {
+      try {
+        const res = await fetch(`${QPAY_FN_URL}/check-payment/${pending}`, {
+          headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        });
+        const data = await res.json();
+        if (data.isPaid) {
+          setPendingInvoice(albumId, null);
+          saveCart(albumId, []);
+          setCart([]);
+          setCartReady(true);
+          navigate(`/receipt/${pending}`);
+          return;
+        }
+      } catch { /* сүлжээний алдаа — сагсыг хэвээр үлдээнэ */ }
+    }
+    setCart(saved);
+    setCartReady(true);
+  }
 
   async function loadAlbum(link: string) {
     setLoading(true);
@@ -134,6 +167,7 @@ export default function PublicAlbumPage() {
         print_prices: Object.keys(own).length > 0 ? own : albumPrint,
       };
     }));
+    await restoreCart(albumData.id, new Set((photoData ?? []).map((p: any) => p.id as string)));
     setLoading(false);
   }
 
@@ -238,6 +272,13 @@ export default function PublicAlbumPage() {
               <p className="text-stone-500 text-xs truncate">{album.organizer_name}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => navigate('/my-purchases')}
+            title="Миний худалдан авалт"
+            className="flex items-center gap-2 text-stone-300 hover:text-white border border-white/10 hover:border-white/30 px-3 py-2 rounded-xl transition-colors">
+            <Receipt className="w-4 h-4" />
+            <span className="hidden md:inline text-sm">Миний худалдан авалт</span>
+          </button>
           <button onClick={() => setCartOpen(o => !o)}
             className="relative flex items-center gap-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl transition-colors flex-shrink-0">
             <ShoppingCart className="w-4 h-4" />
@@ -248,6 +289,7 @@ export default function PublicAlbumPage() {
               </span>
             )}
           </button>
+          </div>
         </div>
       </header>
 
@@ -338,8 +380,11 @@ export default function PublicAlbumPage() {
         <CheckoutModal
           cart={cart} album={album}
           onClose={() => setCheckoutOpen(false)}
+          onInvoiceCreated={(invoiceId) => setPendingInvoice(album.id, invoiceId)}
           onSuccess={(invoiceId) => {
             setCheckoutOpen(false);
+            setPendingInvoice(album.id, null);
+            saveCart(album.id, []);
             setCart([]);
             navigate(`/receipt/${invoiceId}`);
           }}
