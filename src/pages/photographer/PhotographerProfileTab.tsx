@@ -43,13 +43,32 @@ export default function PhotographerProfileTab() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (profile) loadProfile(); }, [profile]);
+  const profileId = profile?.id;
+  const draftKey = profileId ? `zuragchin_profile_draft_${profileId}` : '';
+  const draftReady = useRef(false);
+
+  useEffect(() => { if (profileId) loadProfile(); }, [profileId]);
+
+  // Бөглөж буй мэдээллийг браузерт түр хадгална — хуудас refresh болсон ч алдагдахгүй.
+  useEffect(() => {
+    if (!draftKey || !draftReady.current) return;
+    try { localStorage.setItem(draftKey, JSON.stringify(data)); } catch { /* ignore */ }
+  }, [data, draftKey]);
 
   async function loadProfile() {
     const { data: p } = await supabase
       .from('photographer_profiles').select('*')
-      .eq('user_id', profile!.id).maybeSingle();
-    if (p) setData(p);
+      .eq('user_id', profileId!).maybeSingle();
+    let draft: Partial<PhotographerProfile> | null = null;
+    try {
+      const raw = localStorage.getItem(`zuragchin_profile_draft_${profileId}`);
+      draft = raw ? JSON.parse(raw) : null;
+    } catch { draft = null; }
+    if (p || draft) {
+      // Хадгалаагүй ноорог байвал түүнийг (DB-ийн id/zur_id-тэй нь) сэргээнэ.
+      setData(prev => ({ ...prev, ...(p ?? {}), ...(draft ?? {}), id: p?.id, zur_id: p?.zur_id }));
+    }
+    draftReady.current = true;
     setLoading(false);
   }
 
@@ -115,6 +134,7 @@ export default function PhotographerProfileTab() {
       window.alert('Профайл хадгалахад алдаа гарлаа: ' + errMsg);
       return;
     }
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   }
