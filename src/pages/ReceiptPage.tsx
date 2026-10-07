@@ -65,6 +65,8 @@ export default function ReceiptPage() {
   const [signedUrls, setSignedUrls]   = useState<SignedUrlItem[]>([]);
   const [photographers, setPhotographers] = useState<Record<string, PhotographerContact>>({});
   const [albumShareLink, setAlbumShareLink] = useState('');
+  // Зурагчны профайлд холбоо барих мэдээлэл байхгүй үед цомгийн (зохион байгуулагчийн) мэдээллийг харуулна.
+  const [albumContact, setAlbumContact] = useState<PhotographerContact | null>(null);
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
 
   useEffect(() => { if (invoiceId) load(invoiceId); }, [invoiceId]);
@@ -92,9 +94,13 @@ export default function ReceiptPage() {
       // Album share link
       if (rows[0]?.album_id) {
         const { data: albumData } = await supabase
-          .from('albums').select('share_link, name, title')
+          .from('albums').select('share_link, name, title, contact_info')
           .eq('id', rows[0].album_id).maybeSingle();
         setAlbumShareLink(albumData?.share_link ?? '');
+        const ac = (albumData as any)?.contact_info;
+        if (ac && typeof ac === 'object' && Object.values(ac).some(v => !!v)) {
+          setAlbumContact({ name: (albumData as any)?.title || (albumData as any)?.name || 'Зохион байгуулагч', contact_info: ac });
+        }
 
         // Төлөгдсөн захиалгыг энэ төхөөрөмжийн «Миний худалдан авалт» түүхэнд нэмнэ.
         const paid = rows.filter(r => r.payment_status === 'paid');
@@ -407,7 +413,9 @@ export default function ReceiptPage() {
             </div>
             <div className="divide-y divide-white/5">
               {printPurchases.map(p => {
-                const pg = photographers[p.photographer_id];
+                const own = photographers[p.photographer_id];
+                const ownHasContact = !!own && Object.values(own.contact_info ?? {}).some(v => !!v);
+                const pg = ownHasContact ? own : (albumContact ?? own);
                 return (
                   <div key={p.id} className="px-5 py-4 space-y-3">
                     <div className="flex items-center gap-4">
@@ -445,7 +453,9 @@ export default function ReceiptPage() {
               })}
             </div>
             <div className="px-5 py-3 bg-stone-950/30 border-t border-white/5">
-              <p className="text-stone-500 text-xs">Хэвлэх захиалгын хувьд фотографчтай шууд холбоо барина уу.</p>
+              <p className="text-stone-500 text-xs">
+                Угаасан зургаа авахдаа дээрх хүнтэй холбогдож, энэ баримтыг (захиалгын дугаартай нь) үзүүлнэ үү.
+              </p>
             </div>
           </div>
         )}
