@@ -36,6 +36,7 @@ interface PurchaseRow {
   buyer_phone: string;
   album_id: string;
   created_at: string;
+  print_status?: string;
   photo_uploads: {
     preview_url: string;
     original_url: string;
@@ -76,19 +77,16 @@ export default function ReceiptPage() {
     setError('');
     try {
       // purchases + photo_uploads (original_url нэмэгдсэн)
-      const { data, error: dbErr } = await supabase
-        .from('purchases')
-        .select(`
-          id, photo_id, type, print_size, gross_amount, payment_status,
-          photographer_id, buyer_name, buyer_phone, album_id, created_at,
-          photo_uploads ( preview_url, original_url, filename )
-        `)
-        .eq('qpay_invoice_id', id);
+      // Нэхэмжлэхийн дугаараар зөвхөн энэ захиалгын мөрүүдийг авна (бусдын захиалга харагдахгүй)
+      const { data, error: dbErr } = await supabase.rpc('receipt_purchases', { p_invoice_id: id });
 
       if (dbErr) throw new Error(dbErr.message);
-      if (!data || data.length === 0) throw new Error('Order not found');
+      if (!data || data.length === 0) throw new Error('Захиалга олдсонгүй');
 
-      const rows = data as unknown as PurchaseRow[];
+      const rows: PurchaseRow[] = (data as any[]).map(r => ({
+        ...r,
+        photo_uploads: { preview_url: r.preview_url ?? '', original_url: r.original_url ?? '', filename: r.filename ?? '' },
+      }));
       setPurchases(rows);
 
       // Album share link
@@ -450,6 +448,14 @@ export default function ReceiptPage() {
                           {PRINT_SIZE_LABELS[p.print_size] ?? p.print_size} — ₮{Number(p.gross_amount).toLocaleString()}
                         </p>
                       </div>
+                      {p.payment_status === 'paid' && (
+                        <span className={`text-xs font-medium px-2 py-1 rounded-lg flex-shrink-0 ${
+                          p.print_status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400'
+                          : p.print_status === 'printed' ? 'bg-sky-500/15 text-sky-400'
+                          : 'bg-amber-500/15 text-amber-400'}`}>
+                          {p.print_status === 'delivered' ? 'Хүлээлгэж өгсөн' : p.print_status === 'printed' ? 'Угаасан — авахад бэлэн' : 'Угаалгаж байна'}
+                        </span>
+                      )}
                     </div>
                     {pg && (
                       <div className="bg-stone-950/40 rounded-xl p-3 space-y-1.5">
