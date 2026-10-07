@@ -6,6 +6,7 @@ import {
   Calendar, Hash,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { addPurchaseHistory } from '../lib/purchaseHistory';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -91,9 +92,25 @@ export default function ReceiptPage() {
       // Album share link
       if (rows[0]?.album_id) {
         const { data: albumData } = await supabase
-          .from('albums').select('share_link')
+          .from('albums').select('share_link, name, title')
           .eq('id', rows[0].album_id).maybeSingle();
         setAlbumShareLink(albumData?.share_link ?? '');
+
+        // Төлөгдсөн захиалгыг энэ төхөөрөмжийн «Миний худалдан авалт» түүхэнд нэмнэ.
+        const paid = rows.filter(r => r.payment_status === 'paid');
+        if (paid.length > 0) {
+          addPurchaseHistory({
+            invoiceId: id,
+            albumId: rows[0].album_id,
+            albumName: albumData?.title || albumData?.name || '',
+            albumLink: (albumData?.share_link ?? '').replace(/^\/album\//, ''),
+            total: paid.reduce((s, r) => s + Number(r.gross_amount || 0), 0),
+            downloads: paid.filter(r => r.type === 'download').length,
+            prints: paid.filter(r => r.type === 'print').length,
+            buyerName: rows[0].buyer_name ?? '',
+            paidAt: rows[0].created_at,
+          });
+        }
       }
 
       // Photographer contacts for print orders
@@ -432,6 +449,13 @@ export default function ReceiptPage() {
             </div>
           </div>
         )}
+
+        <button
+          onClick={() => navigate('/my-purchases')}
+          className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3 rounded-xl transition-colors text-sm">
+          <Hash className="w-4 h-4" />
+          Миний бүх худалдан авалт
+        </button>
 
         {/* Back to album */}
         {albumShareLink && (
