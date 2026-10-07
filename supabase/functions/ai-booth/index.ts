@@ -368,6 +368,7 @@ async function generate(body: Record<string, unknown>) {
       hasStyleRef,
       logoPosition: booth?.logo_url ? booth.logo_position : null,
       textPosition: booth?.overlay_text ? booth.text_position : null,
+      allowText: tpl.allow_text === true,
     });
 
     // Түр зуурын алдаанд нэг удаа дахин оролдоно
@@ -534,11 +535,13 @@ async function adminPreview(req: Request, body: Record<string, unknown>) {
   const { data: tpl } = await db.from("ai_templates").select("*").eq("id", templateId).maybeSingle();
   if (!tpl) throw new HttpError(404, "Темплет олдсонгүй");
 
-  const people = typeof body.peopleCount === "number" ? body.peopleCount : 2;
+  const requested = typeof body.peopleCount === "number" ? body.peopleCount : 2;
+  const people = Math.min(requested, Number(tpl.max_people) || MAX_PEOPLE);
   const prompt = buildPreviewPrompt({
     scenePrompt: tpl.scene_prompt,
     peopleCount: people,
     compositionOverrides: tpl.composition_overrides,
+    allowText: tpl.allow_text === true,
   });
   const images: InlineImage[] = [];
   if (tpl.style_ref_url) {
@@ -556,12 +559,13 @@ async function adminPreview(req: Request, body: Record<string, unknown>) {
         : prompt,
       images,
       aspectRatio: tpl.aspect_ratio || "3:4",
-      imageSize: "1K",
+      imageSize: "2K",
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("preview failed:", msg);
-    throw new HttpError(502, friendlyError(msg) || "Зураг үүсгэж чадсангүй");
+    // Админд жинхэнэ алдааг харуулна (оношлоход хэрэгтэй)
+    throw new HttpError(502, msg.slice(0, 400));
   }
 
   const bytes = base64ToBytes(result.image.data);
@@ -659,7 +663,7 @@ function friendlyError(raw: string): string {
   if (/safety|blocked|prohibited|SAFETY|IMAGE_SAFETY/i.test(raw)) {
     return "AI энэ зургийг боловсруулахаас татгалзлаа. Өөр байрлалаар дахин дарна уу.";
   }
-  if (/429|quota|rate/i.test(raw)) return "AI сервер завгүй байна. Хэдэн секундийн дараа дахин оролдоно уу.";
+  if (/\b429\b|RESOURCE_EXHAUSTED|quota|rate limit/i.test(raw)) return "AI сервер завгүй байна. Хэдэн секундийн дараа дахин оролдоно уу.";
   return "Зураг үүсгэхэд алдаа гарлаа. Дахин оролдоно уу — нэмэлт төлбөргүй.";
 }
 

@@ -247,16 +247,27 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** Утсан дээр "Хадгалах": боломжтой бол Share sheet (iPhone → Save Image), үгүй бол татах. */
+export function isIOS(): boolean {
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * Утсан дээр "Хадгалах".
+ * - iPhone: Share цонх нээгдэнэ → "Save Image" дарахад Photos-д орно.
+ * - Android болон бусад: файл шууд татагдана → Галерейн "Download" цомогт харагдана.
+ */
 export async function saveImageToDevice(blob: Blob, filename: string): Promise<'shared' | 'downloaded'> {
-  const file = new File([blob], filename, { type: 'image/jpeg' });
-  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-  if (nav.canShare && nav.canShare({ files: [file] })) {
-    try {
-      await nav.share({ files: [file], title: filename });
-      return 'shared';
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return 'shared';
+  if (isIOS()) {
+    const file = new File([blob], filename, { type: 'image/jpeg' });
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    if (nav.canShare && nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({ files: [file] });
+        return 'shared';
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return 'shared';
+      }
     }
   }
   const url = URL.createObjectURL(blob);
@@ -266,8 +277,14 @@ export async function saveImageToDevice(blob: Blob, filename: string): Promise<'
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
   return 'downloaded';
+}
+
+export function saveHint(result: 'shared' | 'downloaded'): string {
+  return result === 'shared'
+    ? 'Нээгдсэн цонхноос "Save Image / Зураг хадгалах"-ыг сонгоно уу. Зураг Photos-д орно.'
+    : 'Зураг татагдлаа. Галерей → "Download" цомогт харагдана. Хэрэв олдохгүй бол зураг дээр удаан дараад "Зураг татах" гэж сонгоно уу.';
 }
 
 // Төлбөр төлөгдсөн job-ийг хуудас дахин ачаалагдахад сэргээх

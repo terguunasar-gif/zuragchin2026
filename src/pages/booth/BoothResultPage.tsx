@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AlertCircle, Download, Loader2, Sparkles } from 'lucide-react';
-import { boothApi, saveImageToDevice } from '../../lib/aiBooth';
+import { boothApi, saveImageToDevice, saveHint } from '../../lib/aiBooth';
 
 // Kiosk дээрх QR-аар нээгдэх хуудас: зөвхөн тухайн нэг зургийг харуулна.
 export default function BoothResultPage() {
@@ -10,7 +10,7 @@ export default function BoothResultPage() {
   const [error, setError] = useState('');
   const [data, setData] = useState<{ blob: Blob; url: string; albumName: string; expiresAt: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<'shared' | 'downloaded' | null>(null);
 
   useEffect(() => {
     let objectUrl = '';
@@ -32,9 +32,9 @@ export default function BoothResultPage() {
   async function save() {
     if (!data) return;
     setSaving(true);
-    await saveImageToDevice(data.blob, `zuragchin-ai-${resultToken.slice(0, 6)}.jpg`);
+    const r = await saveImageToDevice(data.blob, `zuragchin-ai-${resultToken.slice(0, 6)}.jpg`);
     setSaving(false);
-    setSaved(true);
+    setSaved(r);
   }
 
   return (
@@ -74,7 +74,7 @@ export default function BoothResultPage() {
             </button>
             {saved && (
               <p className="text-stone-400 text-xs text-center">
-                iPhone дээр нээгдсэн цонхноос "Save Image / Зураг хадгалах"-ыг сонгоно уу.
+                {saveHint(saved)}
               </p>
             )}
             <p className="text-stone-600 text-xs text-center">

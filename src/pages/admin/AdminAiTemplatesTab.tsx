@@ -15,6 +15,7 @@ interface Template {
   aspect_ratio: string;
   sort_order: number;
   is_active: boolean;
+  allow_text?: boolean;
 }
 
 const EMPTY: Template = {
@@ -259,6 +260,10 @@ function TemplateCard({ template, open, onToggle, onSaved }: {
           </div>
 
           <div className="flex items-center justify-between pt-2">
+            <label className="flex items-center gap-2 text-sm text-stone-300">
+              <input type="checkbox" checked={!!t.allow_text} onChange={e => set('allow_text', e.target.checked)} className="w-4 h-4 accent-amber-500" />
+              Зураг дотор бичиг зөвшөөрөх
+            </label>
             <label className="flex items-center gap-2 text-sm text-stone-300">
               <input type="checkbox" checked={t.is_active} onChange={e => set('is_active', e.target.checked)} className="w-4 h-4 accent-amber-500" />
               Идэвхтэй (бүүтэд харагдана)

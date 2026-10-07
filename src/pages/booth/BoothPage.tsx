@@ -8,7 +8,7 @@ import {
 import {
   boothApi, BoothInfo, BoothTemplate, StartResult, MAX_PEOPLE,
   composeFinal, canvasToDataUrl, canvasToBlob, scaleCanvas, makeAlbumPreview,
-  saveImageToDevice, rememberJob, recallJob, forgetJob,
+  saveImageToDevice, saveHint, rememberJob, recallJob, forgetJob,
 } from '../../lib/aiBooth';
 import { countFaces, loadFaceDetector } from '../../lib/faceCount';
 
@@ -608,7 +608,7 @@ function ResultStep({
   kiosk: boolean;
   onDone: () => void;
 }) {
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<'shared' | 'downloaded' | null>(null);
   const resultUrl = `${window.location.origin}/booth/r/${final.resultToken}`;
 
   if (kiosk) {
@@ -639,14 +639,14 @@ function ResultStep({
       </div>
       <img src={final.url} alt="AI зураг" className="w-full rounded-2xl border border-white/10" />
       <button
-        onClick={async () => { await saveImageToDevice(final.blob, `zuragchin-ai-${final.resultToken.slice(0, 6)}.jpg`); setSaved(true); }}
+        onClick={async () => { setSaved(await saveImageToDevice(final.blob, `zuragchin-ai-${final.resultToken.slice(0, 6)}.jpg`)); }}
         className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-4 font-bold text-lg"
       >
         <Download className="w-5 h-5" /> Утсандаа хадгалах
       </button>
       {saved && (
         <p className="text-stone-400 text-xs text-center">
-          iPhone дээр нээгдсэн цонхноос "Save Image / Зураг хадгалах"-ыг сонгоно уу.
+          {saveHint(saved)}
         </p>
       )}
       <p className="text-stone-500 text-xs text-center break-all">
