@@ -219,12 +219,21 @@ async function startJob(body: Record<string, unknown>) {
     return { jobId: job.id, key: job.access_key, status: job.status, amount: 0 };
   }
 
-  const token = await qpayToken();
-  const invoice = await qpayCreateInvoice(token, {
-    amount: booth.price_mnt,
-    description: `Zuragchin.mn AI зураг — ${String(album.title || album.name).slice(0, 40)}`,
-    callbackUrl: `${SUPABASE_URL}/functions/v1/ai-booth/qpay-callback?job=${job.id}`,
-  });
+  let invoice;
+  try {
+    const token = await qpayToken();
+    invoice = await qpayCreateInvoice(token, {
+      amount: booth.price_mnt,
+      description: `Zuragchin.mn AI зураг — ${String(album.title || album.name).slice(0, 40)}`,
+      callbackUrl: `${SUPABASE_URL}/functions/v1/ai-booth/qpay-callback?job=${job.id}`,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("QPay invoice error:", msg);
+    await db.from("ai_jobs").update({ status: "expired", error: msg.slice(0, 1000), updated_at: now() })
+      .eq("id", job.id);
+    throw new HttpError(502, `QPay нэхэмжлэх үүсгэж чадсангүй: ${msg.slice(0, 200)}`);
+  }
 
   await db.from("ai_jobs").update({ qpay_invoice_id: invoice.invoice_id, updated_at: now() })
     .eq("id", job.id);
@@ -437,7 +446,7 @@ async function finalize(body: Record<string, unknown>) {
   if (booth?.add_to_album && job.add_to_album && body.preview) {
     try {
       const preview = decodeImage(body.preview, MAX_PREVIEW_BYTES, "Preview");
-      const { data: album } = await db.from("albums").select("owner_id").eq("id", job.album_id).single();
+      const { data: album } = await db.from("albums").select("*").eq("id", job.album_id).single();
       if (!album) throw new Error("album missing");
       const base = `ai-booth/${job.album_id}/${job.id}`;
       const o = await db.storage.from("photos-original")
@@ -452,7 +461,7 @@ async function finalize(body: Record<string, unknown>) {
         photographer_id: album.owner_id,
         original_url: `photos-original/${base}.jpg`,
         preview_url: publicUrl,
-        print_prices: {},
+        print_prices: albumPrintPrices(album.size_prices),
         filename: `AI-${job.id.slice(0, 8)}.jpg`,
         source: "ai_booth",
       }).select("id").single();
@@ -588,6 +597,17 @@ async function adminPreview(req: Request, body: Record<string, unknown>) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+/** Цомгийн хэвлэх үнийг (size_prices) AI зурагт хуулна — зочид угаалгаж болно. */
+function albumPrintPrices(sizePrices: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!Array.isArray(sizePrices)) return out;
+  for (const sp of sizePrices as { size?: string; price?: number }[]) {
+    const size = String(sp?.size ?? "");
+    const price = Number(sp?.price ?? 0);
+    if (size && size !== "digital" && price > 0) out[size] = price;
+  }
+  return out;
+}
 async function loadJob(jobId: string, key: string): Promise<Job> {
   if (!isUuid(jobId) || !key) throw new HttpError(404, "Захиалга олдсонгүй");
   const { data: job } = await db.from("ai_jobs").select("*").eq("id", jobId).maybeSingle<Job>();
