@@ -59,7 +59,8 @@ export default function PhotographerProfileTab() {
     setUploadingAvatar(true);
     const ext = file.name.split('.').pop();
     const path = `${profile.id}/avatar.${ext}`;
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
+    if (error) window.alert('Профайл зураг байршуулахад алдаа гарлаа: ' + error.message);
     if (!error) {
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
       const avatar_url = urlData.publicUrl + '?t=' + Date.now();
@@ -75,7 +76,8 @@ export default function PhotographerProfileTab() {
     setUploadingCover(true);
     const ext = file.name.split('.').pop();
     const path = `${profile.id}/cover.${ext}`;
-    const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true, contentType: file.type });
+    if (error) window.alert('Арын зураг байршуулахад алдаа гарлаа: ' + error.message);
     if (!error) {
       const { data: urlData } = supabase.storage.from('covers').getPublicUrl(path);
       const cover_url = urlData.publicUrl + '?t=' + Date.now();
