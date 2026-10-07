@@ -20,6 +20,7 @@ import HomePage from './pages/HomePage';
 import PhotographersPage from './pages/PhotographersPage';
 import PhotographerDetailPage from './pages/PhotographerDetailPage';
 import BoothPage from './pages/booth/BoothPage';
+import MyPurchasesPage from './pages/MyPurchasesPage';
 import BoothResultPage from './pages/booth/BoothResultPage';
 import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
 
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
+          <Route path="/my-purchases" element={<MyPurchasesPage />} />
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />
         </Routes>
