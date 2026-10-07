@@ -124,11 +124,29 @@ export default function ReceiptPage() {
         rows.filter(r => r.type === 'print').map(r => r.photographer_id),
       )];
       if (printPhotographerIds.length > 0) {
-        const { data: pData } = await supabase
-          .from('users').select('id, name, contact_info')
-          .in('id', printPhotographerIds);
         const map: Record<string, PhotographerContact> = {};
-        for (const p of pData ?? []) map[p.id] = { name: p.name, contact_info: p.contact_info ?? {} };
+        // 1) Зурагчны профайлын утас / Facebook / Instagram
+        const { data: cData } = await supabase.rpc('receipt_print_contacts', { p_invoice_id: id });
+        for (const c of (cData ?? []) as { photographer_id: string; display_name: string; phone: string; facebook: string; instagram: string }[]) {
+          map[c.photographer_id] = {
+            name: c.display_name,
+            contact_info: { phone: c.phone, facebook: c.facebook, instagram: c.instagram },
+          };
+        }
+        // 2) Профайл хоосон бол хэрэглэгчийн хуучин contact_info
+        const missing = printPhotographerIds.filter(pid =>
+          !map[pid] || !Object.values(map[pid].contact_info).some(v => !!v));
+        if (missing.length > 0) {
+          const { data: pData } = await supabase
+            .from('users').select('id, name, contact_info')
+            .in('id', missing);
+          for (const p of pData ?? []) {
+            const ci = p.contact_info ?? {};
+            if (Object.values(ci).some(v => !!v) || !map[p.id]) {
+              map[p.id] = { name: map[p.id]?.name || p.name, contact_info: ci };
+            }
+          }
+        }
         setPhotographers(map);
       }
 
