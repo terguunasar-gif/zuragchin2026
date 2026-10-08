@@ -2,8 +2,11 @@ import { useState, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, Mail, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useI18n } from '../../lib/i18n';
+import { LanguageSwitcher } from '../../components/LanguagePicker';
 
 export default function ForgotPasswordPage() {
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,18 +45,18 @@ export default function ForgotPasswordPage() {
             <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-8 h-8 text-green-400" />
             </div>
-            <h2 className="text-white text-2xl font-bold mb-3">Имэйлээ шалгана уу</h2>
+            <h2 className="text-white text-2xl font-bold mb-3">{t('Имэйлээ шалгана уу')}</h2>
             <p className="text-stone-400 mb-2">
-              Нууц үг сэргээх холбоосыг илгээлээ:
+              {t('Нууц үг сэргээх холбоосыг илгээлээ:')}
             </p>
             <p className="text-white font-medium mb-6">{email}</p>
             <p className="text-stone-500 text-sm mb-8">
-              Хүлээж аваагүй юу? Spam хавтаснаа шалгах эсвэл{' '}
+              {t('Хүлээж аваагүй юу? Spam хавтаснаа шалгах эсвэл')}{' '}
               <button
                 onClick={() => setSent(false)}
                 className="text-amber-400 hover:text-amber-300 transition-colors"
               >
-                дахин оролдох
+                {t('дахин оролдох')}
               </button>
             </p>
             <Link
@@ -61,14 +64,15 @@ export default function ForgotPasswordPage() {
               className="flex items-center justify-center gap-2 text-stone-400 hover:text-white transition-colors text-sm"
             >
               <ArrowLeft className="w-4 h-4" />
-              Нэвтрэх рүү буцах
+              {t('Нэвтрэх рүү буцах')}
             </Link>
           </div>
         ) : (
           <>
-            <h1 className="text-white text-3xl font-bold mb-2">Нууц үг мартсан уу?</h1>
+            <div className="flex justify-end mb-4"><LanguageSwitcher /></div>
+            <h1 className="text-white text-3xl font-bold mb-2">{t('Нууц үг мартсан уу?')}</h1>
             <p className="text-stone-400 mb-8">
-              Имэйлээ оруулаад нууц үг сэргээх холбоос илгээнэ.
+              {t('Имэйлээ оруулаад нууц үг сэргээх холбоос илгээнэ.')}
             </p>
 
             {error && (
@@ -80,7 +84,7 @@ export default function ForgotPasswordPage() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-stone-300 text-sm font-medium mb-2">Имэйл хаяг</label>
+                <label className="block text-stone-300 text-sm font-medium mb-2">{t('Имэйл хаяг')}</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                   <input
@@ -101,7 +105,7 @@ export default function ForgotPasswordPage() {
               >
                 {loading ? (
                   <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-                ) : 'Холбоос илгээх'}
+                ) : t('Холбоос илгээх')}
               </button>
             </form>
 
@@ -110,7 +114,7 @@ export default function ForgotPasswordPage() {
               className="flex items-center justify-center gap-2 text-stone-400 hover:text-white transition-colors text-sm mt-6"
             >
               <ArrowLeft className="w-4 h-4" />
-              Нэвтрэх рүү буцах
+              {t('Нэвтрэх рүү буцах')}
             </Link>
           </>
         )}
