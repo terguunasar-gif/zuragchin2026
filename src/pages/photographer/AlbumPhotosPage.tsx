@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { albumFaceSearchEnabled, loadImage, scanAndSavePhoto } from '../../lib/faceSearch';
+import { albumFaceSearchEnabled, scanStoredPhoto } from '../../lib/faceSearch';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -168,8 +168,7 @@ export default function AlbumPhotosPage() {
     let failed = 0;
     for (let i = 0; i < todo.length; i++) {
       try {
-        const img = await loadImage(todo[i].preview_url);
-        await scanAndSavePhoto(todo[i].id, img);
+        await scanStoredPhoto(todo[i]);
       } catch (e) {
         failed++;
         console.warn('scan failed', todo[i].id, e);
