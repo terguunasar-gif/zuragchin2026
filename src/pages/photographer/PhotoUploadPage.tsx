@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, X, CheckCircle2, AlertCircle,
   LogOut, User, Loader2, Tag, ChevronDown,
-  ChevronUp, Eye,
+  ChevronUp, Eye, FolderOpen, FolderPlus,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -61,6 +61,35 @@ export default function PhotoUploadPage() {
   const [batchPrices, setBatchPrices] = useState<PrintPrices>(defaultPrintPrices());
   const [batchOpen, setBatchOpen] = useState(false);
   const [expandedPrices, setExpandedPrices] = useState<Set<string>>(new Set());
+
+  // Цомог доторх хавтас (сэдэв) — зургуудыг ангилж байршуулна
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [folderId, setFolderId] = useState<string>('');
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderError, setFolderError] = useState('');
+
+  useEffect(() => {
+    if (!album) return;
+    supabase.from('album_folders').select('id, name')
+      .eq('album_id', album.id)
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+      .then(({ data }) => setFolders(data ?? []));
+  }, [album]);
+
+  async function createFolder() {
+    const name = newFolderName.trim();
+    if (!album || !name) return;
+    setCreatingFolder(true); setFolderError('');
+    const { data, error } = await supabase.from('album_folders')
+      .insert({ album_id: album.id, name, sort_order: folders.length })
+      .select('id, name').single();
+    setCreatingFolder(false);
+    if (error || !data) { setFolderError('Хавтас үүсгэж чадсангүй: ' + (error?.message ?? '')); return; }
+    setFolders(prev => [...prev, data]);
+    setFolderId(data.id);
+    setNewFolderName('');
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -218,6 +247,7 @@ export default function PhotoUploadPage() {
           preview_url: publicUrl,
           print_prices: printPricesJson,
           filename: entry.file.name,
+          ...(folderId ? { folder_id: folderId } : {}),
         });
         if (dbErr) throw new Error(dbErr.message);
 
@@ -347,6 +377,39 @@ export default function PhotoUploadPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
+            {!uploadStarted && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                <p className="text-white font-semibold flex items-center gap-2 mb-1">
+                  <FolderOpen className="w-4 h-4 text-amber-400" /> Хавтас (сэдэв)
+                </p>
+                <p className="text-stone-500 text-xs mb-3">
+                  Зургуудыг сэдвээр нь ангилбал зочид өөрийн зургийг амархан олно. Жишээ нь: «Нээлт», «Шагнал гардуулах», «1-р ангийнхан».
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button type="button" onClick={() => setFolderId('')}
+                    className={`px-3 py-1.5 rounded-lg text-sm border ${folderId === '' ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-white/10 text-stone-300 hover:border-white/30'}`}>
+                    Хавтасгүй
+                  </button>
+                  {folders.map(f => (
+                    <button key={f.id} type="button" onClick={() => setFolderId(f.id)}
+                      className={`px-3 py-1.5 rounded-lg text-sm border ${folderId === f.id ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-white/10 text-stone-300 hover:border-white/30'}`}>
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} maxLength={60}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createFolder(); } }}
+                    placeholder="Шинэ хавтасны нэр"
+                    className="flex-1 bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white rounded-xl px-3 py-2 text-sm outline-none" />
+                  <button type="button" onClick={createFolder} disabled={creatingFolder || !newFolderName.trim()}
+                    className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 disabled:opacity-50 text-white px-3 rounded-xl text-sm">
+                    {creatingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderPlus className="w-4 h-4" />} Үүсгэх
+                  </button>
+                </div>
+                {folderError && <p className="text-red-400 text-xs mt-2">{folderError}</p>}
+              </div>
+            )}
             {!uploadStarted && (
               <div
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
