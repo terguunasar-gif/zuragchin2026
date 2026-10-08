@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Loader2, ScanFace, ShieldCheck, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { fileToImage, loadFaceModels, selfieDescriptor } from '../lib/faceSearch';
+import { FACE_MATCH_THRESHOLD, fileToImage, loadFaceModels, selfieDescriptor } from '../lib/faceSearch';
 import { useI18n } from '../lib/i18n';
 
 type Step = 'consent' | 'camera' | 'working' | 'error';
@@ -31,7 +31,7 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
     setStep('camera');
     setCamError(false);
     // Загваруудыг камер асаах хооронд урьдчилан ачаална
-    loadFaceModels('selfie').catch(() => {});
+    loadFaceModels('photos').catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false,
@@ -56,7 +56,7 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
         setStep('error');
         return;
       }
-      const { data, error } = await supabase.rpc('face_search', { p_album_id: albumId, p_descriptor: descriptor });
+      const { data, error } = await supabase.rpc('face_search', { p_album_id: albumId, p_descriptor: descriptor, p_threshold: FACE_MATCH_THRESHOLD });
       if (error) throw new Error(error.message);
       const ids = ((data ?? []) as { photo_id: string }[]).map(r => r.photo_id);
       if (ids.length === 0) {
