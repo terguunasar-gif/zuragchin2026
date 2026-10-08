@@ -76,14 +76,22 @@ export async function facesInPhoto(el: Drawable): Promise<FoundFace[]> {
     }));
 }
 
-/** Selfie-ээс хамгийн том нэг царайны хээ. Олдохгүй бол null. */
+/** Selfie-ээс хамгийн том нэг царайны хээ. Олдохгүй бол null.
+ *  Цомгийн зурагтай ижил (SSD) илрүүлэгч ашиглавал хээ илүү тохирдог; олдохгүй бол жижиг загвараар дахин оролдоно. */
 export async function selfieDescriptor(el: Drawable): Promise<number[] | null> {
-  const faceapi = await loadFaceModels('selfie');
-  const input = downscale(el, 1024);
-  const results = await faceapi
-    .detectAllFaces(input as HTMLCanvasElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 }))
+  const faceapi = await loadFaceModels('photos');
+  const input = downscale(el, 1280);
+  let results = await faceapi
+    .detectAllFaces(input as HTMLCanvasElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
     .withFaceLandmarks()
     .withFaceDescriptors();
+  if (results.length === 0) {
+    await loadFaceModels('selfie');
+    results = await faceapi
+      .detectAllFaces(input as HTMLCanvasElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+  }
   if (results.length === 0) return null;
   const best = results.reduce((a, b) => (b.detection.box.area > a.detection.box.area ? b : a));
   return Array.from(best.descriptor);
@@ -111,6 +119,21 @@ export async function scanAndSavePhoto(photoId: string, el: Drawable): Promise<n
   if (error) throw new Error(error.message);
   return Number(data ?? faces.length);
 }
+
+/** Боломжтой бол усан тэмдэггүй эх зургаас (илүү нарийвчлалтай), эс бөгөөс preview-ээс уншуулна */
+export async function scanStoredPhoto(photo: { id: string; preview_url: string; original_url?: string | null }): Promise<number> {
+  if (photo.original_url) {
+    try {
+      const path = photo.original_url.replace(/^photos-original\//, '');
+      const { data } = await supabase.storage.from('photos-original').createSignedUrl(path, 300);
+      if (data?.signedUrl) return await scanAndSavePhoto(photo.id, await loadImage(data.signedUrl));
+    } catch { /* эх зураг унших эрхгүй бол preview ашиглана */ }
+  }
+  return scanAndSavePhoto(photo.id, await loadImage(photo.preview_url));
+}
+
+/** Тохирлын босго: бага = илүү хатуу. 0.58 нь бодит selfie ↔ арга хэмжээний зураг харьцуулалтад тохиромжтой. */
+export const FACE_MATCH_THRESHOLD = 0.58;
 
 /** Цомогт царайгаар хайх асаалттай эсэх (SQL ажиллаагүй үед false) */
 export async function albumFaceSearchEnabled(albumId: string): Promise<boolean> {
