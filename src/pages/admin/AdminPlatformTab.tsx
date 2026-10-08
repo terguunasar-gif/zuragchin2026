@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 
 interface PlatformWallet {
   balance: number;
@@ -174,6 +175,8 @@ export default function AdminPlatformTab() {
 
   return (
     <div className="space-y-6">
+      <AiAlbumPriceSetting />
+
       {/* ── Platform wallet cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
