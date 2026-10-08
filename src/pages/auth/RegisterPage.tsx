@@ -2,8 +2,11 @@ import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Camera, Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useI18n } from '../../lib/i18n';
+import { LanguageSwitcher } from '../../components/LanguagePicker';
 
 export default function RegisterPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -23,7 +26,7 @@ export default function RegisterPage() {
     if (/[A-Z]/.test(pw)) score++;
     if (/[0-9]/.test(pw)) score++;
     if (/[^A-Za-z0-9]/.test(pw)) score++;
-    const labels = ['', 'Сул', 'Дунд', 'Сайн', 'Маш сайн'];
+    const labels = ['', t('Сул'), t('Дунд'), t('Сайн'), t('Маш сайн')];
     const colors = ['', 'bg-red-500', 'bg-amber-500', 'bg-yellow-400', 'bg-green-500'];
     return { score, label: labels[score] || '', color: colors[score] || '' };
   }
@@ -32,11 +35,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
     if (password !== confirmPassword) {
-      setError('Нууц үгнүүд таарахгүй байна');
+      setError(t('Нууц үгнүүд таарахгүй байна'));
       return;
     }
     if (password.length < 8) {
-      setError('Нууц үг дор хаяж 8 тэмдэгт байх ёстой');
+      setError(t('Нууц үг дор хаяж 8 тэмдэгт байх ёстой'));
       return;
     }
     setLoading(true);
@@ -63,8 +66,8 @@ export default function RegisterPage() {
           <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 className="w-8 h-8 text-green-400" />
           </div>
-          <h2 className="text-white text-2xl font-bold mb-2">Бүртгэл амжилттай үүслээ!</h2>
-          <p className="text-stone-400">Хяналтын самбар руу шилжиж байна...</p>
+          <h2 className="text-white text-2xl font-bold mb-2">{t('Бүртгэл амжилттай үүслээ!')}</h2>
+          <p className="text-stone-400">{t('Хяналтын самбар руу шилжиж байна...')}</p>
         </div>
       </div>
     );
@@ -92,10 +95,10 @@ export default function RegisterPage() {
           </div>
           <div>
             <h2 className="text-white text-4xl font-bold leading-tight mb-4">
-              Монголын зургийн<br />платформд нэгдэнэ үү.
+              {t('Монголын зургийн')}<br />{t('платформд нэгдэнэ үү.')}
             </h2>
             <p className="text-stone-300 text-lg leading-relaxed max-w-sm">
-              Шилдэг зурагчидтай холбогдож, дурсамжаа мөнхлөөрэй.
+              {t('Шилдэг зурагчидтай холбогдож, дурсамжаа мөнхлөөрэй.')}
             </p>
           </div>
         </div>
@@ -115,8 +118,9 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <h1 className="text-white text-3xl font-bold mb-2">Бүртгэл үүсгэх</h1>
-          <p className="text-stone-400 mb-8">Zuragchin.mn-д нэгдэнэ үү</p>
+          <div className="flex justify-end mb-4"><LanguageSwitcher /></div>
+          <h1 className="text-white text-3xl font-bold mb-2">{t('Бүртгэл үүсгэх')}</h1>
+          <p className="text-stone-400 mb-8">{t('Zuragchin.mn-д нэгдэнэ үү')}</p>
 
           {error && (
             <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
@@ -127,14 +131,14 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-stone-300 text-sm font-medium mb-2">Бүтэн нэр</label>
+              <label className="block text-stone-300 text-sm font-medium mb-2">{t('Бүтэн нэр')}</label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="Таны бүтэн нэр"
+                  placeholder={t('Таны бүтэн нэр')}
                   required
                   className="w-full bg-white/5 border border-white/10 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 text-white placeholder-stone-600 rounded-xl pl-11 pr-4 py-3 outline-none transition-all duration-200"
                 />
@@ -142,7 +146,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-stone-300 text-sm font-medium mb-2">Имэйл хаяг</label>
+              <label className="block text-stone-300 text-sm font-medium mb-2">{t('Имэйл хаяг')}</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                 <input
@@ -157,14 +161,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-stone-300 text-sm font-medium mb-2">Нууц үг</label>
+              <label className="block text-stone-300 text-sm font-medium mb-2">{t('Нууц үг')}</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Хамгийн багадаа 8 тэмдэгт"
+                  placeholder={t('Хамгийн багадаа 8 тэмдэгт')}
                   required
                   className="w-full bg-white/5 border border-white/10 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 text-white placeholder-stone-600 rounded-xl pl-11 pr-12 py-3 outline-none transition-all duration-200"
                 />
@@ -194,14 +198,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-stone-300 text-sm font-medium mb-2">Нууц үг давтах</label>
+              <label className="block text-stone-300 text-sm font-medium mb-2">{t('Нууц үг давтах')}</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                 <input
                   type={showConfirm ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="Нууц үгээ давтан оруулна уу"
+                  placeholder={t('Нууц үгээ давтан оруулна уу')}
                   required
                   className={`w-full bg-white/5 border focus:ring-2 text-white placeholder-stone-600 rounded-xl pl-11 pr-12 py-3 outline-none transition-all duration-200 ${
                     confirmPassword && confirmPassword !== password
@@ -226,18 +230,18 @@ export default function RegisterPage() {
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-              ) : 'Бүртгүүлэх'}
+              ) : t('Бүртгүүлэх')}
             </button>
 
             <p className="text-stone-600 text-xs text-center leading-relaxed">
-              Бүртгэл үүсгэснээр та манай Үйлчилгээний нөхцөл болон Нууцлалын бодлогыг зөвшөөрч байна.
+              {t('Бүртгэл үүсгэснээр та манай Үйлчилгээний нөхцөл болон Нууцлалын бодлогыг зөвшөөрч байна.')}
             </p>
           </form>
 
           <p className="text-stone-500 text-center mt-6 text-sm">
-            Бүртгэлтэй юу?{' '}
+            {t('Бүртгэлтэй юу?')}{' '}
             <Link to="/auth/login" className="text-amber-400 hover:text-amber-300 font-medium transition-colors">
-              Нэвтрэх
+              {t('Нэвтрэх')}
             </Link>
           </p>
         </div>
