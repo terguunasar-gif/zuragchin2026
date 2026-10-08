@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyWatermark, WatermarkPosition } from '../../lib/watermark';
+import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
 
 interface AlbumInfo {
   id: string;
@@ -68,9 +69,11 @@ export default function PhotoUploadPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderError, setFolderError] = useState('');
+  const [faceEnabled, setFaceEnabled] = useState(false);
 
   useEffect(() => {
     if (!album) return;
+    albumFaceSearchEnabled(album.id).then(setFaceEnabled);
     supabase.from('album_folders').select('id, name')
       .eq('album_id', album.id)
       .order('sort_order', { ascending: true }).order('created_at', { ascending: true })
@@ -240,7 +243,7 @@ export default function PhotoUploadPage() {
           }
         }
 
-        const { error: dbErr } = await supabase.from('photo_uploads').insert({
+        const { data: inserted, error: dbErr } = await supabase.from('photo_uploads').insert({
           album_id: album.id,
           photographer_id: profile.id,
           original_url: originalStoragePath,
@@ -248,8 +251,18 @@ export default function PhotoUploadPage() {
           print_prices: printPricesJson,
           filename: entry.file.name,
           ...(folderId ? { folder_id: folderId } : {}),
-        });
+        }).select('id').single();
         if (dbErr) throw new Error(dbErr.message);
+
+        // Царайгаар хайх асаалттай бол царайны хээг тооцоолно (алдаа гарвал байршуулалтад нөлөөлөхгүй)
+        if (faceEnabled && inserted?.id) {
+          try {
+            setFileStatus(entry.id, { progress: 92 });
+            await scanAndSavePhoto(inserted.id, await fileToImage(entry.file));
+          } catch (e) {
+            console.warn('Face scan failed', e);
+          }
+        }
 
         setFileStatus(entry.id, { status: 'done', progress: 100 });
         succeeded++;
