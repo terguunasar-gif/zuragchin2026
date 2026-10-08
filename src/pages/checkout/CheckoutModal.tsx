@@ -4,6 +4,7 @@ import {
   Loader2, QrCode, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import { AlbumData, CartItem } from '../PublicAlbumPage';
+import { useI18n } from '../../lib/i18n';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -48,6 +49,7 @@ export default function CheckoutModal({
   onSuccess: (invoiceId: string) => void;
   onInvoiceCreated?: (invoiceId: string) => void;
 }) {
+  const { t, lang } = useI18n();
   const [step, setStep] = useState<Step>('summary');
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
@@ -70,9 +72,9 @@ export default function CheckoutModal({
 
   function validate() {
     let ok = true;
-    if (!buyerName.trim()) { setNameError('Нэрээ оруулна уу'); ok = false; } else setNameError('');
+    if (!buyerName.trim()) { setNameError(t('Нэрээ оруулна уу')); ok = false; } else setNameError('');
     if (!buyerPhone.trim() || !/^\d{8,}$/.test(buyerPhone.trim())) {
-      setPhoneError('Утасны дугаараа оруулна уу (8+ тоо)'); ok = false;
+      setPhoneError(t('Утасны дугаараа оруулна уу (8+ тоо)')); ok = false;
     } else setPhoneError('');
     return ok;
   }
@@ -140,7 +142,7 @@ export default function CheckoutModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 sticky top-0 bg-stone-900 z-10">
           <h2 className="text-white font-semibold text-lg">
-            {step === 'confirming' ? 'Амжилттай!' : 'Худалдан авалт'}
+            {step === 'confirming' ? t('Амжилттай!') : t('Худалдан авалт')}
           </h2>
           <button onClick={onClose} className="text-stone-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
@@ -155,7 +157,7 @@ export default function CheckoutModal({
               {/* Order items */}
               <div>
                 <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-3">
-                  Таны захиалга ({cart.length} бараа)
+                  {t('Таны захиалга ({n} бараа)', { n: cart.length })}
                 </p>
                 <div className="space-y-2">
                   {cart.map(item => (
@@ -164,11 +166,11 @@ export default function CheckoutModal({
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-sm truncate">{item.filename}</p>
                         <p className="text-stone-400 text-xs">
-                          {item.type === 'download' ? 'Татах' : `Хэвлэх — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
+                          {item.type === 'download' ? t('Татах') : `${t('Угаалгах')} — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
                         </p>
                       </div>
                       <span className="text-amber-400 text-sm font-semibold flex-shrink-0">
-                        {item.price === 0 ? 'Үнэгүй' : `₮${item.price.toLocaleString()}`}
+                        {item.price === 0 ? t('Үнэгүй') : `₮${item.price.toLocaleString()}`}
                       </span>
                     </div>
                   ))}
@@ -178,31 +180,31 @@ export default function CheckoutModal({
               {/* Fee breakdown */}
               <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
                 <div className="flex justify-between font-semibold">
-                  <span className="text-white">Нийт төлөх</span>
+                  <span className="text-white">{t('Нийт төлөх')}</span>
                   <span className="text-amber-400 text-base">₮{youPay.toLocaleString()}</span>
                 </div>
               </div>
 
               {/* Buyer info */}
               <div>
-                <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-3">Таны мэдээлэл</p>
+                <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-3">{t('Таны мэдээлэл')}</p>
                 <div className="space-y-3">
                   <div>
                     <label className="text-stone-400 text-sm mb-1.5 flex items-center gap-2">
-                      <User className="w-3.5 h-3.5" /> Нэр
+                      <User className="w-3.5 h-3.5" /> {t('Нэр')}
                     </label>
                     <input
                       type="text"
                       value={buyerName}
                       onChange={e => setBuyerName(e.target.value)}
-                      placeholder="Таны нэр"
+                      placeholder={t('Таны нэр')}
                       className={`w-full bg-white/5 border ${nameError ? 'border-red-500/50' : 'border-white/10'} focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm`}
                     />
                     {nameError && <p className="text-red-400 text-xs mt-1">{nameError}</p>}
                   </div>
                   <div>
                     <label className="text-stone-400 text-sm mb-1.5 flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5" /> Утасны дугаар
+                      <Phone className="w-3.5 h-3.5" /> {t('Утасны дугаар')}
                     </label>
                     <input
                       type="tel"
@@ -229,11 +231,16 @@ export default function CheckoutModal({
                 className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-bold py-3.5 rounded-xl transition-colors text-base flex items-center justify-center gap-2.5"
               >
                 {loading ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" /> Боловсруулж байна…</>
+                  <><Loader2 className="w-5 h-5 animate-spin" /> {t('Боловсруулж байна…')}</>
                 ) : (
-                  'QPay-ээр төлөх'
+                  t('QPay-ээр төлөх')
                 )}
               </button>
+              {lang !== 'mn' && (
+                <p className="text-stone-500 text-xs text-center mt-3">
+                  {t('Гадаад картаар төлөх боломж удахгүй нэмэгдэнэ. QPay ашиглах боломжгүй бол зохион байгуулагчтай холбогдоно уу.')}
+                </p>
+              )}
             </>
           )}
 
@@ -243,7 +250,7 @@ export default function CheckoutModal({
               <div className="text-center">
                 <div className="inline-flex items-center gap-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full px-4 py-1.5 text-sm font-medium mb-5">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Төлбөр хүлээж байна…
+                  {t('Төлбөр хүлээж байна…')}
                 </div>
 
                 {/* QR code */}
@@ -264,14 +271,14 @@ export default function CheckoutModal({
                 </div>
 
                 <p className="text-stone-400 text-sm mb-1">
-                  QPay апп-аар уншуулж <span className="text-amber-400 font-semibold">₮{invoice.grossTotal.toLocaleString()}</span> төлнө үү
+                  {t('QPay апп-аар уншуулж {amount} төлнө үү', { amount: `₮${invoice.grossTotal.toLocaleString()}` })}
                 </p>
-                <p className="text-stone-600 text-xs mb-4">Төлбөр автоматаар шалгагдана</p>
+                <p className="text-stone-600 text-xs mb-4">{t('Төлбөр автоматаар шалгагдана')}</p>
 
                 {/* Deep links */}
                 {invoice.urls && invoice.urls.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-stone-500 text-xs">Эсвэл апп-аар нээх:</p>
+                    <p className="text-stone-500 text-xs">{t('Эсвэл апп-аар нээх:')}</p>
                     <div className="flex flex-wrap gap-2 justify-center">
                       {invoice.urls.slice(0, 4).map((u, i) => (
                         <a
@@ -291,7 +298,7 @@ export default function CheckoutModal({
 
               {/* Fee summary */}
               <div className="bg-white/5 rounded-xl p-4 space-y-2 text-sm">
-                <FeeRow label="Нийт төлөх" value={invoice.grossTotal} />
+                <FeeRow label={t('Нийт төлөх')} value={invoice.grossTotal} />
               </div>
             </>
           )}
@@ -302,8 +309,8 @@ export default function CheckoutModal({
               <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8 text-green-400" />
               </div>
-              <p className="text-white font-semibold text-xl">Төлбөр амжилттай!</p>
-              <p className="text-stone-400 text-sm">Баримт бэлтгэж байна…</p>
+              <p className="text-white font-semibold text-xl">{t('Төлбөр амжилттай!')}</p>
+              <p className="text-stone-400 text-sm">{t('Баримт бэлтгэж байна…')}</p>
               <Loader2 className="w-5 h-5 text-amber-400 animate-spin mx-auto" />
             </div>
           )}
