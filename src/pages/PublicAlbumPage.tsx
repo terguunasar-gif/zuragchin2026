@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, Receipt,
+  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
@@ -35,7 +35,14 @@ export interface PhotoData {
   title: string;
   photographer_id: string;
   print_prices: Record<string, number>;
+  folder_id?: string | null;
+  source?: string | null;
 }
+
+interface AlbumFolder { id: string; name: string; }
+
+/** Хавтасны шүүлтүүр: 'all' | 'ai' | 'other' | хавтасны id */
+type FolderFilter = string;
 
 export interface CartItem {
   id: string;
@@ -99,6 +106,8 @@ export default function PublicAlbumPage() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
+  const [folders, setFolders] = useState<AlbumFolder[]>([]);
+  const [folderFilter, setFolderFilter] = useState<FolderFilter>('all');
 
   const [cartReady, setCartReady] = useState(false);
 
@@ -162,11 +171,29 @@ export default function PublicAlbumPage() {
       organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? '',
     });
 
-    const { data: photoData } = await supabase
+    // Хавтасны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let photoData: any[] | null = null;
+    const first = await supabase
       .from('photo_uploads')
-      .select('id, preview_url, filename, photographer_id, print_prices')
+      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source')
       .eq('album_id', albumData.id)
       .order('created_at', { ascending: true });
+    photoData = first.data;
+    if (first.error) {
+      ({ data: photoData } = await supabase
+        .from('photo_uploads')
+        .select('id, preview_url, filename, photographer_id, print_prices')
+        .eq('album_id', albumData.id)
+        .order('created_at', { ascending: true }));
+    }
+    const { data: folderData } = await supabase
+      .from('album_folders')
+      .select('id, name')
+      .eq('album_id', albumData.id)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setFolders((folderData ?? []) as AlbumFolder[]);
 
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
@@ -178,6 +205,8 @@ export default function PublicAlbumPage() {
         title: p.filename ?? p.id,
         photographer_id: p.photographer_id,
         print_prices: Object.keys(own).length > 0 ? own : albumPrint,
+        folder_id: p.folder_id ?? null,
+        source: p.source ?? null,
       };
     });
     setPhotos(mapped);
@@ -195,6 +224,26 @@ export default function PublicAlbumPage() {
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
   const cartTotal = cart.reduce((s, i) => s + i.price, 0);
+
+  // ── Хавтаснууд: AI бүүтийн зургууд автоматаар «AI бүүт»-д, хавтасгүй нь «Бусад»-д ──
+  const isAi = (p: PhotoData) => p.source === 'ai_booth';
+  const folderIds = new Set(folders.map(f => f.id));
+  const inFolder = (p: PhotoData) => !!p.folder_id && folderIds.has(p.folder_id);
+  const aiCount = photos.filter(isAi).length;
+  const otherCount = photos.filter(p => !isAi(p) && !inFolder(p)).length;
+  const folderTabs: { key: string; label: string; count: number }[] = [
+    { key: 'all', label: t('Бүгд'), count: photos.length },
+    ...folders
+      .map(f => ({ key: f.id, label: f.name, count: photos.filter(p => !isAi(p) && p.folder_id === f.id).length }))
+      .filter(f => f.count > 0),
+    ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
+    ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
+  ];
+  const visiblePhotos = photos.filter(p =>
+    folderFilter === 'all' ? true
+    : folderFilter === 'ai' ? isAi(p)
+    : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
+    : !isAi(p) && p.folder_id === folderFilter);
 
   if (loading) {
     return (
@@ -337,6 +386,21 @@ export default function PublicAlbumPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {folderTabs.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-4 mb-2 -mx-1 px-1">
+            {folderTabs.map(f => (
+              <button key={f.key} onClick={() => setFolderFilter(f.key)}
+                className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                  folderFilter === f.key
+                    ? 'bg-amber-500 border-amber-500 text-stone-950'
+                    : 'bg-white/5 border-white/10 text-stone-300 hover:text-white hover:border-white/30'}`}>
+                <FolderOpen className="w-4 h-4" />
+                <span className="whitespace-nowrap">{f.label}</span>
+                <span className={`text-xs ${folderFilter === f.key ? 'text-stone-800' : 'text-stone-500'}`}>{f.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {photos.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -347,7 +411,7 @@ export default function PublicAlbumPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {photos.map(photo => (
+            {visiblePhotos.map(photo => (
               <PhotoCard
                 key={photo.id}
                 photo={photo}
