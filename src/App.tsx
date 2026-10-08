@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { I18nProvider } from './lib/i18n';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import LoginPage from './pages/auth/LoginPage';
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+      <I18nProvider>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth/login" element={<LoginPage />} />
@@ -79,6 +81,7 @@ export default function App() {
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />
         </Routes>
+      </I18nProvider>
       </AuthProvider>
     </BrowserRouter>
   );
