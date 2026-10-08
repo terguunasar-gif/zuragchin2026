@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
+import { useI18n } from '../lib/i18n';
+import { LanguageSwitcher } from '../components/LanguagePicker';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -14,7 +16,7 @@ const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const fnHeaders = {
   Authorization: `Bearer ${ANON_KEY}`,
   'Content-Type': 'application/json',
-};
+};й
 
 const PRINT_SIZE_LABELS: Record<string, string> = {
   '10x15': '10×15 cm',
@@ -59,6 +61,7 @@ interface PhotographerContact {
 export default function ReceiptPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const navigate = useNavigate();
+  const { t, locale } = useI18n();
 
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
@@ -81,7 +84,7 @@ export default function ReceiptPage() {
       const { data, error: dbErr } = await supabase.rpc('receipt_purchases', { p_invoice_id: id });
 
       if (dbErr) throw new Error(dbErr.message);
-      if (!data || data.length === 0) throw new Error('Захиалга олдсонгүй');
+      if (!data || data.length === 0) throw new Error(t('Захиалга олдсонгүй'));
 
       const rows: PurchaseRow[] = (data as any[]).map(r => ({
         ...r,
@@ -97,7 +100,7 @@ export default function ReceiptPage() {
         setAlbumShareLink(albumData?.share_link ?? '');
         const ac = (albumData as any)?.contact_info;
         if (ac && typeof ac === 'object' && Object.values(ac).some(v => !!v)) {
-          setAlbumContact({ name: (albumData as any)?.title || (albumData as any)?.name || 'Зохион байгуулагч', contact_info: ac });
+          setAlbumContact({ name: (albumData as any)?.title || (albumData as any)?.name || t('Зохион байгуулагч'), contact_info: ac });
         }
 
         // Төлөгдсөн захиалгыг энэ төхөөрөмжийн «Миний худалдан авалт» түүхэнд нэмнэ.
@@ -231,7 +234,7 @@ export default function ReceiptPage() {
   const isPaid      = purchases.every(p => p.payment_status === 'paid');
   const buyerName   = purchases[0]?.buyer_name ?? '';
   const orderDate   = purchases[0]?.created_at
-    ? new Date(purchases[0].created_at).toLocaleDateString('mn-MN', {
+    ? new Date(purchases[0].created_at).toLocaleDateString(locale, {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
       })
@@ -259,11 +262,11 @@ export default function ReceiptPage() {
         <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
           <AlertCircle className="w-7 h-7 text-red-400" />
         </div>
-        <p className="text-white font-semibold text-lg mb-2">Баримт олдсонгүй</p>
+        <p className="text-white font-semibold text-lg mb-2">{t('Баримт олдсонгүй')}</p>
         <p className="text-stone-400 text-sm mb-5">{error}</p>
         <button onClick={() => navigate(-1)}
           className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm">
-          Буцах
+          {t('Буцах')}
         </button>
       </div>
     </div>
@@ -292,6 +295,7 @@ export default function ReceiptPage() {
               </div>
             </div>
           </div>
+          <LanguageSwitcher />
         </div>
       </header>
 
@@ -308,12 +312,12 @@ export default function ReceiptPage() {
           </div>
           <div>
             <p className={`font-semibold text-lg ${isPaid ? 'text-green-400' : 'text-amber-400'}`}>
-              {isPaid ? 'Төлбөр амжилттай хийгдлээ!' : 'Төлбөр хүлээгдэж байна'}
+              {isPaid ? t('Төлбөр амжилттай хийгдлээ!') : t('Төлбөр хүлээгдэж байна')}
             </p>
             <p className="text-stone-400 text-sm mt-0.5">
               {isPaid
-                ? `Баярлалаа, ${buyerName}! Усан тэмдэггүй зургуудаа доороос татаарай.`
-                : 'Төлбөр баталгаажсаны дараа баримт харагдана.'}
+                ? t('Баярлалаа, {name}! Усан тэмдэггүй зургуудаа доороос татаарай.', { name: buyerName })
+                : t('Төлбөр баталгаажсаны дараа баримт харагдана.')}
             </p>
           </div>
         </div>
@@ -322,7 +326,7 @@ export default function ReceiptPage() {
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
           <div className="flex items-center gap-2 text-stone-400 text-sm">
             <Hash className="w-4 h-4 text-amber-400" />
-            <span className="text-stone-500">Нэхэмжлэл:</span>
+            <span className="text-stone-500">{t('Нэхэмжлэл:')}</span>
             <span className="text-white font-mono text-xs break-all">{invoiceId}</span>
           </div>
           {orderDate && (
@@ -332,7 +336,7 @@ export default function ReceiptPage() {
             </div>
           )}
           <div className="border-t border-white/10 pt-3 flex justify-between text-sm">
-            <span className="text-stone-400">Нийт төлсөн дүн</span>
+            <span className="text-stone-400">{t('Нийт төлсөн дүн')}</span>
             <span className="text-amber-400 font-bold text-base">₮{totalPaid.toLocaleString()}</span>
           </div>
         </div>
@@ -342,15 +346,15 @@ export default function ReceiptPage() {
           <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-white/10 flex items-center gap-2">
               <Download className="w-4 h-4 text-amber-400" />
-              <h3 className="text-white font-semibold">Татан авах зурагнууд</h3>
-              <span className="ml-auto text-stone-500 text-xs">{downloadPurchases.length} зураг</span>
+              <h3 className="text-white font-semibold">{t('Татан авах зурагнууд')}</h3>
+              <span className="ml-auto text-stone-500 text-xs">{t('{n} зураг', { n: downloadPurchases.length })}</span>
             </div>
 
             {isPaid && (
               <div className="px-5 py-3 bg-green-500/5 border-b border-green-500/10 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
                 <p className="text-green-400 text-xs">
-                  Усан тэмдэггүй өндөр нарийвчлалтай зургуудыг татаж авах боломжтой болсон!
+                  {t('Усан тэмдэггүй өндөр нарийвчлалтай зургуудыг татаж авах боломжтой болсон!')}
                 </p>
               </div>
             )}
@@ -384,7 +388,7 @@ export default function ReceiptPage() {
                       <p className="text-white text-sm truncate">{p.photo_uploads?.filename ?? 'Photo'}</p>
                       <p className="text-stone-500 text-xs">₮{Number(p.gross_amount).toLocaleString()}</p>
                       {isPaid && (
-                        <p className="text-green-400 text-xs mt-0.5">✓ Усан тэмдэггүй</p>
+                        <p className="text-green-400 text-xs mt-0.5">{t('✓ Усан тэмдэггүй')}</p>
                       )}
                     </div>
 
@@ -397,11 +401,11 @@ export default function ReceiptPage() {
                         {isLoading
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : <Download className="w-3.5 h-3.5" />}
-                        {isLoading ? 'Татаж байна…' : 'Татах'}
+                        {isLoading ? t('Татаж байна…') : t('Татах')}
                       </button>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
-                        {isPaid ? 'Боломжгүй' : 'Хүлээгдэж байна'}
+                        {isPaid ? t('Боломжгүй') : t('Хүлээгдэж байна')}
                       </span>
                     )}
                   </div>
@@ -412,8 +416,8 @@ export default function ReceiptPage() {
             <div className="px-5 py-3 bg-stone-950/30 border-t border-white/5">
               <p className="text-stone-500 text-xs">
                 {isPaid
-                  ? 'Татсан зургууд усан тэмдэггүй бөгөөд өндөр нарийвчлалтай байна.'
-                  : 'Татах холбоосууд 24 цагийн дотор хүчинтэй.'}
+                  ? t('Татсан зургууд усан тэмдэггүй бөгөөд өндөр нарийвчлалтай байна.')
+                  : t('Татах холбоосууд 24 цагийн дотор хүчинтэй.')}
               </p>
             </div>
           </div>
@@ -424,8 +428,8 @@ export default function ReceiptPage() {
           <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-white/10 flex items-center gap-2">
               <Printer className="w-4 h-4 text-amber-400" />
-              <h3 className="text-white font-semibold">Хэвлэх захиалга</h3>
-              <span className="ml-auto text-stone-500 text-xs">{printPurchases.length} бараа</span>
+              <h3 className="text-white font-semibold">{t('Хэвлэх захиалга')}</h3>
+              <span className="ml-auto text-stone-500 text-xs">{t('{n} бараа', { n: printPurchases.length })}</span>
             </div>
             <div className="divide-y divide-white/5">
               {printPurchases.map(p => {
@@ -453,14 +457,14 @@ export default function ReceiptPage() {
                           p.print_status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400'
                           : p.print_status === 'printed' ? 'bg-sky-500/15 text-sky-400'
                           : 'bg-amber-500/15 text-amber-400'}`}>
-                          {p.print_status === 'delivered' ? 'Хүлээлгэж өгсөн' : p.print_status === 'printed' ? 'Угаасан — авахад бэлэн' : 'Угаалгаж байна'}
+                          {p.print_status === 'delivered' ? t('Хүлээлгэж өгсөн') : p.print_status === 'printed' ? t('Угаасан — авахад бэлэн') : t('Угаалгаж байна')}
                         </span>
                       )}
                     </div>
                     {pg && (
                       <div className="bg-stone-950/40 rounded-xl p-3 space-y-1.5">
                         <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-2">
-                          Фотографчтай холбоо барих
+                          {t('Фотографчтай холбоо барих')}
                         </p>
                         <p className="text-white text-sm font-medium">{pg.name}</p>
                         {Object.entries(pg.contact_info).map(([key, val]) => val ? (
@@ -478,7 +482,7 @@ export default function ReceiptPage() {
             </div>
             <div className="px-5 py-3 bg-stone-950/30 border-t border-white/5">
               <p className="text-stone-500 text-xs">
-                Угаасан зургаа авахдаа дээрх хүнтэй холбогдож, энэ баримтыг (захиалгын дугаартай нь) үзүүлнэ үү.
+                {t('Угаасан зургаа авахдаа дээрх хүнтэй холбогдож, энэ баримтыг (захиалгын дугаартай нь) үзүүлнэ үү.')}
               </p>
             </div>
           </div>
@@ -488,7 +492,7 @@ export default function ReceiptPage() {
           onClick={() => navigate('/my-purchases')}
           className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3 rounded-xl transition-colors text-sm">
           <Hash className="w-4 h-4" />
-          Миний бүх худалдан авалт
+          {t('Миний бүх худалдан авалт')}
         </button>
 
         {/* Back to album */}
@@ -497,7 +501,7 @@ export default function ReceiptPage() {
             onClick={() => navigate(`/album/${albumShareLink.replace(/^\/album\//, '')}`)}
             className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3 rounded-xl transition-colors text-sm">
             <ArrowLeft className="w-4 h-4" />
-            Цомог руу буцах
+            {t('Цомог руу буцах')}
           </button>
         )}
       </main>
