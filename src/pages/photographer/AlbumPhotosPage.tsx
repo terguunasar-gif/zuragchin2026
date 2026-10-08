@@ -3,10 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, Trash2, LogOut, User,
   Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle,
-  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare,
+  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { albumFaceSearchEnabled, loadImage, scanAndSavePhoto } from '../../lib/faceSearch';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -19,6 +20,7 @@ interface Photo {
   created_at: string;
   folder_id?: string | null;
   source?: string | null;
+  faces_scanned_at?: string | null;
 }
 
 interface Folder { id: string; name: string; }
@@ -54,6 +56,11 @@ export default function AlbumPhotosPage() {
   const [moveTarget, setMoveTarget] = useState<string>('');
   const [moving, setMoving] = useState(false);
 
+  // Царайгаар хайх
+  const [faceEnabled, setFaceEnabled] = useState(false);
+  const [faceBusy, setFaceBusy] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
+
   useEffect(() => {
     if (!albumId || !profile) return;
     checkAccessAndLoad();
@@ -84,14 +91,14 @@ export default function AlbumPhotosPage() {
 
     const { data: albumData } = await supabase.from('albums').select('name').eq('id', albumId!).maybeSingle();
     setAlbumName(albumData?.name ?? '');
-    await Promise.all([loadPhotos(isManager), loadFolders()]);
+    await Promise.all([loadPhotos(isManager), loadFolders(), albumFaceSearchEnabled(albumId!).then(setFaceEnabled)]);
     setLoading(false);
   }
 
   async function loadPhotos(isManager = canManage) {
     let q = supabase
       .from('photo_uploads')
-      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source')
+      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at')
       .eq('album_id', albumId!)
       .order('created_at', { ascending: false });
     if (!isManager) q = q.eq('photographer_id', profile!.id);
@@ -142,6 +149,46 @@ export default function AlbumPhotosPage() {
     if (error) { showToast('Устгахад алдаа: ' + error.message, 'error'); return; }
     if (filter === f.id) setFilter('all');
     await Promise.all([loadFolders(), loadPhotos()]);
+  }
+
+  async function toggleFaceSearch() {
+    setFaceBusy(true);
+    const { error } = await supabase.rpc('set_face_search', { p_album_id: albumId!, p_enabled: !faceEnabled });
+    setFaceBusy(false);
+    if (error) { showToast('Алдаа: ' + error.message, 'error'); return; }
+    setFaceEnabled(!faceEnabled);
+    showToast(!faceEnabled ? 'Царайгаар хайх асаалаа' : 'Царайгаар хайх унтраалаа');
+  }
+
+  /** Царай уншуулаагүй зургуудыг (preview-ээс) уншуулна */
+  async function scanFaces() {
+    const todo = photos.filter(p => !p.faces_scanned_at);
+    if (todo.length === 0) { showToast('Бүх зураг уншуулсан байна'); return; }
+    setScanProgress({ done: 0, total: todo.length });
+    let failed = 0;
+    for (let i = 0; i < todo.length; i++) {
+      try {
+        const img = await loadImage(todo[i].preview_url);
+        await scanAndSavePhoto(todo[i].id, img);
+      } catch (e) {
+        failed++;
+        console.warn('scan failed', todo[i].id, e);
+      }
+      setScanProgress({ done: i + 1, total: todo.length });
+    }
+    setScanProgress(null);
+    await loadPhotos();
+    showToast(failed ? `${todo.length - failed} зураг уншуулсан, ${failed} алдаатай` : `${todo.length} зураг уншуулсан`, failed ? 'error' : 'success');
+  }
+
+  async function clearFaces() {
+    if (!window.confirm('Энэ цомгийн бүх царайны мэдээллийг устгах уу? Дараа нь дахин уншуулах шаардлагатай болно.')) return;
+    setFaceBusy(true);
+    const { error } = await supabase.rpc('clear_album_faces', { p_album_id: albumId! });
+    setFaceBusy(false);
+    if (error) { showToast('Алдаа: ' + error.message, 'error'); return; }
+    await loadPhotos();
+    showToast('Царайны мэдээлэл устлаа');
   }
 
   function toggleSelect(id: string) {
@@ -362,6 +409,43 @@ export default function AlbumPhotosPage() {
             Дахин байршуулах
           </button>
         </div>
+
+        {/* ── Царайгаар хайх (цомгийн эзэн/админ) ── */}
+        {canManage && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-semibold flex items-center gap-2">
+                  <ScanFace className="w-4 h-4 text-amber-400" /> Царайгаар хайх
+                </p>
+                <p className="text-stone-500 text-xs mt-1 max-w-xl">
+                  Асаавал зочид selfie авч өөрийн орсон зургуудыг олно. Зурган дахь царайны тоон хээ л хадгалагдана, selfie хадгалагдахгүй.
+                  Царайны мэдээлэл хувийн мэдээлэлд хамаарах тул зочдод урьдчилан мэдэгдээрэй.
+                </p>
+                <p className="text-stone-400 text-xs mt-2">
+                  Уншуулсан: <span className="text-white font-semibold">{photos.filter(p => p.faces_scanned_at).length}</span> / {photos.length} зураг
+                </p>
+              </div>
+              <button onClick={toggleFaceSearch} disabled={faceBusy}
+                className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold border ${
+                  faceEnabled ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/15 text-stone-300'}`}>
+                {faceEnabled ? 'Асаалттай' : 'Унтраалттай'}
+              </button>
+            </div>
+            <div className="flex gap-2 mt-4 flex-wrap">
+              <button onClick={scanFaces} disabled={!!scanProgress || faceBusy}
+                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-2 rounded-xl text-sm">
+                {scanProgress ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+                {scanProgress ? `Уншуулж байна… ${scanProgress.done}/${scanProgress.total}` : 'Царай уншуулах'}
+              </button>
+              <button onClick={clearFaces} disabled={!!scanProgress || faceBusy}
+                className="flex items-center gap-2 bg-white/5 hover:bg-red-500/15 border border-white/10 text-stone-300 hover:text-red-300 px-4 py-2 rounded-xl text-sm">
+                <Trash2 className="w-4 h-4" /> Царайны мэдээлэл устгах
+              </button>
+            </div>
+            {scanProgress && <p className="text-stone-500 text-xs mt-2">Хуудсаа хаалгүй хүлээнэ үү. Анх удаа загвар ачаалахад хэдэн секунд болно.</p>}
+          </div>
+        )}
 
         {/* ── Хавтаснууд ── */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
