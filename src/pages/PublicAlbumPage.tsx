@@ -9,6 +9,8 @@ import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice } from '../lib/purchaseHistory';
+import { useI18n } from '../lib/i18n';
+import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
 
 export interface AlbumData {
   id: string;
@@ -84,6 +86,9 @@ function getPosStyle(pos: string): React.CSSProperties {
 export default function PublicAlbumPage() {
   const { shareLink } = useParams<{ shareLink: string }>();
   const navigate = useNavigate();
+  const { t, lang, locale } = useI18n();
+  // Гадаад хэлээр үзэж буй зочид зөвхөн татаж авна (угаалгах захиалга монгол хэрэглэгчдэд)
+  const allowPrint = lang === 'mn';
 
   const [album, setAlbum] = useState<AlbumData | null>(null);
   const [photos, setPhotos] = useState<PhotoData[]>([]);
@@ -154,7 +159,7 @@ export default function PublicAlbumPage() {
     setAlbum({
       ...albumData,
       name: albumData.title || albumData.name,
-      organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? 'Зохион байгуулагч',
+      organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? '',
     });
 
     const { data: photoData } = await supabase
@@ -202,12 +207,13 @@ export default function PublicAlbumPage() {
   if (notFound || !album) {
     return (
       <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
+        <LanguagePickerModal />
         <div className="text-center max-w-sm">
           <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-8 h-8 text-stone-500" />
           </div>
-          <p className="text-white font-semibold text-xl mb-2">Цомог олдсонгүй</p>
-          <p className="text-stone-400 text-sm">Холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.</p>
+          <p className="text-white font-semibold text-xl mb-2">{t('Цомог олдсонгүй')}</p>
+          <p className="text-stone-400 text-sm">{t('Холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.')}</p>
         </div>
       </div>
     );
@@ -262,6 +268,7 @@ export default function PublicAlbumPage() {
 
   return (
     <div className="min-h-screen bg-stone-950">
+      <LanguagePickerModal />
       <header className="border-b border-white/10 sticky top-0 z-30 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -269,7 +276,7 @@ export default function PublicAlbumPage() {
             <button
               onClick={() => navigate(-1)}
               className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-white transition-colors flex-shrink-0"
-              title="Буцах"
+              title={t('Буцах')}
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -278,20 +285,21 @@ export default function PublicAlbumPage() {
             </div>
             <div className="min-w-0">
               <p className="text-white font-bold truncate leading-tight">{album.name}</p>
-              <p className="text-stone-500 text-xs truncate">{album.organizer_name}</p>
+              <p className="text-stone-500 text-xs truncate">{album.organizer_name || t('Зохион байгуулагч')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+          <LanguageSwitcher />
           <button onClick={() => navigate('/my-purchases')}
-            title="Миний худалдан авалт"
+            title={t('Миний худалдан авалт')}
             className="flex items-center gap-2 text-stone-300 hover:text-white border border-white/10 hover:border-white/30 px-3 py-2 rounded-xl transition-colors">
             <Receipt className="w-4 h-4" />
-            <span className="hidden md:inline text-sm">Миний худалдан авалт</span>
+            <span className="hidden md:inline text-sm">{t('Миний худалдан авалт')}</span>
           </button>
           <button onClick={() => setCartOpen(o => !o)}
             className="relative flex items-center gap-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl transition-colors flex-shrink-0">
             <ShoppingCart className="w-4 h-4" />
-            <span className="hidden sm:inline text-sm">Сагс</span>
+            <span className="hidden sm:inline text-sm">{t('Сагс')}</span>
             {cart.length > 0 && (
               <span className="w-5 h-5 bg-stone-950 text-amber-400 text-xs font-bold rounded-full flex items-center justify-center">
                 {cart.length}
@@ -307,15 +315,15 @@ export default function PublicAlbumPage() {
         <div className="flex flex-wrap gap-5 text-sm text-stone-400 mb-3">
           <span className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-amber-400" />
-            {new Date(album.event_date).toLocaleDateString('mn-MN', { month: 'long', day: 'numeric', year: 'numeric' })}
+            {new Date(album.event_date).toLocaleDateString(locale, { month: 'long', day: 'numeric', year: 'numeric' })}
           </span>
           <span className="flex items-center gap-2">
             <User className="w-4 h-4 text-amber-400" />
-            {album.organizer_name}
+            {album.organizer_name || t('Зохион байгуулагч')}
           </span>
           <span className="flex items-center gap-2">
             <ImageIcon className="w-4 h-4 text-amber-400" />
-            {photos.length} зураг
+            {t('{n} зураг', { n: photos.length })}
           </span>
         </div>
         {album.description && (
@@ -323,7 +331,7 @@ export default function PublicAlbumPage() {
         )}
         {album.is_free && (
           <span className="inline-block mt-3 text-xs font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-3 py-1 rounded-full">
-            Үнэгүй татах
+            {t('Үнэгүй татах')}
           </span>
         )}
       </div>
@@ -334,8 +342,8 @@ export default function PublicAlbumPage() {
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <ImageIcon className="w-8 h-8 text-stone-500" />
             </div>
-            <p className="text-white font-medium text-lg mb-2">Зураг байхгүй байна</p>
-            <p className="text-stone-500 text-sm">Зурагчид одоогоор зураг байршуулаагүй байна.</p>
+            <p className="text-white font-medium text-lg mb-2">{t('Зураг байхгүй байна')}</p>
+            <p className="text-stone-500 text-sm">{t('Зурагчид одоогоор зураг байршуулаагүй байна.')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -345,6 +353,7 @@ export default function PublicAlbumPage() {
                 photo={photo}
                 album={album}
                 wmLayers={wmLayers}
+                allowPrint={allowPrint}
                 inCart={cart.filter(c => c.photoId === photo.id)}
                 printSelectorOpen={printSelectorPhoto === photo.id}
                 onTogglePrintSelector={() =>
@@ -403,16 +412,18 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
+function PhotoCard({ photo, album, wmLayers, allowPrint, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
   photo: PhotoData;
   album: AlbumData;
   wmLayers: WatermarkLayer[];
+  allowPrint: boolean;
   inCart: CartItem[];
   printSelectorOpen: boolean;
   onTogglePrintSelector: () => void;
   onAddDownload: () => void;
   onAddPrint: (size: string, price: number) => void;
 }) {
+  const { t } = useI18n();
   const downloadInCart = inCart.some(c => c.type === 'download');
   const hasPrintPrices = photo.print_prices && Object.keys(photo.print_prices).length > 0;
   const downloadPrice  = album.is_free ? 0 : album.download_price;
@@ -473,18 +484,18 @@ function PhotoCard({ photo, album, wmLayers, inCart, printSelectorOpen, onToggle
           }`}>
           <span className="flex items-center gap-2">
             <Download className="w-3.5 h-3.5" />
-            {downloadInCart ? 'Нэмэгдсэн ✓' : 'Татах'}
+            {downloadInCart ? t('Нэмэгдсэн ✓') : t('Татах')}
           </span>
           <span className="text-xs font-semibold">
-            {downloadPrice === 0 ? 'Үнэгүй' : `₮${downloadPrice.toLocaleString()}`}
+            {downloadPrice === 0 ? t('Үнэгүй') : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
 
-        {hasPrintPrices && (
+        {allowPrint && hasPrintPrices && (
           <div>
             <button onClick={onTogglePrintSelector}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 border border-white/10 text-white transition-colors">
-              <span className="flex items-center gap-2"><Printer className="w-3.5 h-3.5" />Угаалгах</span>
+              <span className="flex items-center gap-2"><Printer className="w-3.5 h-3.5" />{t('Угаалгах')}</span>
               {printSelectorOpen
                 ? <ChevronUp className="w-3.5 h-3.5 text-stone-500" />
                 : <ChevronDown className="w-3.5 h-3.5 text-stone-500" />}
@@ -524,13 +535,14 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
   onClose: () => void;
   onCheckout: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <>
       <div className="fixed inset-0 bg-stone-950/60 z-40 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-full max-w-sm bg-stone-900 border-l border-white/10 z-50 flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
           <h2 className="text-white font-semibold text-lg flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-amber-400" />Сагс ({cart.length})
+            <ShoppingCart className="w-5 h-5 text-amber-400" />{t('Сагс')} ({cart.length})
           </h2>
           <button onClick={onClose} className="text-stone-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
@@ -540,7 +552,7 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
           {cart.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingCart className="w-10 h-10 text-stone-600 mx-auto mb-3" />
-              <p className="text-stone-500 text-sm">Сагс хоосон байна</p>
+              <p className="text-stone-500 text-sm">{t('Сагс хоосон байна')}</p>
             </div>
           ) : (
             cart.map(item => (
@@ -549,10 +561,10 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm truncate">{item.filename}</p>
                   <p className="text-stone-400 text-xs">
-                    {item.type === 'download' ? 'Татах' : `Угаалгах — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
+                    {item.type === 'download' ? t('Татах') : `${t('Угаалгах')} — ${PRINT_SIZE_LABELS[item.printSize!] ?? item.printSize}`}
                   </p>
                   <p className="text-amber-400 text-sm font-semibold">
-                    {item.price === 0 ? 'Үнэгүй' : `₮${item.price.toLocaleString()}`}
+                    {item.price === 0 ? t('Үнэгүй') : `₮${item.price.toLocaleString()}`}
                   </p>
                 </div>
                 <button onClick={() => onRemove(item.id)} className="text-stone-600 hover:text-red-400 transition-colors flex-shrink-0">
@@ -565,12 +577,12 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
         {cart.length > 0 && (
           <div className="px-6 py-5 border-t border-white/10 space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-stone-400">Нийт дүн</span>
+              <span className="text-stone-400">{t('Нийт дүн')}</span>
               <span className="text-white font-semibold text-lg">₮{total.toLocaleString()}</span>
             </div>
             <button onClick={onCheckout}
               className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3.5 rounded-xl transition-colors text-base">
-              QPay-ээр төлөх
+              {t('QPay-ээр төлөх')}
             </button>
           </div>
         )}
