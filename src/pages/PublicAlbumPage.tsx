@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen,
+  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
@@ -11,6 +11,8 @@ const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
+import FaceSearchModal from '../components/FaceSearchModal';
+import { albumFaceSearchEnabled } from '../lib/faceSearch';
 
 export interface AlbumData {
   id: string;
@@ -108,6 +110,10 @@ export default function PublicAlbumPage() {
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
   const [folders, setFolders] = useState<AlbumFolder[]>([]);
   const [folderFilter, setFolderFilter] = useState<FolderFilter>('all');
+  // Царайгаар хайх
+  const [faceEnabled, setFaceEnabled] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
+  const [faceIds, setFaceIds] = useState<string[] | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
 
@@ -194,6 +200,7 @@ export default function PublicAlbumPage() {
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
     setFolders((folderData ?? []) as AlbumFolder[]);
+    albumFaceSearchEnabled(albumData.id).then(setFaceEnabled);
 
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
@@ -231,7 +238,9 @@ export default function PublicAlbumPage() {
   const inFolder = (p: PhotoData) => !!p.folder_id && folderIds.has(p.folder_id);
   const aiCount = photos.filter(isAi).length;
   const otherCount = photos.filter(p => !isAi(p) && !inFolder(p)).length;
+  const faceSet = new Set(faceIds ?? []);
   const folderTabs: { key: string; label: string; count: number }[] = [
+    ...(faceIds ? [{ key: 'mine', label: '🙂 ' + t('Миний зургууд'), count: photos.filter(p => faceSet.has(p.id)).length }] : []),
     { key: 'all', label: t('Бүгд'), count: photos.length },
     ...folders
       .map(f => ({ key: f.id, label: f.name, count: photos.filter(p => !isAi(p) && p.folder_id === f.id).length }))
@@ -241,6 +250,7 @@ export default function PublicAlbumPage() {
   ];
   const visiblePhotos = photos.filter(p =>
     folderFilter === 'all' ? true
+    : folderFilter === 'mine' ? faceSet.has(p.id)
     : folderFilter === 'ai' ? isAi(p)
     : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
     : !isAi(p) && p.folder_id === folderFilter);
@@ -386,7 +396,21 @@ export default function PublicAlbumPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {folderTabs.length > 1 && (
+        {faceEnabled && photos.length > 0 && (
+          <div className="mb-5 flex items-center gap-3 flex-wrap">
+            <button onClick={() => setFaceOpen(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-stone-950 font-bold px-5 py-3 rounded-xl shadow-lg">
+              <ScanFace className="w-5 h-5" /> {t('Өөрийн зургийг хайх')}
+            </button>
+            {faceIds && (
+              <button onClick={() => { setFaceIds(null); setFolderFilter('all'); }}
+                className="text-stone-400 hover:text-white text-sm underline underline-offset-4">
+                {t('Хайлтыг цуцлах')}
+              </button>
+            )}
+          </div>
+        )}
+        {(folderTabs.length > 1 || faceIds) && (
           <div className="flex gap-2 overflow-x-auto pb-4 mb-2 -mx-1 px-1">
             {folderTabs.map(f => (
               <button key={f.key} onClick={() => setFolderFilter(f.key)}
@@ -411,7 +435,9 @@ export default function PublicAlbumPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {visiblePhotos.map(photo => (
+            {(folderFilter === 'mine' && faceIds
+              ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
+              : visiblePhotos).map(photo => (
               <PhotoCard
                 key={photo.id}
                 photo={photo}
@@ -455,6 +481,14 @@ export default function PublicAlbumPage() {
           onRemove={removeFromCart}
           onClose={() => setCartOpen(false)}
           onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }}
+        />
+      )}
+
+      {faceOpen && album && (
+        <FaceSearchModal
+          albumId={album.id}
+          onClose={() => setFaceOpen(false)}
+          onResult={ids => { setFaceIds(ids); setFolderFilter('mine'); }}
         />
       )}
 
