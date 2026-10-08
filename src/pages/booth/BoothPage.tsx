@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Camera, Loader2, AlertCircle, CheckCircle2, ChevronLeft, Sparkles,
-  Users, RotateCcw, Download, RefreshCw,
+  Users, RotateCcw, Download, RefreshCw, Share2,
 } from 'lucide-react';
 import {
   boothApi, BoothInfo, BoothTemplate, StartResult, MAX_PEOPLE,
@@ -609,6 +609,7 @@ function ResultStep({
   onDone: () => void;
 }) {
   const [saved, setSaved] = useState<'shared' | 'downloaded' | null>(null);
+  const [copied, setCopied] = useState(false);
   const resultUrl = `${window.location.origin}/booth/r/${final.resultToken}`;
 
   if (kiosk) {
@@ -623,6 +624,7 @@ function ResultStep({
             <QRCodeSVG value={resultUrl} size={260} level="M" />
           </div>
           <p className="text-stone-500 text-sm mt-3">Линк 30 хоног хүчинтэй</p>
+          <p className="text-amber-300 text-base mt-2">Хамт авахуулсан найзууд ч энэ QR-ыг уншуулж зургаа үнэгүй авна</p>
           <button onClick={onDone}
             className="mt-6 w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl py-5 text-xl font-semibold">
             Дуусгах
@@ -649,6 +651,20 @@ function ResultStep({
           {saveHint(saved)}
         </p>
       )}
+      <button
+        onClick={async () => {
+          const data = { title: 'AI зураг', text: 'Бидний AI зураг — эндээс татаж аваарай', url: resultUrl };
+          try {
+            if (navigator.share) { await navigator.share(data); return; }
+          } catch { return; }
+          await navigator.clipboard?.writeText(resultUrl).catch(() => {});
+          setCopied(true); setTimeout(() => setCopied(false), 2500);
+        }}
+        className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl py-3.5 font-semibold"
+      >
+        <Share2 className="w-5 h-5" /> {copied ? 'Линк хуулагдлаа ✓' : 'Хамт авахуулсан хүмүүстэйгээ хуваалцах'}
+      </button>
+      <p className="text-stone-500 text-xs text-center -mt-2">Энэ линкээр найзууд чинь зургаа үнэгүй татна.</p>
       <p className="text-stone-500 text-xs text-center break-all">
         Дараа дахин татах линк: <a href={resultUrl} className="text-amber-400 underline">{resultUrl}</a>
       </p>
