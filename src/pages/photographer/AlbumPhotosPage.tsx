@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, Trash2, LogOut, User,
   Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle,
-  ImageOff, Loader2,
+  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -17,7 +17,11 @@ interface Photo {
   original_url: string;
   print_prices: Record<string, number>;
   created_at: string;
+  folder_id?: string | null;
+  source?: string | null;
 }
+
+interface Folder { id: string; name: string; }
 
 interface EditingPrices {
   [photoId: string]: {
@@ -41,6 +45,15 @@ export default function AlbumPhotosPage() {
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
+  // Хавтас
+  const [canManage, setCanManage] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [filter, setFilter] = useState<string>('all'); // all | ai | none | <folderId>
+  const [newFolder, setNewFolder] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveTarget, setMoveTarget] = useState<string>('');
+  const [moving, setMoving] = useState(false);
+
   useEffect(() => {
     if (!albumId || !profile) return;
     checkAccessAndLoad();
@@ -49,32 +62,103 @@ export default function AlbumPhotosPage() {
   async function checkAccessAndLoad() {
     setLoading(true);
 
-    const { data: membership } = await supabase
-      .from('album_photographers')
-      .select('status')
-      .eq('album_id', albumId!)
-      .eq('photographer_id', profile!.id)
-      .maybeSingle();
+    // Цомгийн эзэн/админ бүх зургийг, зурагчин зөвхөн өөрийнхөө зургийг удирдана
+    const { data: manage } = await supabase.rpc('ai_can_manage_album', { p_album_id: albumId! });
+    const isManager = manage === true;
+    setCanManage(isManager);
 
-    if (!membership || membership.status !== 'approved') {
-      setAccessDenied(true);
-      setLoading(false);
-      return;
+    if (!isManager) {
+      const { data: membership } = await supabase
+        .from('album_photographers')
+        .select('status')
+        .eq('album_id', albumId!)
+        .eq('photographer_id', profile!.id)
+        .maybeSingle();
+
+      if (!membership || membership.status !== 'approved') {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
     }
 
-    const [{ data: albumData }, { data: photoData }] = await Promise.all([
-      supabase.from('albums').select('name').eq('id', albumId!).maybeSingle(),
-      supabase
+    const { data: albumData } = await supabase.from('albums').select('name').eq('id', albumId!).maybeSingle();
+    setAlbumName(albumData?.name ?? '');
+    await Promise.all([loadPhotos(isManager), loadFolders()]);
+    setLoading(false);
+  }
+
+  async function loadPhotos(isManager = canManage) {
+    let q = supabase
+      .from('photo_uploads')
+      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source')
+      .eq('album_id', albumId!)
+      .order('created_at', { ascending: false });
+    if (!isManager) q = q.eq('photographer_id', profile!.id);
+    const { data, error } = await q;
+    if (error) {
+      // Хавтасны SQL ажиллаагүй үед
+      let q2 = supabase
         .from('photo_uploads')
         .select('id, filename, preview_url, original_url, print_prices, created_at')
         .eq('album_id', albumId!)
-        .eq('photographer_id', profile!.id)
-        .order('created_at', { ascending: false }),
-    ]);
+        .order('created_at', { ascending: false });
+      if (!isManager) q2 = q2.eq('photographer_id', profile!.id);
+      const { data: d2 } = await q2;
+      setPhotos((d2 ?? []) as Photo[]);
+      return;
+    }
+    setPhotos((data ?? []) as Photo[]);
+  }
 
-    setAlbumName(albumData?.name ?? '');
-    setPhotos(photoData ?? []);
-    setLoading(false);
+  async function loadFolders() {
+    const { data } = await supabase.from('album_folders').select('id, name')
+      .eq('album_id', albumId!)
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+    setFolders(data ?? []);
+  }
+
+  async function createFolder() {
+    const name = newFolder.trim();
+    if (!name) return;
+    const { error } = await supabase.from('album_folders').insert({ album_id: albumId!, name, sort_order: folders.length });
+    if (error) { showToast('Хавтас үүсгэж чадсангүй: ' + error.message, 'error'); return; }
+    setNewFolder('');
+    await loadFolders();
+    showToast('Хавтас үүслээ');
+  }
+
+  async function renameFolder(f: Folder) {
+    const name = window.prompt('Хавтасны шинэ нэр', f.name)?.trim();
+    if (!name || name === f.name) return;
+    const { error } = await supabase.from('album_folders').update({ name }).eq('id', f.id);
+    if (error) { showToast('Нэр солиход алдаа: ' + error.message, 'error'); return; }
+    await loadFolders();
+  }
+
+  async function deleteFolder(f: Folder) {
+    if (!window.confirm(`«${f.name}» хавтсыг устгах уу? Доторх зургууд устахгүй, «Хавтасгүй» болно.`)) return;
+    const { error } = await supabase.from('album_folders').delete().eq('id', f.id);
+    if (error) { showToast('Устгахад алдаа: ' + error.message, 'error'); return; }
+    if (filter === f.id) setFilter('all');
+    await Promise.all([loadFolders(), loadPhotos()]);
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+
+  async function moveSelected() {
+    if (selected.size === 0) return;
+    setMoving(true);
+    const { data, error } = await supabase.rpc('set_photos_folder', {
+      p_photo_ids: [...selected], p_folder_id: moveTarget || null,
+    });
+    setMoving(false);
+    if (error) { showToast('Зөөхөд алдаа: ' + error.message, 'error'); return; }
+    showToast(`${data ?? 0} зураг зөөгдлөө`);
+    setSelected(new Set());
+    await loadPhotos();
   }
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
@@ -203,6 +287,14 @@ export default function AlbumPhotosPage() {
     );
   }
 
+  const isAiPhoto = (p: Photo) => p.source === 'ai_booth';
+  const shownPhotos = photos.filter(p =>
+    filter === 'all' ? true
+    : filter === 'ai' ? isAiPhoto(p)
+    : filter === 'none' ? !isAiPhoto(p) && !p.folder_id
+    : p.folder_id === filter);
+  const folderCount = (id: string) => photos.filter(p => p.folder_id === id).length;
+
   return (
     <div className="min-h-screen bg-stone-950">
       {/* Header */}
@@ -258,7 +350,9 @@ export default function AlbumPhotosPage() {
           <div>
             <p className="text-stone-500 text-sm mb-1">Зураг удирдлага</p>
             <h1 className="text-white text-3xl font-bold">{albumName}</h1>
-            <p className="text-stone-400 text-sm mt-1">Таны байршуулсан {photos.length} зураг</p>
+            <p className="text-stone-400 text-sm mt-1">
+              {canManage ? `Цомгийн нийт ${photos.length} зураг` : `Таны байршуулсан ${photos.length} зураг`}
+            </p>
           </div>
           <button
             onClick={() => navigate(`/dashboard/albums/${albumId}/upload`)}
@@ -268,6 +362,70 @@ export default function AlbumPhotosPage() {
             Дахин байршуулах
           </button>
         </div>
+
+        {/* ── Хавтаснууд ── */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <p className="text-white font-semibold flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-amber-400" /> Хавтас (сэдэв)
+            </p>
+            <div className="flex gap-2">
+              <input value={newFolder} onChange={e => setNewFolder(e.target.value)} maxLength={60}
+                onKeyDown={e => { if (e.key === 'Enter') createFolder(); }}
+                placeholder="Шинэ хавтасны нэр"
+                className="bg-stone-900 border border-white/10 focus:border-amber-500/50 text-white rounded-xl px-3 py-2 text-sm outline-none w-48" />
+              <button onClick={createFolder} disabled={!newFolder.trim()}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-3 rounded-xl text-sm">
+                <FolderPlus className="w-4 h-4" /> Үүсгэх
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: 'all', label: 'Бүгд', count: photos.length },
+              ...folders.map(f => ({ key: f.id, label: f.name, count: folderCount(f.id) })),
+              ...(photos.some(isAiPhoto) ? [{ key: 'ai', label: '✨ AI бүүт', count: photos.filter(isAiPhoto).length }] : []),
+              { key: 'none', label: 'Хавтасгүй', count: photos.filter(p => !isAiPhoto(p) && !p.folder_id).length },
+            ].map(tab => {
+              const folder = folders.find(f => f.id === tab.key);
+              return (
+                <div key={tab.key} className={`flex items-center rounded-lg border text-sm ${
+                  filter === tab.key ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-white/10 text-stone-300'}`}>
+                  <button onClick={() => setFilter(tab.key)} className="px-3 py-1.5 flex items-center gap-1.5">
+                    <span className="font-medium">{tab.label}</span>
+                    <span className={filter === tab.key ? 'text-stone-800 text-xs' : 'text-stone-500 text-xs'}>{tab.count}</span>
+                  </button>
+                  {folder && (
+                    <>
+                      <button onClick={() => renameFolder(folder)} title="Нэр солих" className="px-1.5 py-1.5 opacity-70 hover:opacity-100"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => deleteFolder(folder)} title="Устгах" className="pl-0.5 pr-2 py-1.5 opacity-70 hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-stone-500 text-xs mt-3">
+            Зураг дээрх ☐ тэмдгээр сонгоод доорх товчоор хавтас руу зөөнө. AI бүүтийн зургууд «AI бүүт» хавтсанд автоматаар харагдана.
+          </p>
+        </div>
+
+        {selected.size > 0 && (
+          <div className="sticky top-20 z-10 mb-5 bg-stone-900 border border-amber-500/40 rounded-2xl px-4 py-3 flex items-center gap-3 flex-wrap shadow-xl">
+            <span className="text-white text-sm font-semibold">{selected.size} зураг сонгосон</span>
+            <select value={moveTarget} onChange={e => setMoveTarget(e.target.value)}
+              className="bg-stone-800 border border-white/10 text-white rounded-lg px-3 py-1.5 text-sm outline-none">
+              <option value="">Хавтасгүй болгох</option>
+              {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <button onClick={moveSelected} disabled={moving}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-1.5 rounded-lg text-sm">
+              {moving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Зөөх
+            </button>
+            <button onClick={() => setSelected(new Set(shownPhotos.map(p => p.id)))} className="text-stone-400 hover:text-white text-sm">Бүгдийг сонгох</button>
+            <button onClick={() => setSelected(new Set())} className="text-stone-400 hover:text-white text-sm ml-auto">Цуцлах</button>
+          </div>
+        )}
 
         {photos.length === 0 ? (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-16 text-center">
@@ -286,14 +444,25 @@ export default function AlbumPhotosPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {photos.map(photo => {
+            {shownPhotos.map(photo => {
               const editor = editingPrices[photo.id];
+              const isSel = selected.has(photo.id);
+              const folderName = folders.find(f => f.id === photo.folder_id)?.name;
               const priceCount = Object.keys(photo.print_prices).length;
 
               return (
-                <div key={photo.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden group">
+                <div key={photo.id} className={`bg-white/5 border rounded-2xl overflow-hidden group ${isSel ? 'border-amber-500' : 'border-white/10'}`}>
                   {/* Thumbnail */}
                   <div className="relative aspect-square bg-stone-900">
+                    <button onClick={() => toggleSelect(photo.id)} title="Сонгох"
+                      className="absolute top-2 left-2 z-10 w-8 h-8 bg-stone-950/80 rounded-lg flex items-center justify-center">
+                      {isSel ? <CheckSquare className="w-5 h-5 text-amber-400" /> : <Square className="w-5 h-5 text-white" />}
+                    </button>
+                    {(folderName || photo.source === 'ai_booth') && (
+                      <span className="absolute bottom-2 left-2 z-10 text-[11px] bg-stone-950/80 text-stone-200 px-2 py-0.5 rounded-md">
+                        {photo.source === 'ai_booth' ? '✨ AI бүүт' : folderName}
+                      </span>
+                    )}
                     <img
                       src={photo.preview_url}
                       alt={photo.filename}
