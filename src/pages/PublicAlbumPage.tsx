@@ -43,6 +43,9 @@ export interface PhotoData {
 
 interface AlbumFolder { id: string; name: string; }
 
+/** platform_settings-д утга байхгүй үеийн AI зургийн үнэ (qpay функцтэй ижил) */
+const AI_ALBUM_PRICE_DEFAULT = 3000;
+
 /** Хавтасны шүүлтүүр: 'all' | 'ai' | 'other' | хавтасны id */
 type FolderFilter = string;
 
@@ -114,6 +117,7 @@ export default function PublicAlbumPage() {
   const [faceEnabled, setFaceEnabled] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
   const [faceIds, setFaceIds] = useState<string[] | null>(null);
+  const [aiPrice, setAiPrice] = useState<number>(AI_ALBUM_PRICE_DEFAULT);
 
   const [cartReady, setCartReady] = useState(false);
 
@@ -124,13 +128,13 @@ export default function PublicAlbumPage() {
     if (album && cartReady) saveCart(album.id, cart);
   }, [album, cart, cartReady]);
 
-  async function restoreCart(albumId: string, current: PhotoData[], downloadPrice: number) {
+  async function restoreCart(albumId: string, current: PhotoData[], downloadPrice: number, aiPrice: number) {
     // Хадгалсан сагсны үнийг одоогийн үнээр шинэчилнэ (үнэ өөрчлөгдсөн байж болно)
     const byId = new Map(current.map(p => [p.id, p]));
     const saved = loadCart<CartItem>(albumId).flatMap(c => {
       const photo = byId.get(c.photoId);
       if (!photo) return [];
-      if (c.type === 'download') return [{ ...c, price: downloadPrice }];
+      if (c.type === 'download') return [{ ...c, price: photo.source === 'ai_booth' ? aiPrice : downloadPrice }];
       const price = Number(photo.print_prices?.[c.printSize ?? ''] ?? 0);
       return price > 0 ? [{ ...c, price }] : [];
     });
@@ -217,7 +221,12 @@ export default function PublicAlbumPage() {
       };
     });
     setPhotos(mapped);
-    await restoreCart(albumData.id, mapped, albumData.is_free ? 0 : Number(albumData.download_price ?? 0));
+    // AI бүүтийн зургийн цомог дахь үнийг сайтын админ тогтооно
+    const { data: aiSetting } = await supabase.from('platform_settings').select('value').eq('key', 'ai_album_price').maybeSingle();
+    const aiVal = Number((aiSetting as { value?: unknown } | null)?.value);
+    const aiP = Number.isFinite(aiVal) && aiVal >= 0 ? aiVal : AI_ALBUM_PRICE_DEFAULT;
+    setAiPrice(aiP);
+    await restoreCart(albumData.id, mapped, albumData.is_free ? 0 : Number(albumData.download_price ?? 0), aiP);
     setLoading(false);
   }
 
@@ -444,6 +453,7 @@ export default function PublicAlbumPage() {
                 album={album}
                 wmLayers={wmLayers}
                 allowPrint={allowPrint}
+                aiPrice={aiPrice}
                 inCart={cart.filter(c => c.photoId === photo.id)}
                 printSelectorOpen={printSelectorPhoto === photo.id}
                 onTogglePrintSelector={() =>
@@ -455,7 +465,7 @@ export default function PublicAlbumPage() {
                   previewUrl: photo.watermarked_url,
                   filename: photo.title || photo.id,
                   type: 'download',
-                  price: album.is_free ? 0 : album.download_price,
+                  price: photo.source === 'ai_booth' ? aiPrice : (album.is_free ? 0 : album.download_price),
                 })}
                 onAddPrint={(size, price) => {
                   addToCart({
@@ -510,11 +520,12 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, allowPrint, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
+function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
   photo: PhotoData;
   album: AlbumData;
   wmLayers: WatermarkLayer[];
   allowPrint: boolean;
+  aiPrice: number;
   inCart: CartItem[];
   printSelectorOpen: boolean;
   onTogglePrintSelector: () => void;
@@ -524,7 +535,7 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, inCart, printSelectorOp
   const { t } = useI18n();
   const downloadInCart = inCart.some(c => c.type === 'download');
   const hasPrintPrices = photo.print_prices && Object.keys(photo.print_prices).length > 0;
-  const downloadPrice  = album.is_free ? 0 : album.download_price;
+  const downloadPrice  = photo.source === 'ai_booth' ? aiPrice : (album.is_free ? 0 : album.download_price);
 
   return (
     <div className="group bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden transition-all duration-200">
