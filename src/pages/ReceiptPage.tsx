@@ -16,7 +16,7 @@ const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const fnHeaders = {
   Authorization: `Bearer ${ANON_KEY}`,
   'Content-Type': 'application/json',
-};й
+};
 
 const PRINT_SIZE_LABELS: Record<string, string> = {
   '10x15': '10×15 cm',
