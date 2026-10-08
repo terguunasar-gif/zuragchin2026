@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Camera, Upload, Clock, CheckCircle2, X, Search,
-  Plus, Copy, BadgeCheck, FolderSearch, Send, Lock, User,
+  Plus, Copy, BadgeCheck, FolderSearch, Send, Lock, User, FolderOpen
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -294,6 +294,11 @@ export default function PhotographerAlbumsTab() {
                           {req.status === 'approved' && (
                             <button onClick={() => navigate(`/dashboard/albums/${req.album_id}/upload`)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-950 bg-amber-500 hover:bg-amber-400 px-3 py-1.5 rounded-lg transition-colors">
                               <Upload className="w-3.5 h-3.5" />Зураг байршуулах
+                            </button>
+                          )}
+                          {req.status === 'approved' && (
+                            <button onClick={() => navigate(`/dashboard/albums/${req.album_id}/photos`)} title="Миний зураг ба хавтас" className="flex items-center gap-1.5 text-xs font-semibold text-stone-300 bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
+                              <FolderOpen className="w-3.5 h-3.5" />Хавтас
                             </button>
                           )}
                         </div>
