@@ -419,6 +419,11 @@ export default function DashboardPage() {
                           className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Upload className="w-3.5 h-3.5" />Зураг нэмэх
                         </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/photos`); }}
+                          title="Зураг ба хавтас удирдах"
+                          className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <FolderOpen className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={e => { e.stopPropagation(); navigate(`/album/${album.id}`); }}
                           className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-colors">
                           <Eye className="w-3.5 h-3.5" />Харах
