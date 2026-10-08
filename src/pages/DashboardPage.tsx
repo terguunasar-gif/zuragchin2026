@@ -19,6 +19,8 @@ interface Album {
   event_date: string;
   status: string;
   created_at: string;
+  expires_at?: string | null;
+  files_purged_at?: string | null;
 }
 
 interface Purchase {
@@ -92,14 +94,13 @@ export default function DashboardPage() {
 
   async function loadOrganizerAlbums() {
     const uid = profile!.id;
-    const { data, error } = await supabase
-      .from('albums')
-      .select('id, name, title, event_date, status, created_at')
-      .eq('owner_id', uid)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const q = (cols: string) => supabase.from('albums').select(cols).eq('owner_id', uid)
+      .order('created_at', { ascending: false }).limit(50);
+    let { data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at');
+    // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр
+    if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at'));
     if (error) console.error('loadOrganizerAlbums:', error);
-    setAlbums(data ?? []);
+    setAlbums((data ?? []) as unknown as Album[]);
   }
 
   async function deleteAlbum(albumId: string) {
@@ -205,9 +206,12 @@ export default function DashboardPage() {
 
   const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
 
-  function albumExpiryDays(createdAt: string): number {
-    const expiry = new Date(new Date(createdAt).getTime() + 21 * 24 * 60 * 60 * 1000);
-    return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  /** Цомог хаагдах хүртэл үлдсэн хоног (expires_at; байхгүй бол үйл явдлаас 30 хоног) */
+  function albumExpiryDays(album: Album): number {
+    const expiry = album.expires_at
+      ? new Date(album.expires_at)
+      : new Date(new Date(album.event_date || album.created_at).getTime() + 30 * 24 * 60 * 60 * 1000);
+    return Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   }
   const walletStr = walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0';
 
@@ -397,14 +401,24 @@ export default function DashboardPage() {
                       </div>
                       {/* Expiry countdown */}
                       {(() => {
-                        const days = albumExpiryDays(album.created_at);
+                        const days = albumExpiryDays(album);
+                        if (album.files_purged_at) return (
+                          <div className="text-xs mt-1 mb-3 text-stone-500">Зургууд устгагдсан</div>
+                        );
+                        if (days <= 0) return (
+                          <button onClick={e => { e.stopPropagation(); window.open(`/album/${album.id}`, '_blank'); }}
+                            className="flex items-center gap-1.5 text-xs mt-1 mb-3 text-red-400 hover:text-red-300">
+                            <Clock className="w-3 h-3 flex-shrink-0" />
+                            <span className="font-semibold">Хугацаа дууссан · Сунгах →</span>
+                          </button>
+                        );
                         return (
                           <div className={`flex items-center gap-1.5 text-xs mt-1 mb-3 ${
                             days <= 3 ? 'text-red-400' : days <= 7 ? 'text-amber-400' : 'text-stone-500'
                           }`}>
                             <Clock className="w-3 h-3 flex-shrink-0" />
-                            {days === 0
-                              ? <span className="text-red-400 font-semibold">Өнөөдөр дуусна!</span>
+                            {days === 1
+                              ? <span className="text-red-400 font-semibold">Маргааш хаагдана!</span>
                               : <span>{days} хоног үлдлээ</span>
                             }
                           </div>

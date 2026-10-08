@@ -12,6 +12,7 @@ import { loadCart, saveCart, getPendingInvoice, setPendingInvoice } from '../lib
 import { useI18n } from '../lib/i18n';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
 import FaceSearchModal from '../components/FaceSearchModal';
+import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 
 export interface AlbumData {
@@ -29,6 +30,7 @@ export interface AlbumData {
   watermark_position?: string;
   watermark_opacity?: number;
   watermark_logo_url?: string;
+  expires_at?: string | null;
 }
 
 export interface PhotoData {
@@ -118,6 +120,7 @@ export default function PublicAlbumPage() {
   const [faceOpen, setFaceOpen] = useState(false);
   const [faceIds, setFaceIds] = useState<string[] | null>(null);
   const [aiPrice, setAiPrice] = useState<number>(AI_ALBUM_PRICE_DEFAULT);
+  const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
 
@@ -162,14 +165,32 @@ export default function PublicAlbumPage() {
 
   async function loadAlbum(link: string) {
     setLoading(true);
-    const { data: albumData } = await supabase
-      .from('albums')
-      .select('id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices')
-      .or(`share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`)
-      .eq('status', 'active')
-      .maybeSingle();
+    const BASE_COLS = 'id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices';
+    const byLink = `share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`;
+    // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let albumData: any = null;
+    const withExpiry = await supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle();
+    if (withExpiry.error) {
+      ({ data: albumData } = await supabase.from('albums').select(BASE_COLS).or(byLink).eq('status', 'active').maybeSingle());
+    } else {
+      albumData = withExpiry.data;
+    }
 
-    if (!albumData) { setNotFound(true); setLoading(false); return; }
+    if (!albumData || (albumData.status !== 'active' && !albumData.files_purged_at)) { setNotFound(true); setLoading(false); return; }
+
+    // Хугацаа дууссан бол зураг ачаалахгүй — сунгах хуудсыг харуулна
+    if (albumData.files_purged_at || (albumData.expires_at && new Date(albumData.expires_at).getTime() < Date.now())) {
+      setExpired({
+        id: albumData.id,
+        name: albumData.title || albumData.name,
+        expiresAt: albumData.expires_at ?? albumData.files_purged_at,
+        purged: !!albumData.files_purged_at,
+      });
+      setLoading(false);
+      return;
+    }
+    setExpired(null);
 
     const { data: ownerData } = await supabase
       .from('profiles').select('*')
@@ -269,6 +290,16 @@ export default function PublicAlbumPage() {
       <div className="min-h-screen bg-stone-950 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
       </div>
+    );
+  }
+
+  if (expired) {
+    return (
+      <>
+        <LanguagePickerModal />
+        <AlbumExpiredView albumId={expired.id} albumName={expired.name} expiresAt={expired.expiresAt}
+          purged={expired.purged} onExtended={() => shareLink && loadAlbum(shareLink)} />
+      </>
     );
   }
 
@@ -394,6 +425,14 @@ export default function PublicAlbumPage() {
             {t('{n} зураг', { n: photos.length })}
           </span>
         </div>
+        {album.expires_at && (() => {
+          const left = Math.ceil((new Date(album.expires_at).getTime() - Date.now()) / 86400000);
+          return left <= 7 ? (
+            <p className="text-amber-300 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-3 inline-block">
+              {t('Цомог {n} хоногийн дараа хаагдана — зургаа эртхэн аваарай.', { n: Math.max(left, 0) })}
+            </p>
+          ) : null;
+        })()}
         {album.description && (
           <p className="text-stone-400 text-sm max-w-2xl leading-relaxed">{album.description}</p>
         )}
