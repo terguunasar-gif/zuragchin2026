@@ -2,8 +2,11 @@ import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Camera, Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useI18n } from '../../lib/i18n';
+import { LanguageSwitcher } from '../../components/LanguagePicker';
 
 export default function LoginPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -60,10 +63,10 @@ export default function LoginPage() {
           </div>
           <div>
             <h2 className="text-white text-4xl font-bold leading-tight mb-4">
-              Таны үйл ажиллагаа,<br />гоёор дүрслэгдсэн.
+              {t('Таны үйл ажиллагаа,')}<br />{t('гоёор дүрслэгдсэн.')}
             </h2>
             <p className="text-stone-300 text-lg leading-relaxed max-w-sm">
-              Зурагчид, зохион байгуулагчид болон дурсамжийг холбодог платформ.
+              {t('Зурагчид, зохион байгуулагчид болон дурсамжийг холбодог платформ.')}
             </p>
           </div>
         </div>
@@ -83,8 +86,9 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <h1 className="text-white text-3xl font-bold mb-2">Тавтай морилно уу</h1>
-          <p className="text-stone-400 mb-8">Өөрийн бүртгэлд нэвтрэрнэ үү</p>
+          <div className="flex justify-end mb-4"><LanguageSwitcher /></div>
+          <h1 className="text-white text-3xl font-bold mb-2">{t('Тавтай морилно уу')}</h1>
+          <p className="text-stone-400 mb-8">{t('Өөрийн бүртгэлд нэвтрэрнэ үү')}</p>
 
           {error && (
             <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
@@ -110,20 +114,20 @@ export default function LoginPage() {
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                 </svg>
               )}
-              Google-ээр нэвтрэх
+              {t('Google-ээр нэвтрэх')}
             </button>
 
           </div>
 
           <div className="flex items-center gap-4 mb-6">
             <div className="flex-1 h-px bg-white/10" />
-            <span className="text-stone-500 text-sm">эсвэл имэйлээр нэвтрэх</span>
+            <span className="text-stone-500 text-sm">{t('эсвэл имэйлээр нэвтрэх')}</span>
             <div className="flex-1 h-px bg-white/10" />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-stone-300 text-sm font-medium mb-2">Имэйл хаяг</label>
+              <label className="block text-stone-300 text-sm font-medium mb-2">{t('Имэйл хаяг')}</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-500" />
                 <input
@@ -139,9 +143,9 @@ export default function LoginPage() {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-stone-300 text-sm font-medium">Нууц үг</label>
+                <label className="text-stone-300 text-sm font-medium">{t('Нууц үг')}</label>
                 <Link to="/auth/forgot-password" className="text-amber-400 hover:text-amber-300 text-sm transition-colors">
-                  Нууц үг мартсан?
+                  {t('Нууц үг мартсан?')}
                 </Link>
               </div>
               <div className="relative">
@@ -180,7 +184,7 @@ export default function LoginPage() {
                   </svg>
                 )}
               </button>
-              <span className="text-stone-400 text-sm">Намайг 30 хоног сана</span>
+              <span className="text-stone-400 text-sm">{t('Намайг 30 хоног сана')}</span>
             </div>
 
             <button
@@ -190,14 +194,14 @@ export default function LoginPage() {
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-stone-950/30 border-t-stone-950 rounded-full animate-spin" />
-              ) : 'Нэвтрэх'}
+              ) : t('Нэвтрэх')}
             </button>
           </form>
 
           <p className="text-stone-500 text-center mt-6 text-sm">
-            Бүртгэл байхгүй юу?{' '}
+            {t('Бүртгэл байхгүй юу?')}{' '}
             <Link to="/auth/register" className="text-amber-400 hover:text-amber-300 font-medium transition-colors">
-              Бүртгүүлэх
+              {t('Бүртгүүлэх')}
             </Link>
           </p>
         </div>
