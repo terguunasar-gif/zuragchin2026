@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, DollarSign, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import AiAlbumPriceSetting from './AiAlbumPriceSetting';
+import AlbumPolicySetting from './AlbumPolicySetting';
 
 interface MonthlyFee {
   month: string;
@@ -86,6 +88,8 @@ export default function AdminWalletTab() {
 
   return (
     <div className="space-y-6">
+      <AiAlbumPriceSetting />
+      <AlbumPolicySetting />
       {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5">
