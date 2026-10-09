@@ -8,10 +8,11 @@ import {
 import { supabase } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
-import { loadCart, saveCart, getPendingInvoice, setPendingInvoice } from '../lib/purchaseHistory';
+import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
 import FaceSearchModal from '../components/FaceSearchModal';
+import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 
@@ -123,6 +124,7 @@ export default function PublicAlbumPage() {
   const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
+  const [paidCount] = useState(() => { try { return listPurchaseHistory().length; } catch { return 0; } });
 
   useEffect(() => { if (shareLink) loadAlbum(shareLink); }, [shareLink]);
 
@@ -390,10 +392,13 @@ export default function PublicAlbumPage() {
           <div className="flex items-center gap-2 flex-shrink-0">
           <LanguageSwitcher />
           <button onClick={() => navigate('/my-purchases')}
-            title={t('Миний худалдан авалт')}
-            className="flex items-center gap-2 text-stone-300 hover:text-white border border-white/10 hover:border-white/30 px-3 py-2 rounded-xl transition-colors">
-            <Receipt className="w-4 h-4" />
-            <span className="hidden md:inline text-sm">{t('Миний худалдан авалт')}</span>
+            title={t('Төлсөн захиалга')}
+            className="relative flex items-center gap-1.5 text-stone-200 hover:text-white bg-white/5 border border-white/15 hover:border-white/30 px-2.5 py-2 rounded-xl transition-colors">
+            <Receipt className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs sm:text-sm leading-tight text-left">{t('Төлсөн')}<span className="hidden sm:inline"> {t('захиалга')}</span></span>
+            {paidCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-stone-950 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{paidCount}</span>
+            )}
           </button>
           <button onClick={() => setCartOpen(o => !o)}
             className="relative flex items-center gap-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl transition-colors flex-shrink-0">
@@ -410,6 +415,7 @@ export default function PublicAlbumPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8 border-b border-white/5">
+        <InAppBrowserBanner />
         <h1 className="text-white text-3xl font-bold mb-3">{album.name}</h1>
         <div className="flex flex-wrap gap-5 text-sm text-stone-400 mb-3">
           <span className="flex items-center gap-2">

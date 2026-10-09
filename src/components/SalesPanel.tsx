@@ -114,7 +114,7 @@ export default function SalesPanel({
   }
 
   return (
-    <section className="mt-8">
+    <section id="sales-panel" className="mt-8 scroll-mt-20">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h2 className="text-white font-semibold text-lg">
           {mode === 'photographer' ? 'Борлуулалт ба угаалгах захиалга' : 'Цомгуудын борлуулалт'}
@@ -132,6 +132,12 @@ export default function SalesPanel({
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-xs text-stone-400 leading-relaxed">
+        <p><span className="text-white">Төлбөрийн хуваарилалт:</span> QPay шимтгэл 1% · Платформ 3% · Зохион байгуулагч 10% · үлдсэн нь зурагчинд.
+          AI бүүтийн зураг: QPay 1% · Зохион байгуулагч 10% · үлдсэн нь платформд.</p>
+        <p className="mt-1"><span className="text-amber-300">«Хүлээгдэж буй»</span> = танд хараахан шилжүүлэгдээгүй үлдэгдэл. Зураг тус бүрийн задаргааг доор харна уу.</p>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -176,6 +182,7 @@ export default function SalesPanel({
                   <p className="text-stone-500 text-xs truncate">
                     {r.album_name} · {fmtDate(r.created_at)} · №{(r.qpay_invoice_id || '').slice(0, 8).toUpperCase()}
                   </p>
+                  <SplitLine r={r} />
                   {mode === 'organizer' && r.photographer_name && (
                     <p className="text-stone-500 text-xs truncate">Зурагчин: {r.photographer_name}</p>
                   )}
@@ -215,5 +222,23 @@ export default function SalesPanel({
         </div>
       )}
     </section>
+  );
+}
+
+/** Нэг борлуулалтын мөнгө хэнд хэд очсон */
+function SplitLine({ r }: { r: SaleRow }) {
+  const gross = Number(r.gross_amount) || 0;
+  const qpay = Math.round(gross * 0.01);
+  const photographer = Number(r.photographer_amount) || 0;
+  const owner = Number(r.owner_amount) || 0;
+  const platform = Math.max(0, gross - qpay - photographer - owner);
+  const f = (n: number) => `₮${Math.round(n).toLocaleString()}`;
+  return (
+    <p className="text-[11px] text-stone-500 mt-0.5 flex flex-wrap gap-x-2">
+      <span>QPay {f(qpay)}</span>
+      <span>· Платформ {f(platform)}</span>
+      <span className={r.is_my_album ? 'text-emerald-400' : ''}>· Зохион байгуулагч {f(owner)}</span>
+      <span className={r.is_my_photo ? 'text-emerald-400' : ''}>· Зурагчин {f(photographer)}</span>
+    </p>
   );
 }

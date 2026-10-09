@@ -4,6 +4,7 @@ import { ArrowLeft, Camera, ChevronRight, Download, Printer, Receipt } from 'luc
 import { listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
+import InAppBrowserBanner from '../components/InAppBrowserBanner';
 
 // Энэ төхөөрөмж дээр төлсөн бүх захиалгын жагсаалт. Зурагчнаас угаасан зургаа
 // авахдаа баримтаа нээж үзүүлэхэд зориулсан.
@@ -28,6 +29,7 @@ export default function MyPurchasesPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-4">
+        <InAppBrowserBanner compact />
         {items.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -35,6 +37,7 @@ export default function MyPurchasesPage() {
             </div>
             <p className="text-white font-medium mb-1">{t('Төлсөн захиалга алга')}</p>
             <p className="text-stone-500 text-sm">{t('QPay-ээр төлсөн захиалгууд энд хадгалагдана.')}</p>
+            <p className="text-stone-600 text-xs mt-3 max-w-sm mx-auto">{t('Messenger, Facebook зэрэг өөр апп доторх хөтчөөр төлсөн бол тэр хөтчөөрөө (жишээ нь Messenger дахь цомгийн холбоосоор) орж харна уу.')}</p>
           </div>
         ) : (
           items.map(it => (

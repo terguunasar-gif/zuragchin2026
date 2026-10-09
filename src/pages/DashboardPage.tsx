@@ -207,6 +207,11 @@ export default function DashboardPage() {
   const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
 
   /** Цомог хаагдах хүртэл үлдсэн хоног (expires_at; байхгүй бол үйл явдлаас 30 хоног) */
+  /** «Миний хувь / Хүлээгдэж буй» картыг дарахад борлуулалтын задаргаа руу гүйлгэнэ */
+  function scrollToSales() {
+    document.getElementById('sales-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function albumExpiryDays(album: Album): number {
     const expiry = album.expires_at
       ? new Date(album.expires_at)
@@ -339,16 +344,16 @@ export default function DashboardPage() {
           {activeRole === 'photographer' && isPhotographer && (
             <>
               <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
-              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} />
-              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
             </>
           )}
           {activeRole === 'organizer' && isOrganizer && (
             <>
               <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Нийт цомог" value={albums.length} />
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
-              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} />
-              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
             </>
           )}
           {isAdmin && (

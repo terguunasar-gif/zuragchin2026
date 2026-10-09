@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import BankLinks, { BankLink } from '../../components/BankLinks';
 import {
-  X, ShoppingCart, User, Phone, AlertCircle,
+  X, User, Phone, AlertCircle,
   Loader2, QrCode, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import { AlbumData, CartItem } from '../PublicAlbumPage';
@@ -28,7 +29,7 @@ interface InvoiceData {
   invoiceId: string;
   qrImage: string;   // base64 PNG
   qrText: string;
-  urls: { name: string; description: string; link: string }[];
+  urls: BankLink[];
   grossTotal: number;
   qpayFee: number;
   platformFee: number;
@@ -50,6 +51,14 @@ export default function CheckoutModal({
   onInvoiceCreated?: (invoiceId: string) => void;
 }) {
   const { t, lang } = useI18n();
+  const phoneRef = useRef<HTMLInputElement>(null);
+  /** Утасны гар нээгдэхэд талбарыг дэлгэцийн дунд гаргана (гарны ард нуугдахгүй) */
+  const [typing, setTyping] = useState(false);
+  const keepVisible = (e: { currentTarget: HTMLElement }) => {
+    const el = e.currentTarget;
+    setTyping(true);
+    setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+  };
   const [step, setStep] = useState<Step>('summary');
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
@@ -135,9 +144,9 @@ export default function CheckoutModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-stone-950/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-stone-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-stone-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto overscroll-contain">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 sticky top-0 bg-stone-900 z-10">
@@ -197,6 +206,11 @@ export default function CheckoutModal({
                       type="text"
                       value={buyerName}
                       onChange={e => setBuyerName(e.target.value)}
+                      onFocus={keepVisible}
+                      onBlur={() => setTimeout(() => setTyping(false), 200)}
+                      enterKeyHint="next"
+                      autoComplete="name"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); phoneRef.current?.focus(); } }}
                       placeholder={t('Таны нэр')}
                       className={`w-full bg-white/5 border ${nameError ? 'border-red-500/50' : 'border-white/10'} focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm`}
                     />
@@ -207,9 +221,15 @@ export default function CheckoutModal({
                       <Phone className="w-3.5 h-3.5" /> {t('Утасны дугаар')}
                     </label>
                     <input
+                      ref={phoneRef}
                       type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      enterKeyHint="done"
                       value={buyerPhone}
-                      onChange={e => setBuyerPhone(e.target.value)}
+                      onFocus={keepVisible}
+                      onBlur={() => setTimeout(() => setTyping(false), 200)}
+                      onChange={e => setBuyerPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 12))}
                       placeholder="99001234"
                       className={`w-full bg-white/5 border ${phoneError ? 'border-red-500/50' : 'border-white/10'} focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm`}
                     />
@@ -236,6 +256,8 @@ export default function CheckoutModal({
                   t('QPay-ээр төлөх')
                 )}
               </button>
+              {/* Гар нээлттэй үед доор зай гаргаж, талбарыг дээш гүйлгэх боломж олгоно */}
+              {typing && <div className="h-[45vh] sm:hidden" aria-hidden />}
               {lang !== 'mn' && (
                 <p className="text-stone-500 text-xs text-center mt-3">
                   {t('Гадаад картаар төлөх боломж удахгүй нэмэгдэнэ. QPay ашиглах боломжгүй бол зохион байгуулагчтай холбогдоно уу.')}
@@ -279,19 +301,7 @@ export default function CheckoutModal({
                 {invoice.urls && invoice.urls.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-stone-500 text-xs">{t('Эсвэл апп-аар нээх:')}</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {invoice.urls.slice(0, 4).map((u, i) => (
-                        <a
-                          key={i}
-                          href={u.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          {u.name}
-                        </a>
-                      ))}
-                    </div>
+                    <BankLinks urls={invoice.urls} />
                   </div>
                 )}
               </div>

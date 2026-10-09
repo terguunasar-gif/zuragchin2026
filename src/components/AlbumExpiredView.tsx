@@ -3,6 +3,7 @@ import { CheckCircle2, Clock, Loader2, Lock, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from './LanguagePicker';
+import BankLinks, { BankLink } from './BankLinks';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -12,7 +13,7 @@ export const EXTEND_PRICE_DEFAULT = 10000;
 export const EXTEND_DAYS_DEFAULT = 30;
 export const PURGE_AFTER_DEFAULT = 60;
 
-interface Invoice { invoiceId: string; qrImage: string; urls: { name: string; link: string }[]; amount: number; days: number }
+interface Invoice { invoiceId: string; qrImage: string; urls: BankLink[]; amount: number; days: number }
 
 async function settingNum(key: string, fallback: number) {
   const { data } = await supabase.from('platform_settings').select('value').eq('key', key).maybeSingle();
@@ -106,12 +107,7 @@ export default function AlbumExpiredView({ albumId, albumName, expiresAt, purged
             <>
               <p className="text-stone-300 text-sm mb-4">{t('QPay-ээр ₮{amount} төлнө үү', { amount: invoice.amount.toLocaleString('en-US') })}</p>
               <img src={`data:image/png;base64,${invoice.qrImage}`} alt="QPay QR" className="w-52 h-52 mx-auto bg-white rounded-xl p-2 mb-4" />
-              <div className="flex flex-wrap justify-center gap-2 mb-4">
-                {invoice.urls.slice(0, 6).map((u, i) => (
-                  <a key={i} href={u.link} target="_blank" rel="noreferrer"
-                    className="text-xs text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 rounded-lg">{u.name}</a>
-                ))}
-              </div>
+              <div className="mb-4"><BankLinks urls={invoice.urls} /></div>
               <p className="text-stone-500 text-xs flex items-center justify-center gap-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('Төлбөр хүлээж байна…')}
               </p>

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { albumFaceSearchEnabled, scanStoredPhoto } from '../../lib/faceSearch';
+import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -162,6 +162,32 @@ export default function AlbumPhotosPage() {
 
   // Царайгаар хайх асаалттай бол шинээр нэмэгдсэн (жишээ нь AI бүүтийн) зургуудыг автоматаар уншуулна
   const autoScanned = useRef(false);
+  // Царай шалгах хэрэгсэл: зураг бүрийн царайны тоо, selfie-ээс зай
+  const [faceInfo, setFaceInfo] = useState<Record<string, { faces: number; distance: number | null }> | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+  const testFileRef = useRef<HTMLInputElement>(null);
+
+  async function loadFaceInfo(descriptor: number[] | null) {
+    const { data, error } = await supabase.rpc('face_debug', { p_album_id: albumId!, p_descriptor: descriptor });
+    if (error) { showToast('Шалгах боломжгүй: ' + error.message + ' (SQL face_debug ажиллуулсан уу?)', 'error'); return; }
+    const map: Record<string, { faces: number; distance: number | null }> = {};
+    for (const r of (data ?? []) as { photo_id: string; faces: number; distance: number | null }[]) map[r.photo_id] = { faces: r.faces, distance: r.distance };
+    setFaceInfo(map);
+  }
+
+  async function testWithSelfie(file: File) {
+    setTestBusy(true);
+    try {
+      const d = await selfieDescriptor(await fileToImage(file));
+      if (!d) { showToast('Selfie дээр царай олдсонгүй', 'error'); return; }
+      await loadFaceInfo(d);
+    } catch (e) {
+      showToast('Алдаа: ' + (e instanceof Error ? e.message : ''), 'error');
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!faceEnabled || autoScanned.current || scanProgress) return;
     if (photos.some(p => !p.faces_scanned_at)) {
@@ -452,7 +478,24 @@ export default function AlbumPhotosPage() {
                 className="flex items-center gap-2 bg-white/5 hover:bg-red-500/15 border border-white/10 text-stone-300 hover:text-red-300 px-4 py-2 rounded-xl text-sm">
                 <Trash2 className="w-4 h-4" /> Царайны мэдээлэл устгах
               </button>
+              <input ref={testFileRef} type="file" accept="image/*" capture="user" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) testWithSelfie(f); }} />
+              <button onClick={() => testFileRef.current?.click()} disabled={testBusy || !!scanProgress}
+                className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 px-4 py-2 rounded-xl text-sm">
+                {testBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />} Selfie-ээр турших
+              </button>
+              <button onClick={() => loadFaceInfo(null)} disabled={testBusy}
+                className="bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 px-4 py-2 rounded-xl text-sm">
+                Царайны тоо харах
+              </button>
             </div>
+            {faceInfo && (
+              <p className="text-stone-500 text-xs mt-2">
+                Зураг бүр дээр: <span className="text-white">👤 царайны тоо</span>, selfie-ээр туршсан бол зай
+                (<span className="text-emerald-400">ногоон</span> = олдоно, <span className="text-amber-400">шар</span> = «төстэй», саарал = олдохгүй).
+                Тэг царайтай зураг хайлтад хэзээ ч гарахгүй.
+              </p>
+            )}
             {scanProgress && <p className="text-stone-500 text-xs mt-2">Хуудсаа хаалгүй хүлээнэ үү. Анх удаа загвар ачаалахад хэдэн секунд болно.</p>}
           </div>
         )}
@@ -557,6 +600,16 @@ export default function AlbumPhotosPage() {
                         {photo.source === 'ai_booth' ? '✨ AI бүүт' : folderName}
                       </span>
                     )}
+                    {faceInfo && (() => {
+                      const fi = faceInfo[photo.id];
+                      const dist = fi?.distance;
+                      const color = dist == null ? 'text-stone-300' : dist < FACE_MATCH_THRESHOLD ? 'text-emerald-300' : dist < 0.64 ? 'text-amber-300' : 'text-stone-400';
+                      return (
+                        <span className={`absolute top-12 left-2 z-10 text-[11px] bg-stone-950/85 px-2 py-0.5 rounded-md ${color}`}>
+                          👤 {fi?.faces ?? 0}{dist != null ? ` · ${dist.toFixed(2)}` : ''}
+                        </span>
+                      );
+                    })()}
                     <img
                       src={photo.preview_url}
                       alt={photo.filename}

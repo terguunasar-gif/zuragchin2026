@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Camera, CheckCircle2, Download, Printer, ArrowLeft,
   Loader2, AlertCircle, Phone, Mail, Facebook, Instagram,
-  Calendar, Hash,
+  Calendar, Hash, Clock, X, Share2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
+import InAppBrowserBanner from '../components/InAppBrowserBanner';
+import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -72,6 +74,10 @@ export default function ReceiptPage() {
   // Зурагчны профайлд холбоо барих мэдээлэл байхгүй үед цомгийн (зохион байгуулагчийн) мэдээллийг харуулна.
   const [albumContact, setAlbumContact] = useState<PhotographerContact | null>(null);
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
+  // Цомог хаагдах огноо — зургаа түүнээс өмнө татаж авахыг сануулна
+  const [albumExpiresAt, setAlbumExpiresAt] = useState<string | null>(null);
+  // Зургийг томоор харуулж «удаан дарж хадгалах» заавар өгөх цонх
+  const [viewer, setViewer] = useState<{ url: string; name: string; hint: 'manual' | 'downloaded' | 'shared' } | null>(null);
 
   useEffect(() => { if (invoiceId) load(invoiceId); }, [invoiceId]);
 
@@ -94,9 +100,17 @@ export default function ReceiptPage() {
 
       // Album share link
       if (rows[0]?.album_id) {
-        const { data: albumData } = await supabase
-          .from('albums').select('share_link, name, title, contact_info')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let albumData: any = null;
+        const withExp = await supabase.from('albums').select('share_link, name, title, contact_info, expires_at')
           .eq('id', rows[0].album_id).maybeSingle();
+        if (withExp.error) {
+          ({ data: albumData } = await supabase.from('albums').select('share_link, name, title, contact_info')
+            .eq('id', rows[0].album_id).maybeSingle());
+        } else {
+          albumData = withExp.data;
+          setAlbumExpiresAt(albumData?.expires_at ?? null);
+        }
         setAlbumShareLink(albumData?.share_link ?? '');
         const ac = (albumData as any)?.contact_info;
         if (ac && typeof ac === 'object' && Object.values(ac).some(v => !!v)) {
@@ -170,62 +184,21 @@ export default function ReceiptPage() {
     }
   }
 
-  // original_url-аас шууд татах
+  /** Зургийг утасны галерей / компьютерт хадгална */
   async function handleDownload(p: PurchaseRow) {
-    const originalUrl = p.photo_uploads?.original_url;
-    const filename    = p.photo_uploads?.filename ?? `photo_${p.id}`;
-
-    if (!originalUrl) {
-      // Edge Function signed URL-рүү буцна
-      const urlItem = signedUrls.find(u => u.purchaseId === p.id);
-      if (urlItem?.signedUrl) {
-        const a = document.createElement('a');
-        a.href = urlItem.signedUrl;
-        a.download = urlItem.filename || filename;
-        a.click();
-      }
-      return;
-    }
-
+    const urlItem  = signedUrls.find(u => u.purchaseId === p.id);
+    const filename = urlItem?.filename || p.photo_uploads?.filename || `zuragchin_${p.id.slice(0, 8)}`;
+    if (!urlItem?.signedUrl) return;
     setDownloading(prev => ({ ...prev, [p.id]: true }));
     try {
-      // Supabase storage path-аас татах
-      const url = new URL(originalUrl);
-      const pathParts = url.pathname.split('/object/public/');
-      if (pathParts.length === 2) {
-        const [bucketAndPath] = pathParts[1].split('?');
-        const slashIdx = bucketAndPath.indexOf('/');
-        const bucket = bucketAndPath.slice(0, slashIdx);
-        const filePath = bucketAndPath.slice(slashIdx + 1);
-        const { data, error } = await supabase.storage.from(bucket).download(filePath);
-        if (!error && data) {
-          const blobUrl = URL.createObjectURL(data);
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = filename;
-          a.click();
-          URL.revokeObjectURL(blobUrl);
-          return;
-        }
+      const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename);
+      // Апп доторх хөтөч эсвэл Android дээр — зургийг томоор харуулж заавар өгнө
+      if (result === 'manual' || result === 'downloaded') {
+        // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоосыг харуулна
+        setViewer({ url: result === 'manual' ? urlItem.signedUrl : (blobUrl || urlItem.signedUrl), name: filename, hint: result });
       }
-      // Fallback: шууд fetch
-      const res = await fetch(originalUrl);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
     } catch {
-      // Edge Function signed URL fallback
-      const urlItem = signedUrls.find(u => u.purchaseId === p.id);
-      if (urlItem?.signedUrl) {
-        const a = document.createElement('a');
-        a.href = urlItem.signedUrl;
-        a.download = urlItem.filename || filename;
-        a.click();
-      }
+      setViewer({ url: urlItem.signedUrl, name: filename, hint: 'manual' });
     } finally {
       setDownloading(prev => ({ ...prev, [p.id]: false }));
     }
@@ -341,6 +314,22 @@ export default function ReceiptPage() {
           </div>
         </div>
 
+        <InAppBrowserBanner compact />
+
+        {isPaid && downloadPurchases.length > 0 && albumExpiresAt && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex gap-3">
+            <Clock className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-amber-200 text-sm font-semibold">
+                {t('Зургаа {date}-с өмнө утсандаа хадгалаарай', { date: fmtDay(albumExpiresAt) })}
+              </p>
+              <p className="text-amber-200/70 text-xs mt-1 leading-relaxed">
+                {t('Цомгийн хугацаа дуусахад зургууд сайтаас устах тул «Татах» дарж утас эсвэл компьютертоо хадгалж аваарай.')}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Download section */}
         {downloadPurchases.length > 0 && (
           <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
@@ -361,9 +350,8 @@ export default function ReceiptPage() {
 
             <div className="divide-y divide-white/5">
               {downloadPurchases.map(p => {
-                const hasOriginal = !!p.photo_uploads?.original_url;
                 const urlItem     = signedUrls.find(u => u.purchaseId === p.id);
-                const canDownload = isPaid && (hasOriginal || !!urlItem?.signedUrl);
+                const canDownload = isPaid && !!urlItem?.signedUrl;
                 const isLoading   = downloading[p.id];
 
                 return (
@@ -505,6 +493,51 @@ export default function ReceiptPage() {
           </button>
         )}
       </main>
+      {viewer && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3">
+            <p className="text-white text-sm font-medium truncate pr-4">{viewer.name}</p>
+            <button onClick={() => setViewer(null)} className="text-white/80 hover:text-white p-2"><X className="w-6 h-6" /></button>
+          </div>
+          <div className="flex-1 min-h-0 flex items-center justify-center px-2">
+            <img src={viewer.url} alt={viewer.name} className="max-w-full max-h-full object-contain select-auto" style={{ WebkitTouchCallout: 'default' }} />
+          </div>
+          <div className="p-4 space-y-2 bg-stone-950/80">
+            {viewer.hint === 'downloaded' ? (
+              <p className="text-emerald-300 text-sm text-center">
+                {t('Зураг татагдлаа. Утасны «Галерей» → «Downloads» хавтсаас харна уу.')}
+              </p>
+            ) : (
+              <p className="text-amber-200 text-sm text-center font-medium">
+                {isIOS
+                  ? t('Зурган дээр удаан дараад «Зургийг хадгалах / Save to Photos»-ыг сонгоно уу.')
+                  : t('Зурган дээр удаан дараад «Зураг татах / Download image»-ыг сонгоно уу.')}
+              </p>
+            )}
+            {inAppBrowserName() && (
+              <p className="text-stone-400 text-xs text-center">
+                {t('Хадгалагдахгүй бол дээд талын ••• → «Chrome / Safari-д нээх»-ээр нээгээд дахин «Татах» дарна уу.')}
+              </p>
+            )}
+            {typeof navigator !== 'undefined' && 'share' in navigator && !inAppBrowserName() && (
+              <button onClick={async () => {
+                try {
+                  const blob = await (await fetch(viewer.url)).blob();
+                  await navigator.share({ files: [new File([blob], viewer.name.endsWith('.jpg') ? viewer.name : viewer.name + '.jpg', { type: blob.type || 'image/jpeg' })] });
+                } catch { /* цуцалсан */ }
+              }}
+                className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white text-sm py-2.5 rounded-xl">
+                <Share2 className="w-4 h-4" /> {t('Хуваалцах / Галерейд хадгалах')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function fmtDay(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 }
