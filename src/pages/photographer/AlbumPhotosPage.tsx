@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, Trash2, LogOut, User,
@@ -159,6 +159,17 @@ export default function AlbumPhotosPage() {
     setFaceEnabled(!faceEnabled);
     showToast(!faceEnabled ? 'Царайгаар хайх асаалаа' : 'Царайгаар хайх унтраалаа');
   }
+
+  // Царайгаар хайх асаалттай бол шинээр нэмэгдсэн (жишээ нь AI бүүтийн) зургуудыг автоматаар уншуулна
+  const autoScanned = useRef(false);
+  useEffect(() => {
+    if (!faceEnabled || autoScanned.current || scanProgress) return;
+    if (photos.some(p => !p.faces_scanned_at)) {
+      autoScanned.current = true;
+      scanFaces();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faceEnabled, photos]);
 
   /** Царай уншуулаагүй зургуудыг (preview-ээс) уншуулна */
   async function scanFaces() {

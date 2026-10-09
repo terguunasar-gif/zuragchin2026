@@ -7,7 +7,7 @@ import { useI18n } from '../lib/i18n';
 type Step = 'consent' | 'camera' | 'working' | 'error' | 'possible';
 
 /** Энэ хүртэлх зай — «төстэй» гэж үзэн сонголттойгоор харуулна */
-const POSSIBLE_THRESHOLD = 0.68;
+const POSSIBLE_THRESHOLD = 0.64;
 
 /** Зочин selfie авч, цомгоос өөрийн орсон зургуудыг олно. Selfie хадгалагдахгүй. */
 export default function FaceSearchModal({ albumId, onClose, onResult }: {

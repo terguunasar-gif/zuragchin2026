@@ -17,9 +17,9 @@ let backend = '';
 async function api(): Promise<FaceApi> {
   if (!apiPromise) apiPromise = (async () => {
     const faceapi = await import('@vladmandic/face-api');
-    try { await faceapi.tf.setBackend('webgl'); } catch { /* CPU руу шилжинэ */ }
-    await faceapi.tf.ready();
-    backend = faceapi.tf.getBackend();
+    try { await (faceapi.tf as any).setBackend('webgl'); } catch { /* CPU руу шилжинэ */ }
+    await (faceapi.tf as any).ready();
+    backend = (faceapi.tf as any).getBackend();
     console.info('[faceSearch] backend:', backend);
     return faceapi;
   })();
@@ -29,9 +29,65 @@ async function api(): Promise<FaceApi> {
 /** Хөтчид дэлгэцээ шинэчлэх боломж олгоно (хуудас «гацах»-аас сэргийлнэ) */
 const breathe = () => new Promise<void>(r => setTimeout(r, 30));
 
+// ── Worker (тусдаа thread) — хуудас гацахаас бүрэн сэргийлнэ ──
+type WorkerFace = { d: number[]; px: { x: number; y: number; w: number; h: number } };
+let worker: Worker | null = null;
+let workerBroken = false;
+let seq = 0;
+const pending = new Map<number, { res: (f: WorkerFace[]) => void; rej: (e: Error) => void }>();
+
+function getWorker(): Worker | null {
+  if (workerBroken || typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return null;
+  if (!worker) {
+    try {
+      worker = new Worker(new URL('./faceWorker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (e: MessageEvent<{ id: number; faces?: WorkerFace[]; error?: string; backend?: string }>) => {
+        const p = pending.get(e.data.id);
+        if (!p) return;
+        pending.delete(e.data.id);
+        if (e.data.backend && !backend) { backend = e.data.backend; console.info('[faceSearch] worker backend:', backend); }
+        if (e.data.error) p.rej(new Error(e.data.error)); else p.res(e.data.faces ?? []);
+      };
+      worker.onerror = () => {
+        workerBroken = true;
+        pending.forEach(p => p.rej(new Error('worker failed')));
+        pending.clear();
+      };
+    } catch {
+      workerBroken = true;
+      return null;
+    }
+  }
+  return worker;
+}
+
+function toImageData(el: Drawable, max: number): ImageData {
+  const { w, h } = sizeOf(el);
+  const scale = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * scale));
+  c.height = Math.max(1, Math.round(h * scale));
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(el, 0, 0, c.width, c.height);
+  return ctx.getImageData(0, 0, c.width, c.height);
+}
+
+function inWorker(kind: 'warm' | 'selfie' | 'photos', image?: ImageData): Promise<WorkerFace[]> | null {
+  const w = getWorker();
+  if (!w) return null;
+  return new Promise((res, rej) => {
+    const id = ++seq;
+    pending.set(id, { res, rej });
+    if (image) w.postMessage({ id, kind, image }, [image.data.buffer]);
+    else w.postMessage({ id, kind });
+  });
+}
+
 let warmed: Promise<void> | null = null;
 /** Анхны тооцоололд WebGL шэйдерүүд хөрвүүлэгддэг (хэдэн секунд). Камер нээгдэх үед урьдчилан хийнэ. */
 export function warmUpFaceModels(): Promise<void> {
+  const viaWorker = inWorker('warm');
+  if (viaWorker) return viaWorker.then(() => {}, () => {});
   if (!warmed) warmed = (async () => {
     const faceapi = await loadFaceModels('selfie');
     const c = document.createElement('canvas');
@@ -91,6 +147,24 @@ function downscale(el: Drawable, max = 1600): HTMLCanvasElement | Drawable {
 
 /** Зурган дахь бүх царай (бүлэг зураг). Хэт жижиг, бүдэг царайг алгасна. */
 export async function facesInPhoto(el: Drawable): Promise<FoundFace[]> {
+  const img = toImageData(el, 1600);
+  try {
+    const r = inWorker('photos', img);
+    if (r) {
+      const faces = await r;
+      const W = img.width, H = img.height;
+      return faces
+        .filter(f => f.px.w >= 36 && f.px.h >= 36)
+        .map(f => ({
+          d: f.d.map(v => Math.round(v * 1e5) / 1e5),
+          b: { x: +(f.px.x / W).toFixed(4), y: +(f.px.y / H).toFixed(4), w: +(f.px.w / W).toFixed(4), h: +(f.px.h / H).toFixed(4) },
+        }));
+    }
+  } catch (e) { console.warn('[faceSearch] worker failed, using main thread', e); }
+  return facesInPhotoMain(el);
+}
+
+async function facesInPhotoMain(el: Drawable): Promise<FoundFace[]> {
   const faceapi = await loadFaceModels('photos');
   await breathe();
   const input = downscale(el);
@@ -113,6 +187,18 @@ export async function facesInPhoto(el: Drawable): Promise<FoundFace[]> {
 /** Selfie-ээс хамгийн том нэг царайны хээ. Олдохгүй бол null.
  *  Цомгийн зурагтай ижил (SSD) илрүүлэгч ашиглавал хээ илүү тохирдог; олдохгүй бол жижиг загвараар дахин оролдоно. */
 export async function selfieDescriptor(el: Drawable): Promise<number[] | null> {
+  try {
+    const r = inWorker('selfie', toImageData(el, 640));
+    if (r) {
+      const faces = await r;
+      if (faces.length === 0) return null;
+      return faces.reduce((a, b) => (b.px.w * b.px.h > a.px.w * a.px.h ? b : a)).d;
+    }
+  } catch (e) { console.warn('[faceSearch] worker failed, using main thread', e); }
+  return selfieDescriptorMain(el);
+}
+
+async function selfieDescriptorMain(el: Drawable): Promise<number[] | null> {
   // Selfie-д царай том тул 640px хангалттай — тооцоолол олон дахин хурдан
   const input = downscale(el, 640) as HTMLCanvasElement;
   await breathe();
