@@ -4,7 +4,10 @@ import { supabase } from '../lib/supabase';
 import { FACE_MATCH_THRESHOLD, fileToImage, selfieDescriptor, warmUpFaceModels } from '../lib/faceSearch';
 import { useI18n } from '../lib/i18n';
 
-type Step = 'consent' | 'camera' | 'working' | 'error';
+type Step = 'consent' | 'camera' | 'working' | 'error' | 'possible';
+
+/** Энэ хүртэлх зай — «төстэй» гэж үзэн сонголттойгоор харуулна */
+const POSSIBLE_THRESHOLD = 0.68;
 
 /** Зочин selfie авч, цомгоос өөрийн орсон зургуудыг олно. Selfie хадгалагдахгүй. */
 export default function FaceSearchModal({ albumId, onClose, onResult }: {
@@ -17,6 +20,8 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
   const [agree, setAgree] = useState(false);
   const [message, setMessage] = useState('');
   const [camError, setCamError] = useState(false);
+  const [possibleIds, setPossibleIds] = useState<string[]>([]);
+  const [hint, setHint] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,6 +61,25 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
       stopCamera();
       if (!descriptor) {
         setMessage(t('Царай олдсонгүй. Гэрэлтэй газар, нүүрээ шууд харуулж дахин оролдоно уу.'));
+        setStep('error');
+        return;
+      }
+      setHint('');
+      // Шинэ функц (цомгийн царайны тоо, хамгийн ойр зай) — SQL ажиллаагүй бол хуучнаар
+      const near = await supabase.rpc('face_search_near', { p_album_id: albumId, p_descriptor: descriptor });
+      if (!near.error && near.data) {
+        const r = near.data as { faces: number; nearest: number | null; matches: { photo_id: string; distance: number }[] };
+        if (!r.faces) {
+          setMessage(t('Энэ цомгийн зургуудыг царайгаар хараахан уншуулаагүй байна. Хавтсуудаас гараар хайна уу.'));
+          setStep('error');
+          return;
+        }
+        const strong = r.matches.filter(m => m.distance < FACE_MATCH_THRESHOLD).map(m => m.photo_id);
+        const possible = r.matches.filter(m => m.distance < POSSIBLE_THRESHOLD).map(m => m.photo_id);
+        if (strong.length > 0) { onResult(possible); onClose(); return; }
+        if (possible.length > 0) { setPossibleIds(possible); setStep('possible'); return; }
+        setHint(r.nearest != null ? `(${t('хамгийн ойр')}: ${Number(r.nearest).toFixed(2)})` : '');
+        setMessage(t('Таны царайтай зураг олдсонгүй. Өөр selfie-гээр дахин оролдож эсвэл хавтсуудаас гараар хайна уу.'));
         setStep('error');
         return;
       }
@@ -165,9 +189,27 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
           </div>
         )}
 
+        {step === 'possible' && (
+          <>
+            <p className="text-stone-300 text-sm my-4">
+              {t('Яг таарсан зураг олдсонгүй, гэхдээ танд төстэй {n} зураг байна. Харах уу?', { n: possibleIds.length })}
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => { onResult(possibleIds); onClose(); }}
+                className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl">
+                {t('Төстэй зургуудыг харах')}
+              </button>
+              <button onClick={startCamera}
+                className="bg-white/10 hover:bg-white/15 text-white px-4 py-3 rounded-xl text-sm">
+                {t('Дахин оролдох')}
+              </button>
+            </div>
+          </>
+        )}
+
         {step === 'error' && (
           <>
-            <p className="text-stone-300 text-sm my-4">{message}</p>
+            <p className="text-stone-300 text-sm my-4">{message} {hint && <span className="text-stone-600 text-xs">{hint}</span>}</p>
             <button onClick={startCamera}
               className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl">
               {t('Дахин оролдох')}
