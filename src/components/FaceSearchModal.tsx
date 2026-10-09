@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Loader2, ScanFace, ShieldCheck, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { FACE_MATCH_THRESHOLD, fileToImage, loadFaceModels, selfieDescriptor } from '../lib/faceSearch';
+import { FACE_MATCH_THRESHOLD, fileToImage, selfieDescriptor, warmUpFaceModels } from '../lib/faceSearch';
 import { useI18n } from '../lib/i18n';
 
 type Step = 'consent' | 'camera' | 'working' | 'error';
@@ -30,8 +30,8 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
   async function startCamera() {
     setStep('camera');
     setCamError(false);
-    // Загваруудыг камер асаах хооронд урьдчилан ачаална
-    loadFaceModels('photos').catch(() => {});
+    // Загваруудыг ачаалж, анхны тооцооллыг камер асаах хооронд урьдчилан хийнэ
+    warmUpFaceModels();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false,
@@ -48,6 +48,9 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
 
   async function search(el: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) {
     setStep('working');
+    stopCamera();
+    // «Хайж байна…» дэлгэц гарч амжих хугацаа
+    await new Promise(r => setTimeout(r, 60));
     try {
       const descriptor = await selfieDescriptor(el);
       stopCamera();
