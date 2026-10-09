@@ -195,7 +195,7 @@ export default function AdminAlbumsTab() {
                   <td className="px-6 py-3 text-right">
                     {a.share_link ? (
                       <a
-                        href={`/album/${a.share_link}`}
+                        href={`/album/${a.share_link.replace(/^\/?album\//, "")}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-3 py-1.5 rounded-lg transition-colors"
