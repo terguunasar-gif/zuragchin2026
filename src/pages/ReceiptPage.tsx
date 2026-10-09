@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, Phone, Mail, Facebook, Instagram,
   Calendar, Hash, Clock, X, Share2,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
@@ -87,7 +87,10 @@ export default function ReceiptPage() {
     try {
       // purchases + photo_uploads (original_url нэмэгдсэн)
       // Нэхэмжлэхийн дугаараар зөвхөн энэ захиалгын мөрүүдийг авна (бусдын захиалга харагдахгүй)
-      const { data, error: dbErr } = await supabase.rpc('receipt_purchases', { p_invoice_id: id });
+      // Эхний оролдлого амжилтгүй (сүлжээ/session гацалт) бол нэг удаа дахин оролдоно
+      let res = await withTimeout(publicDb.rpc('receipt_purchases', { p_invoice_id: id })).catch(() => null);
+      if (!res || res.error) res = await withTimeout(publicDb.rpc('receipt_purchases', { p_invoice_id: id }));
+      const { data, error: dbErr } = res;
 
       if (dbErr) throw new Error(dbErr.message);
       if (!data || data.length === 0) throw new Error(t('Захиалга олдсонгүй'));
@@ -102,11 +105,11 @@ export default function ReceiptPage() {
       if (rows[0]?.album_id) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let albumData: any = null;
-        const withExp = await supabase.from('albums').select('share_link, name, title, contact_info, expires_at')
-          .eq('id', rows[0].album_id).maybeSingle();
+        const withExp = await withTimeout(publicDb.from('albums').select('share_link, name, title, contact_info, expires_at')
+          .eq('id', rows[0].album_id).maybeSingle()).catch(() => ({ data: null, error: { message: 'timeout' } }));
         if (withExp.error) {
-          ({ data: albumData } = await supabase.from('albums').select('share_link, name, title, contact_info')
-            .eq('id', rows[0].album_id).maybeSingle());
+          ({ data: albumData } = await withTimeout(publicDb.from('albums').select('share_link, name, title, contact_info')
+            .eq('id', rows[0].album_id).maybeSingle()).catch(() => ({ data: null })));
         } else {
           albumData = withExp.data;
           setAlbumExpiresAt(albumData?.expires_at ?? null);
@@ -141,7 +144,7 @@ export default function ReceiptPage() {
       if (printPhotographerIds.length > 0) {
         const map: Record<string, PhotographerContact> = {};
         // 1) Зурагчны профайлын утас / Facebook / Instagram
-        const { data: cData } = await supabase.rpc('receipt_print_contacts', { p_invoice_id: id });
+        const { data: cData } = await withTimeout(publicDb.rpc('receipt_print_contacts', { p_invoice_id: id })).catch(() => ({ data: null }));
         for (const c of (cData ?? []) as { photographer_id: string; display_name: string; phone: string; facebook: string; instagram: string }[]) {
           map[c.photographer_id] = {
             name: c.display_name,
@@ -152,9 +155,9 @@ export default function ReceiptPage() {
         const missing = printPhotographerIds.filter(pid =>
           !map[pid] || !Object.values(map[pid].contact_info).some(v => !!v));
         if (missing.length > 0) {
-          const { data: pData } = await supabase
+          const { data: pData } = await withTimeout(publicDb
             .from('users').select('id, name, contact_info')
-            .in('id', missing);
+            .in('id', missing)).catch(() => ({ data: null as { id: string; name: string; contact_info: Record<string, string> }[] | null }));
           for (const p of pData ?? []) {
             const ci = p.contact_info ?? {};
             if (Object.values(ci).some(v => !!v) || !map[p.id]) {
@@ -165,22 +168,26 @@ export default function ReceiptPage() {
         setPhotographers(map);
       }
 
-      // Signed URLs (Edge Function) — fallback хэрэглэнэ
+      // Татах холбоосууд — хуудсыг хүлээлгэхгүй, араас нь ачаална (2 удаа оролдоно)
       const hasPaidDownloads = rows.some(r => r.type === 'download' && r.payment_status === 'paid');
-      if (hasPaidDownloads) {
-        const res = await fetch(`${QPAY_FN_URL}/signed-urls`, {
-          method: 'POST', headers: fnHeaders,
-          body: JSON.stringify({ invoiceId: id }),
-        });
-        if (res.ok) {
-          const { signedUrls: urls } = await res.json();
-          setSignedUrls(urls ?? []);
-        }
-      }
+      if (hasPaidDownloads) loadSignedUrls(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load receipt');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSignedUrls(id: string, attempt = 1): Promise<void> {
+    try {
+      const res = await withTimeout(fetch(`${QPAY_FN_URL}/signed-urls`, {
+        method: 'POST', headers: fnHeaders, body: JSON.stringify({ invoiceId: id }),
+      }), 15000);
+      if (!res.ok) throw new Error(String(res.status));
+      const { signedUrls: urls } = await res.json();
+      setSignedUrls(urls ?? []);
+    } catch {
+      if (attempt < 3) setTimeout(() => loadSignedUrls(id, attempt + 1), 1500 * attempt);
     }
   }
 
@@ -237,10 +244,16 @@ export default function ReceiptPage() {
         </div>
         <p className="text-white font-semibold text-lg mb-2">{t('Баримт олдсонгүй')}</p>
         <p className="text-stone-400 text-sm mb-5">{error}</p>
-        <button onClick={() => navigate(-1)}
-          className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm">
-          {t('Буцах')}
-        </button>
+        <div className="flex gap-2 justify-center">
+          <button onClick={() => invoiceId && load(invoiceId)}
+            className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm">
+            {t('Дахин оролдох')}
+          </button>
+          <button onClick={() => navigate(-1)}
+            className="bg-white/10 hover:bg-white/15 text-white px-5 py-2.5 rounded-xl transition-colors text-sm">
+            {t('Буцах')}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -393,7 +406,7 @@ export default function ReceiptPage() {
                       </button>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
-                        {isPaid ? t('Боломжгүй') : t('Хүлээгдэж байна')}
+                        {isPaid ? t('Бэлдэж байна…') : t('Хүлээгдэж байна')}
                       </span>
                     )}
                   </div>
