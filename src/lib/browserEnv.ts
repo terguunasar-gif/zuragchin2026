@@ -70,3 +70,26 @@ export async function saveImageToDevice(url: string, filename: string): Promise<
   a.remove();
   return { result: 'downloaded', blobUrl };
 }
+
+/** iPhone (iOS 17+): апп доторх хөтчөөс Safari-г нээх холбоос */
+export function openInSafariUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
+  return href.replace(/^https:\/\//, 'x-safari-https://').replace(/^http:\/\//, 'x-safari-http://');
+}
+
+const AUTO_KEY = 'zuragchin_iab_auto';
+
+/**
+ * Апп доторх хөтчөөр орсон бол нэг удаа автоматаар Chrome / Safari руу шилжүүлэхийг оролдоно.
+ * Шилжиж чадвал true буцаана (оролдлого хийсэн). ?stay=1 параметртэй бол оролдохгүй.
+ */
+export function tryAutoOpenInBrowser(): boolean {
+  if (typeof window === 'undefined' || !inAppBrowserName()) return false;
+  if (new URLSearchParams(location.search).get('stay') === '1') return false;
+  try {
+    if (sessionStorage.getItem(AUTO_KEY) === location.pathname) return false;
+    sessionStorage.setItem(AUTO_KEY, location.pathname);
+  } catch { /* хувийн горим */ }
+  if (isAndroid) { location.href = openInBrowserUrl(); return true; }
+  if (isIOS) { location.href = openInSafariUrl(); return true; }
+  return false;
+}

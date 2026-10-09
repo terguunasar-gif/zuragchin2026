@@ -5,6 +5,7 @@ import { listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
+import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 
 // Энэ төхөөрөмж дээр төлсөн бүх захиалгын жагсаалт. Зурагчнаас угаасан зургаа
 // авахдаа баримтаа нээж үзүүлэхэд зориулсан.
@@ -29,6 +30,7 @@ export default function MyPurchasesPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-4">
+        <AutoOpenInBrowser />
         <InAppBrowserBanner compact />
         {items.length === 0 ? (
           <div className="text-center py-20">

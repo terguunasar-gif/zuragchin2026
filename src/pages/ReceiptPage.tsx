@@ -10,6 +10,7 @@ import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
+import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -327,6 +328,7 @@ export default function ReceiptPage() {
           </div>
         </div>
 
+        <AutoOpenInBrowser />
         <InAppBrowserBanner compact />
 
         {isPaid && downloadPurchases.length > 0 && albumExpiresAt && (

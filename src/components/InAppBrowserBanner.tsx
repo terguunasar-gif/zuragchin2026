@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy, ExternalLink, X } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
-import { copyText, inAppBrowserName, isAndroid, openInBrowserUrl } from '../lib/browserEnv';
+import { copyText, inAppBrowserName, isAndroid, isIOS, openInBrowserUrl, openInSafariUrl } from '../lib/browserEnv';
 
 /** Messenger/Facebook доторх хөтчөөр орсон бол Chrome/Safari-д нээхийг санал болгоно. */
 export default function InAppBrowserBanner({ compact = false }: { compact?: boolean }) {
@@ -32,6 +32,12 @@ export default function InAppBrowserBanner({ compact = false }: { compact?: bool
           <a href={openInBrowserUrl()}
             className="inline-flex items-center gap-1.5 bg-sky-500 hover:bg-sky-400 text-stone-950 font-semibold text-sm px-3 py-2 rounded-xl">
             <ExternalLink className="w-4 h-4" /> {t('Chrome-оор нээх')}
+          </a>
+        )}
+        {isIOS && (
+          <a href={openInSafariUrl()}
+            className="inline-flex items-center gap-1.5 bg-sky-500 hover:bg-sky-400 text-stone-950 font-semibold text-sm px-3 py-2 rounded-xl">
+            <ExternalLink className="w-4 h-4" /> {t('Safari-аар нээх')}
           </a>
         )}
         <button onClick={async () => { if (await copyText(location.href)) { setCopied(true); setTimeout(() => setCopied(false), 2000); } }}
