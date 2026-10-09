@@ -15,6 +15,8 @@ interface AdminAlbum {
   photo_count: number;
   total_sales: number;
   total_revenue: number;
+  expires_at: string | null;
+  files_purged_at: string | null;
 }
 
 const STATUS_CFG: Record<string, string> = {
@@ -45,10 +47,15 @@ export default function AdminAlbumsTab() {
   async function load() {
     setLoading(true);
 
-    const { data: albumsData } = await supabase
-      .from('albums')
-      .select('id,name,event_date,status,share_link,download_price,created_at,owner_id,users(name,email)')
-      .order('created_at', { ascending: false });
+    const COLS = 'id,name,event_date,status,share_link,download_price,created_at,owner_id,users(name,email)';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let albumsData: any[] | null = null;
+    const withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at').order('created_at', { ascending: false });
+    if (withExpiry.error) {
+      ({ data: albumsData } = await supabase.from('albums').select(COLS).order('created_at', { ascending: false }));
+    } else {
+      albumsData = withExpiry.data;
+    }
 
     if (!albumsData) { setLoading(false); return; }
 
@@ -85,6 +92,8 @@ export default function AdminAlbumsTab() {
       photo_count: photoCountMap[a.id] ?? 0,
       total_sales: salesMap[a.id]?.count ?? 0,
       total_revenue: salesMap[a.id]?.revenue ?? 0,
+      expires_at: a.expires_at ?? null,
+      files_purged_at: a.files_purged_at ?? null,
     }));
 
     setAlbums(enriched);
@@ -150,6 +159,7 @@ export default function AdminAlbumsTab() {
                 <th className="text-left px-6 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Цомог</th>
                 <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Эзэмшигч</th>
                 <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Төлөв</th>
+                <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Хаагдах</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Зурагнууд</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Борлуулалт</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Орлого</th>
@@ -159,7 +169,7 @@ export default function AdminAlbumsTab() {
             <tbody className="divide-y divide-white/5">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-stone-500 text-sm">
+                  <td colSpan={8} className="px-6 py-12 text-center text-stone-500 text-sm">
                     Цомог олдсонгүй.
                   </td>
                 </tr>
@@ -187,6 +197,7 @@ export default function AdminAlbumsTab() {
                       {a.status}
                     </span>
                   </td>
+                  <td className="px-4 py-3"><ExpiryCell expiresAt={a.expires_at} purgedAt={a.files_purged_at} /></td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.photo_count}</td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.total_sales}</td>
                   <td className="px-4 py-3 text-right text-green-400 font-semibold text-sm">
@@ -213,6 +224,22 @@ export default function AdminAlbumsTab() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ExpiryCell({ expiresAt, purgedAt }: { expiresAt: string | null; purgedAt: string | null }) {
+  if (purgedAt) return <span className="text-stone-500 text-xs">Файл устсан</span>;
+  if (!expiresAt) return <span className="text-stone-600 text-xs">—</span>;
+  const d = new Date(expiresAt);
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  const date = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  return (
+    <div className="whitespace-nowrap">
+      <p className="text-stone-300 text-xs">{date}</p>
+      <p className={`text-xs ${days <= 0 ? 'text-red-400 font-semibold' : days <= 7 ? 'text-amber-400' : 'text-stone-500'}`}>
+        {days <= 0 ? `Дууссан (${-days} хоногийн өмнө)` : `${days} хоног үлдсэн`}
+      </p>
     </div>
   );
 }
