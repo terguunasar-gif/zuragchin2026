@@ -54,7 +54,8 @@ export default function OrganizerRequestsTab() {
 
   async function loadRequests() {
     setLoading(true);
-    const { data } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let { data, error } = await supabase
       .from('album_photographers')
       .select(`
         id,
@@ -66,7 +67,23 @@ export default function OrganizerRequestsTab() {
         users!album_photographers_photographer_id_fkey ( name, email, photographer_id )
       `)
       .eq('albums.owner_id', profile!.id)
-      .order('joined_at', { ascending: false });
+      .order('joined_at', { ascending: false }) as { data: any[] | null; error: unknown };
+    if (error) {
+      // Холбоосын нэр таарахгүй үед хэрэглэгчийн мэдээллийг тусад нь уншина
+      const res = await supabase
+        .from('album_photographers')
+        .select('id, album_id, photographer_id, status, joined_at, albums!inner ( name, owner_id )')
+        .eq('albums.owner_id', profile!.id)
+        .order('joined_at', { ascending: false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = (res.data ?? []) as any[];
+      const ids = [...new Set(rows.map(r => r.photographer_id))];
+      const { data: us } = ids.length
+        ? await supabase.from('users').select('id, name, email, photographer_id').in('id', ids)
+        : { data: [] };
+      const byId = new Map((us ?? []).map((u: { id: string }) => [u.id, u]));
+      data = rows.map(r => ({ ...r, users: byId.get(r.photographer_id) ?? null }));
+    }
 
     if (data) {
       setRequests(data.map((r: any) => ({

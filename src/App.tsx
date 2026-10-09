@@ -24,6 +24,7 @@ import BoothPage from './pages/booth/BoothPage';
 import MyPurchasesPage from './pages/MyPurchasesPage';
 import BoothResultPage from './pages/booth/BoothResultPage';
 import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
+import OrganizerRequestsPage from './pages/organizer/OrganizerRequestsPage';
 
 export default function App() {
   return (
@@ -39,6 +40,10 @@ export default function App() {
           <Route
             path="/dashboard"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/requests"
+            element={<ProtectedRoute><OrganizerRequestsPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/create"
