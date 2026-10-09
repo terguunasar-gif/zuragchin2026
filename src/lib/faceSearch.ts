@@ -10,9 +10,42 @@ type FaceApi = typeof import('@vladmandic/face-api');
 let apiPromise: Promise<FaceApi> | null = null;
 const loaded = { ssd: false, tiny: false, base: false };
 
+let backend = '';
+
+/** Номын сан ачаалж, видео картын (WebGL) хурдасгуурыг асаана.
+ *  WebGL ажиллахгүй бол CPU горимд маш удаан тул доорх функцууд жижиг загвар/хэмжээ ашиглана. */
 async function api(): Promise<FaceApi> {
-  if (!apiPromise) apiPromise = import('@vladmandic/face-api');
+  if (!apiPromise) apiPromise = (async () => {
+    const faceapi = await import('@vladmandic/face-api');
+    try { await faceapi.tf.setBackend('webgl'); } catch { /* CPU руу шилжинэ */ }
+    await faceapi.tf.ready();
+    backend = faceapi.tf.getBackend();
+    console.info('[faceSearch] backend:', backend);
+    return faceapi;
+  })();
   return apiPromise;
+}
+
+/** Хөтчид дэлгэцээ шинэчлэх боломж олгоно (хуудас «гацах»-аас сэргийлнэ) */
+const breathe = () => new Promise<void>(r => setTimeout(r, 30));
+
+let warmed: Promise<void> | null = null;
+/** Анхны тооцоололд WebGL шэйдерүүд хөрвүүлэгддэг (хэдэн секунд). Камер нээгдэх үед урьдчилан хийнэ. */
+export function warmUpFaceModels(): Promise<void> {
+  if (!warmed) warmed = (async () => {
+    const faceapi = await loadFaceModels('selfie');
+    const c = document.createElement('canvas');
+    c.width = c.height = 160;
+    c.getContext('2d')!.fillRect(0, 0, 160, 160);
+    // Сүлжээ бүрийг тусад нь ажиллуулж, хооронд нь хөтчид амсхийх боломж өгнө
+    await breathe();
+    await faceapi.detectSingleFace(c, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }));
+    await breathe();
+    await faceapi.detectFaceLandmarks(c);
+    await breathe();
+    await faceapi.computeFaceDescriptor(c);
+  })().catch(() => {});
+  return warmed;
 }
 
 /** 'photos' — бүлэг зурагт жижиг царай олох (SSD); 'selfie' — нэг том царай (хурдан, жижиг загвар) */
@@ -59,6 +92,7 @@ function downscale(el: Drawable, max = 1600): HTMLCanvasElement | Drawable {
 /** Зурган дахь бүх царай (бүлэг зураг). Хэт жижиг, бүдэг царайг алгасна. */
 export async function facesInPhoto(el: Drawable): Promise<FoundFace[]> {
   const faceapi = await loadFaceModels('photos');
+  await breathe();
   const input = downscale(el);
   const { w, h } = sizeOf(input as Drawable);
   const results = await faceapi
@@ -79,16 +113,22 @@ export async function facesInPhoto(el: Drawable): Promise<FoundFace[]> {
 /** Selfie-ээс хамгийн том нэг царайны хээ. Олдохгүй бол null.
  *  Цомгийн зурагтай ижил (SSD) илрүүлэгч ашиглавал хээ илүү тохирдог; олдохгүй бол жижиг загвараар дахин оролдоно. */
 export async function selfieDescriptor(el: Drawable): Promise<number[] | null> {
-  const faceapi = await loadFaceModels('photos');
-  const input = downscale(el, 1280);
+  // Selfie-д царай том тул 640px хангалттай — тооцоолол олон дахин хурдан
+  const input = downscale(el, 640) as HTMLCanvasElement;
+  await breathe();
+  const faceapi = await loadFaceModels('selfie');
+  await warmUpFaceModels();
+  await breathe();
+  // 1) Хурдан жижиг загвар
   let results = await faceapi
-    .detectAllFaces(input as HTMLCanvasElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+    .detectAllFaces(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
     .withFaceLandmarks()
     .withFaceDescriptors();
+  // 2) Олдохгүй бол илүү нарийн хэмжээ, сул босгоор дахин (SSD загвар хуудсыг гацаадаг тул selfie-д ашиглахгүй)
   if (results.length === 0) {
-    await loadFaceModels('selfie');
+    await breathe();
     results = await faceapi
-      .detectAllFaces(input as HTMLCanvasElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
+      .detectAllFaces(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }))
       .withFaceLandmarks()
       .withFaceDescriptors();
   }
