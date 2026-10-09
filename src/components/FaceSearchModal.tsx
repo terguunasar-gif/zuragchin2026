@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Loader2, ScanFace, ShieldCheck, X } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { publicDb as supabase } from '../lib/supabase';
 import { FACE_MATCH_THRESHOLD, fileToImage, selfieDescriptor, warmUpFaceModels } from '../lib/faceSearch';
 import { useI18n } from '../lib/i18n';
 

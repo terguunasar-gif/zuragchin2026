@@ -3,7 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Хөтчийн «Navigator lock» нь утсан дээр (апп хооронд шилжих, таб сэргээх үед) гацаж,
+// бүх хүсэлтийг эцэс төгсгөлгүй хүлээлгэдэг алдаатай. Энгийн (түгжээгүй) горимоор ажиллуулна.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    lock: async <R,>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
+  },
+});
 
 export type UserRole = 'organizer' | 'photographer' | 'buyer' | 'admin';
 

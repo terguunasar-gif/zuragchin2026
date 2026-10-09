@@ -2,7 +2,7 @@
 // Зураг, selfie серверт илгээгдэхгүй — зөвхөн тоон хээ.
 // Номын сан (~1.3MB) болон загварууд (~7–12MB) хэрэгтэй үед л ачаалагдана.
 
-import { supabase } from './supabase';
+import { supabase, publicDb } from './supabase';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model';
 
@@ -263,7 +263,7 @@ export const FACE_MATCH_THRESHOLD = 0.58;
 
 /** Цомогт царайгаар хайх асаалттай эсэх (SQL ажиллаагүй үед false) */
 export async function albumFaceSearchEnabled(albumId: string): Promise<boolean> {
-  const { data, error } = await supabase.from('albums').select('face_search_enabled').eq('id', albumId).maybeSingle();
+  const { data, error } = await publicDb.from('albums').select('face_search_enabled').eq('id', albumId).maybeSingle();
   if (error || !data) return false;
   return !!(data as { face_search_enabled?: boolean }).face_search_enabled;
 }

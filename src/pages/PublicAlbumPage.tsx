@@ -5,7 +5,8 @@ import {
   Calendar, User, Image as ImageIcon, AlertCircle,
   ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+// Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
+import { publicDb as supabase, withTimeout } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
@@ -173,7 +174,17 @@ export default function PublicAlbumPage() {
     // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let albumData: any = null;
-    const withExpiry = await supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle();
+    let withExpiry;
+    try {
+      withExpiry = await withTimeout(supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle(), 15000);
+    } catch {
+      // Сүлжээ удаан — нэг удаа дахин оролдоно, бүтэхгүй бол «олдсонгүй» харуулна
+      try {
+        withExpiry = await withTimeout(supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle(), 15000);
+      } catch {
+        setNotFound(true); setLoading(false); return;
+      }
+    }
     if (withExpiry.error) {
       ({ data: albumData } = await supabase.from('albums').select(BASE_COLS).or(byLink).eq('status', 'active').maybeSingle());
     } else {
