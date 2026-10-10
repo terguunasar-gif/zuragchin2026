@@ -1,0 +1,646 @@
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Camera, LogOut, User, Plus, Image, Clock,
+  CheckCircle2, FolderOpen, ChevronRight,
+  Users, Shield, LayoutDashboard,
+  ShoppingBag, ChevronDown, Settings, Printer,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles,
+} from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase, hasRole } from '../lib/supabase';
+import PhotographerProfileTab from './photographer/PhotographerProfileTab';
+import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
+
+interface Album {
+  id: string;
+  name: string;
+  title?: string;
+  event_date: string;
+  status: string;
+  created_at: string;
+  expires_at?: string | null;
+  files_purged_at?: string | null;
+  is_free?: boolean;
+  free_activated?: boolean;
+  photo_limit?: number | null;
+}
+
+interface Purchase {
+  id: string;
+  photo_id: string;
+  type: string;
+  gross_amount: number;
+  created_at: string;
+  expires_at: string;
+}
+
+export default function DashboardPage() {
+  const { profile, signOut, refreshProfile } = useAuth();
+  const navigate = useNavigate();
+
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [qrModal, setQrModal] = useState<{ id: string; name: string } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function copyAlbumLink(albumId: string) {
+    const url = `${window.location.origin}/album/${albumId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
+  const [pendingCount, setPendingCount] = useState(0);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [printOrders, setPrintOrders] = useState<any[]>([]);
+  const sales = useMySales();
+  const photographerSum = summarize(sales.rows.filter(r => r.is_my_photo));
+  const organizerSum = summarize(sales.rows.filter(r => r.is_my_album));
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [activeRole, setActiveRole] = useState<'buyer' | 'photographer' | 'organizer'>('buyer');
+
+  useEffect(() => {
+    if (!profile) return;
+    // Зохион байгуулагч бол organizer tab, зурагчин бол photographer tab
+    if (hasRole(profile, 'organizer')) {
+      setActiveRole('organizer');
+    } else if (hasRole(profile, 'photographer')) {
+      setActiveRole('photographer');
+    }
+  }, [profile]);
+
+  const isOrganizer    = hasRole(profile, 'organizer');
+  const isPhotographer = hasRole(profile, 'photographer');
+  const isAdmin        = hasRole(profile, 'admin');
+  const isBuyer        = hasRole(profile, 'buyer');
+
+  useEffect(() => {
+    if (!profile) return;
+    loadWalletBalance();
+    // hasRole-г шууд profile.role-оос шалгана — isOrganizer derived variable байна
+    const roles: string[] = profile.role ?? [];
+    if (roles.includes('organizer')) { loadOrganizerAlbums(); loadPendingCount(); }
+    if (roles.includes('buyer')) { loadPurchases(); loadPrintOrders(); }
+  }, [profile]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  async function loadOrganizerAlbums() {
+    const uid = profile!.id;
+    const q = (cols: string) => supabase.from('albums').select(cols).eq('owner_id', uid)
+      .order('created_at', { ascending: false }).limit(50);
+    let { data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at, is_free, free_activated, photo_limit');
+    if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at'));
+    // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр
+    if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at'));
+    if (error) console.error('loadOrganizerAlbums:', error);
+    setAlbums((data ?? []) as unknown as Album[]);
+  }
+
+  async function deleteAlbum(albumId: string) {
+    if (!confirm('Энэ цомгийг устгах уу? Бүх зураг устна.')) return;
+    const { error } = await supabase
+      .from('albums')
+      .delete()
+      .eq('id', albumId)
+      .eq('owner_id', profile!.id);
+    if (!error) {
+      setAlbums(prev => prev.filter(a => a.id !== albumId));
+    } else {
+      console.error('deleteAlbum error:', error);
+      alert('Устгахад алдаа гарлаа: ' + error.message);
+    }
+  }
+
+  async function loadPendingCount() {
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData?.user?.id ?? profile!.id;
+    const albumIds = (await supabase.from('albums').select('id').eq('owner_id', uid))
+      .data?.map((a: any) => a.id) ?? [];
+    if (albumIds.length === 0) return;
+    const { count } = await supabase
+      .from('album_photographers')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .in('album_id', albumIds);
+    setPendingCount(count ?? 0);
+  }
+
+  async function loadWalletBalance() {
+    const { data } = await supabase
+      .from('wallets')
+      .select('pending_balance')
+      .eq('user_id', profile!.id)
+      .maybeSingle();
+    setWalletBalance(Number(data?.pending_balance ?? 0));
+  }
+
+  async function loadPurchases() {
+    const { data } = await supabase
+      .from('purchases')
+      .select('id, photo_id, type, gross_amount, created_at')
+      .eq('buyer_id', profile!.id)
+      .eq('type', 'download')
+      .order('created_at', { ascending: false });
+    if (data) {
+      setPurchases(data.map((p: any) => ({
+        ...p,
+        expires_at: new Date(new Date(p.created_at).getTime() + 21 * 24 * 60 * 60 * 1000).toISOString(),
+      })));
+    }
+  }
+
+  const [publicAlbums, setPublicAlbums] = useState<any[]>([]);
+
+  useEffect(() => { loadPublicAlbums(); }, []);
+
+  async function loadPrintOrders() {
+    const { data } = await supabase
+      .from('print_orders')
+      .select(`
+        id, size, price, status, created_at, phone,
+        photos!print_orders_photo_id_fkey ( watermarked_url ),
+        profiles!print_orders_photographer_id_fkey ( name, photographer_id )
+      `)
+      .eq('buyer_id', profile!.id)
+      .order('created_at', { ascending: false });
+    setPrintOrders(data ?? []);
+  }
+
+  async function addPhotographerRole() {
+    if (!profile || isPhotographer) return;
+    const newRoles = [...(profile.role ?? []), 'photographer'];
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
+    await refreshProfile();
+  }
+
+  async function addOrganizerRole() {
+    if (!profile || isOrganizer) return;
+    const newRoles = [...(profile.role ?? []), 'organizer'];
+    await supabase.from('profiles').update({ role: newRoles }).eq('id', profile.id);
+    await refreshProfile();
+    setActiveRole('organizer');
+  }
+
+  async function loadPublicAlbums() {
+    const { data } = await supabase
+      .from('albums')
+      .select('id, name, title, event_date, owner_id, visibility, is_public, share_link')
+      .or('visibility.eq.public,is_public.eq.true')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setPublicAlbums(data ?? []);
+  }
+
+  function daysLeft(expiresAt: string): number {
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  }
+
+  const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
+
+  /** Цомог хаагдах хүртэл үлдсэн хоног (expires_at; байхгүй бол үйл явдлаас 30 хоног) */
+  /** «Миний хувь / Хүлээгдэж буй» картыг дарахад борлуулалтын задаргаа руу гүйлгэнэ */
+  function scrollToSales() {
+    document.getElementById('sales-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function albumExpiryDays(album: Album): number {
+    const expiry = album.expires_at
+      ? new Date(album.expires_at)
+      : new Date(new Date(album.event_date || album.created_at).getTime() + 30 * 24 * 60 * 60 * 1000);
+    return Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  }
+  const walletStr = walletBalance > 0 ? `₮${walletBalance.toLocaleString()}` : '₮0';
+
+  const statusLabel: Record<string, { label: string; color: string }> = {
+    draft:  { label: 'Ноорог',    color: 'bg-stone-500/10 text-stone-400 border-stone-500/20' },
+    active: { label: 'Идэвхтэй', color: 'bg-green-500/10 text-green-400 border-green-500/20' },
+    closed: { label: 'Хаагдсан', color: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  };
+
+  const roleLabels: Record<string, string> = {
+    buyer:        'Худалдан авагч',
+    photographer: 'Зурагчин',
+    organizer:    'Зохион байгуулагч',
+    admin:        'Админ',
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-950">
+      <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+              <Camera className="w-5 h-5 text-stone-950" />
+            </div>
+            <div>
+              <span className="text-white font-bold tracking-tight">Zuragchin</span>
+              <span className="text-amber-400 font-bold">.mn</span>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <button onClick={() => navigate('/admin')} className="hidden sm:flex items-center gap-2 text-red-400 hover:text-red-300 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-xl text-sm font-medium">
+                <LayoutDashboard className="w-3.5 h-3.5" />Admin
+              </button>
+            )}
+            <div className="relative" ref={dropdownRef}>
+              <button onClick={() => setProfileDropdownOpen(o => !o)} className="flex items-center gap-2 text-stone-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5">
+                <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
+                  <User className="w-3.5 h-3.5" />
+                </div>
+                <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">{profile?.name || profile?.email}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {profileDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-30">
+                  <div className="px-4 py-3 border-b border-white/10">
+                    <p className="text-white text-sm font-medium truncate">{profile?.name}</p>
+                    <p className="text-stone-500 text-xs truncate">{profile?.email}</p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {profile?.role.map(r => (
+                        <span key={r} className="text-xs bg-white/10 text-stone-400 px-2 py-0.5 rounded-full">{roleLabels[r] ?? r}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="py-1">
+                    <button onClick={() => setProfileDropdownOpen(false)} className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 text-sm">
+                      <Settings className="w-4 h-4" />Тохиргоо
+                    </button>
+                    <button onClick={() => { setProfileDropdownOpen(false); signOut(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 text-sm">
+                      <LogOut className="w-4 h-4" />Гарах
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-10">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
+          <div>
+            <h1 className="text-white text-3xl font-bold mb-1.5">
+              Тавтай морилно уу, {profile?.name?.split(' ')[0] || ''}
+            </h1>
+            {/* Role switcher tabs — дараалал тогтмол: Худалдан авагч → Зурагчин → Зохион байгуулагч */}
+            {(isPhotographer || isOrganizer) && (
+              <div className="flex gap-1 mt-3 bg-white/5 border border-white/10 rounded-xl p-1 w-fit flex-wrap">
+                <button onClick={() => setActiveRole('buyer')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'buyer' ? 'bg-white/15 text-white' : 'text-stone-400 hover:text-white'}`}>
+                  <ShoppingBag className="w-4 h-4" />Худалдан авагч
+                </button>
+                {isPhotographer && (
+                  <button onClick={() => setActiveRole('photographer')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'photographer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}>
+                    <Camera className="w-4 h-4" />Зурагчин
+                  </button>
+                )}
+                {isOrganizer && (
+                  <button onClick={() => setActiveRole('organizer')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeRole === 'organizer' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'}`}>
+                    <FolderOpen className="w-4 h-4" />Зохион байгуулагч
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 flex-wrap">
+            {!isPhotographer && (
+              <button onClick={addPhotographerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl text-sm">
+                <Camera className="w-4 h-4" />Зурагчин болох
+              </button>
+            )}
+            {!isOrganizer && (
+              <button onClick={addOrganizerRole} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl text-sm">
+                <FolderOpen className="w-4 h-4" />Зохион байгуулагч болох
+              </button>
+            )}
+            <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">
+              <Plus className="w-5 h-5" />Шинэ цомог
+            </button>
+          </div>
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {activeRole === 'buyer' && (
+            <>
+              <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
+              <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={printOrders.length} />
+            </>
+          )}
+          {activeRole === 'photographer' && isPhotographer && (
+            <>
+              <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+            </>
+          )}
+          {activeRole === 'organizer' && isOrganizer && (
+            <>
+              <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Нийт цомог" value={albums.length} />
+              <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
+              <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+            </>
+          )}
+          {isAdmin && (
+            <StatCard icon={<Shield className="w-5 h-5 text-red-400" />} label="Платформ" value="Admin" onClick={() => navigate('/admin')} />
+          )}
+        </div>
+
+        {/* ── ORGANIZER: Album list ── */}
+        {activeRole === 'organizer' && isOrganizer && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold text-lg">Миний цомгууд</h2>
+              <button onClick={() => navigate('/dashboard/albums/create')}
+                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl text-sm">
+                <Plus className="w-4 h-4" />Шинэ цомог
+              </button>
+            </div>
+
+            {albums.length === 0 ? (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
+                <div className="w-14 h-14 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FolderOpen className="w-7 h-7 text-amber-400" />
+                </div>
+                <p className="text-white font-medium mb-1">Цомог байхгүй байна</p>
+                <p className="text-stone-500 text-sm mb-4">Шинэ цомог үүсгэж зурагчидтай хуваалцаарай.</p>
+                <button onClick={() => navigate('/dashboard/albums/create')}
+                  className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl text-sm">
+                  <Plus className="w-4 h-4" />Цомог үүсгэх
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {albums.map(album => {
+                  const st = statusLabel[album.status] ?? statusLabel.draft;
+                  const displayName = album.title || album.name || '—';
+                  return (
+                    <div key={album.id}
+                      className="bg-white/5 border border-white/10 hover:border-amber-500/30 rounded-2xl p-5 transition-all group cursor-pointer"
+                      onClick={() => navigate(`/dashboard/albums/${album.id}`)}>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <Camera className="w-5 h-5 text-amber-400" />
+                        </div>
+                        <span className={`text-xs px-2.5 py-1 rounded-full border ${st.color}`}>{st.label}</span>
+                      </div>
+                      <h3 className="text-white font-semibold mb-1 truncate">{displayName}</h3>
+                      <div className="flex items-center gap-1.5 text-stone-500 text-xs">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </div>
+                      {/* Үнэгүй хуваалцах цомог: багцын төлөв */}
+                      {album.is_free && (
+                        album.free_activated ? (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/activate`); }}
+                            className="mt-2 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                            🎁 Үнэгүй хуваалцах · {album.photo_limit} хүртэл зураг
+                          </button>
+                        ) : (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/activate`); }}
+                            className="mt-2 w-full text-xs font-semibold text-stone-950 bg-emerald-400 hover:bg-emerald-300 px-3 py-2 rounded-lg">
+                            🎁 Багц сонгож идэвхжүүлэх
+                          </button>
+                        )
+                      )}
+                      {/* Expiry countdown */}
+                      {(() => {
+                        const days = albumExpiryDays(album);
+                        if (album.files_purged_at) return (
+                          <div className="text-xs mt-1 mb-3 text-stone-500">Зургууд устгагдсан</div>
+                        );
+                        if (days <= 0) return (
+                          <button onClick={e => { e.stopPropagation(); window.open(`/album/${album.id}`, '_blank'); }}
+                            className="flex items-center gap-1.5 text-xs mt-1 mb-3 text-red-400 hover:text-red-300">
+                            <Clock className="w-3 h-3 flex-shrink-0" />
+                            <span className="font-semibold">Хугацаа дууссан · Сунгах →</span>
+                          </button>
+                        );
+                        return (
+                          <div className={`flex items-center gap-1.5 text-xs mt-1 mb-3 ${
+                            days <= 3 ? 'text-red-400' : days <= 7 ? 'text-amber-400' : 'text-stone-500'
+                          }`}>
+                            <Clock className="w-3 h-3 flex-shrink-0" />
+                            {days === 1
+                              ? <span className="text-red-400 font-semibold">Маргааш хаагдана!</span>
+                              : <span>{days} хоног үлдлээ</span>
+                            }
+                          </div>
+                        );
+                      })()}
+                      <div className="flex gap-2">
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/edit`); }}
+                          className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/upload`); }}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 rounded-lg transition-colors">
+                          <Upload className="w-3.5 h-3.5" />Зураг нэмэх
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/photos`); }}
+                          title="Зураг ба хавтас удирдах"
+                          className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <FolderOpen className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/album/${album.id}`); }}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-colors">
+                          <Eye className="w-3.5 h-3.5" />Харах
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/ai-booth`); }}
+                          title="AI бүүт"
+                          className="flex items-center justify-center gap-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/20 text-fuchsia-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setQrModal({ id: album.id, name: album.title || album.name || '—' }); }}
+                          className="flex items-center justify-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <QrCode className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); deleteAlbum(album.id); }}
+                          className="flex items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── ORGANIZER: Цомгуудын борлуулалт ── */}
+        {activeRole === 'organizer' && isOrganizer && (
+          <SalesPanel mode="organizer" sales={sales} />
+        )}
+
+        {/* ── PHOTOGRAPHER: Борлуулалт ба угаалгах захиалга ── */}
+        {activeRole === 'photographer' && isPhotographer && (
+          <SalesPanel mode="photographer" sales={sales} />
+        )}
+
+        {/* ── PHOTOGRAPHER: Profile tab ── */}
+        {activeRole === 'photographer' && isPhotographer && (
+          <div className="mt-8">
+            <PhotographerProfileTab />
+          </div>
+        )}
+
+        {/* ── BUYER: Print orders ── */}
+        {activeRole === 'buyer' && printOrders.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-white font-semibold text-lg mb-4">Угаалгах зурагнууд</h2>
+            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+              <ul className="divide-y divide-white/5">
+                {printOrders.map((order: any) => (
+                  <li key={order.id} className="flex items-center gap-4 px-5 py-4">
+                    <div className="w-12 h-12 bg-stone-900 rounded-xl overflow-hidden flex-shrink-0">
+                      {order.photos?.watermarked_url
+                        ? <img src={order.photos.watermarked_url} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center"><Image className="w-5 h-5 text-stone-600" /></div>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium">{order.size ?? '—'} хэмжээ</p>
+                      <p className="text-stone-500 text-xs mt-0.5">Зурагчин: <span className="text-stone-300">{order.profiles?.name ?? '—'}</span></p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-amber-400 text-sm font-semibold">₮{Number(order.price ?? 0).toLocaleString()}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                        order.status === 'ready' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                        order.status === 'delivered' ? 'bg-stone-500/10 text-stone-400 border-stone-500/20' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {order.status === 'ready' ? 'Бэлэн' : order.status === 'delivered' ? 'Хүргэгдсэн' : 'Хүлээгдэж буй'}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* ── BUYER: Public albums ── */}
+        {activeRole === 'buyer' && (
+          <div className="mt-10">
+            <h2 className="text-white font-semibold text-lg mb-4">Нээлттэй цомгууд</h2>
+            {publicAlbums.length === 0 ? (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
+                <div className="w-14 h-14 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FolderOpen className="w-7 h-7 text-amber-400" />
+                </div>
+                <p className="text-white font-medium mb-1">Цомог байхгүй байна</p>
+                <p className="text-stone-500 text-sm">Зохион байгуулагчийн хуваалцсан QR эсвэл линкээр цомог үзнэ үү.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {publicAlbums.map(album => (
+                  <button key={album.id} onClick={() => navigate(`/album/${album.id}`)}
+                    className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-amber-500/30 rounded-2xl p-5 text-left transition-all group">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Camera className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">{album.title || album.name}</p>
+                        <p className="text-stone-500 text-xs">
+                          {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-600 group-hover:text-amber-400 flex-shrink-0" />
+                    </div>
+                    <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-full">Нээлттэй</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* QR Modal */}
+      {qrModal && (
+        <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setQrModal(null)}>
+          <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg truncate pr-4">{qrModal.name}</h3>
+              <button onClick={() => setQrModal(null)} className="text-stone-500 hover:text-white flex-shrink-0">
+                <Trash2 className="w-0 h-0" />
+                <span className="text-xl leading-none">×</span>
+              </button>
+            </div>
+
+            {/* QR Code using Google Charts API */}
+            <div className="bg-white rounded-xl p-4 flex items-center justify-center mb-4">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/album/${qrModal.id}`)}`}
+                alt="QR код"
+                className="w-48 h-48"
+              />
+            </div>
+
+            {/* Link */}
+            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
+              <Link className="w-4 h-4 text-stone-500 flex-shrink-0" />
+              <span className="text-stone-400 text-xs flex-1 truncate font-mono">
+                {window.location.origin}/album/{qrModal.id}
+              </span>
+              <button
+                onClick={() => copyAlbumLink(qrModal.id)}
+                className="flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 flex-shrink-0 transition-colors">
+                {linkCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {linkCopied ? 'Хуулагдлаа!' : 'Хуулах'}
+              </button>
+            </div>
+
+            {/* Download QR */}
+            <a
+              href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`${window.location.origin}/album/${qrModal.id}`)}`}
+              download={`qr-${qrModal.id}.png`}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold py-3 rounded-xl text-sm transition-colors">
+              <QrCode className="w-4 h-4" />QR код татаж авах
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, onClick }: {
+  icon: React.ReactNode; label: string; value: string | number; onClick?: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-white/20 rounded-2xl p-5 flex items-center gap-3 text-left transition-all group w-full">
+      <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center flex-shrink-0">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-stone-400 text-xs">{label}</p>
+        <p className="text-white font-semibold text-lg leading-tight">{value}</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-stone-700 group-hover:text-stone-400 flex-shrink-0" />
+    </button>
+  );
+}
