@@ -34,7 +34,7 @@ export default function AdminDashboard() {
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/')} title="Нүүр хуудас" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
                 <Camera className="w-5 h-5 text-stone-950" />
               </div>
@@ -42,7 +42,7 @@ export default function AdminDashboard() {
                 <span className="text-white font-bold tracking-tight">Zuragchin</span>
                 <span className="text-amber-400 font-bold">.mn</span>
               </div>
-            </div>
+            </button>
             <div className="hidden sm:flex items-center gap-1.5 text-stone-500">
               <ChevronRight className="w-3.5 h-3.5" />
               <div className="flex items-center gap-1.5 text-amber-400">
