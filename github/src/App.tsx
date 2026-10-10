@@ -26,6 +26,7 @@ import BoothResultPage from './pages/booth/BoothResultPage';
 import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
 import OrganizerRequestsPage from './pages/organizer/OrganizerRequestsPage';
 import AlbumActivatePage from './pages/albums/AlbumActivatePage';
+import PrintRequestsPage from './pages/organizer/PrintRequestsPage';
 
 export default function App() {
   return (
@@ -41,6 +42,10 @@ export default function App() {
           <Route
             path="/dashboard"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/print-requests"
+            element={<ProtectedRoute><PrintRequestsPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/requests"

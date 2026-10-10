@@ -51,6 +51,8 @@ export default function DashboardPage() {
     });
   }
   const [pendingCount, setPendingCount] = useState(0);
+  // Үнэгүй цомгийн шинэ угаалгах хүсэлт
+  const [printReqCount, setPrintReqCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [printOrders, setPrintOrders] = useState<any[]>([]);
@@ -83,6 +85,7 @@ export default function DashboardPage() {
     const roles: string[] = profile.role ?? [];
     if (roles.includes('organizer')) { loadOrganizerAlbums(); loadPendingCount(); }
     if (roles.includes('buyer')) { loadPurchases(); loadPrintOrders(); }
+    if (roles.includes('organizer') || roles.includes('photographer')) loadPrintRequestCount();
   }, [profile]);
 
   useEffect(() => {
@@ -120,6 +123,11 @@ export default function DashboardPage() {
       console.error('deleteAlbum error:', error);
       alert('Устгахад алдаа гарлаа: ' + error.message);
     }
+  }
+
+  async function loadPrintRequestCount() {
+    const { count, error } = await supabase.from('print_requests').select('id', { count: 'exact', head: true }).eq('status', 'new');
+    setPrintReqCount(error ? null : (count ?? 0));
   }
 
   async function loadPendingCount() {
@@ -350,6 +358,9 @@ export default function DashboardPage() {
               <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              {printReqCount !== null && (
+                <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
+              )}
             </>
           )}
           {activeRole === 'organizer' && isOrganizer && (
@@ -358,6 +369,9 @@ export default function DashboardPage() {
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              {printReqCount !== null && (
+                <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
+              )}
             </>
           )}
           {isAdmin && (

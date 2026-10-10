@@ -16,6 +16,7 @@ import FaceSearchModal from '../components/FaceSearchModal';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import SaveImageViewer from '../components/SaveImageViewer';
+import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
 import { saveImageToDevice } from '../lib/browserEnv';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
@@ -130,6 +131,11 @@ export default function PublicAlbumPage() {
   const { profile } = useAuth();
   // Үнэгүй хуваалцах цомог: эх зургийг шууд татах
   const [freeBusy, setFreeBusy] = useState<string | null>(null);
+  // Үнэгүй цомгийн угаалгах хүсэлт (төлбөргүй)
+  const [printPicks, setPrintPicks] = useState<PrintPick[]>([]);
+  const [printReqOpen, setPrintReqOpen] = useState(false);
+  const togglePrintPick = (photoId: string, previewUrl: string) => setPrintPicks(prev =>
+    prev.some(p => p.photoId === photoId) ? prev.filter(p => p.photoId !== photoId) : [...prev, { photoId, previewUrl, size: '10x15', qty: 1 }]);
   const [freeViewer, setFreeViewer] = useState<{ url: string; name: string; hint: 'manual' | 'downloaded' | 'shared' } | null>(null);
   async function freeDownload(photoId: string) {
     setFreeBusy(photoId);
@@ -574,6 +580,8 @@ export default function PublicAlbumPage() {
                 freeDownload={freeActive && photo.source !== 'ai_booth'}
                 freeBusy={freeBusy === photo.id}
                 onFreeDownload={() => freeDownload(photo.id)}
+                printPicked={printPicks.some(p => p.photoId === photo.id)}
+                onTogglePrintPick={() => togglePrintPick(photo.id, photo.watermarked_url)}
                 allowPrint={allowPrint}
                 aiPrice={aiPrice}
                 inCart={cart.filter(c => c.photoId === photo.id)}
@@ -614,6 +622,19 @@ export default function PublicAlbumPage() {
 
       {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}
 
+      {freeActive && printPicks.length > 0 && !printReqOpen && (
+        <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 z-40">
+          <button onClick={() => setPrintReqOpen(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-5 py-3 rounded-2xl shadow-2xl">
+            <Printer className="w-5 h-5" /> {t('Угаалгах хүсэлт илгээх')} · {printPicks.length}
+          </button>
+        </div>
+      )}
+      {printReqOpen && album && (
+        <PrintRequestModal albumId={album.id} picks={printPicks} onChange={setPrintPicks}
+          onClose={() => setPrintReqOpen(false)} onSent={() => setPrintPicks([])} />
+      )}
+
       {cartOpen && (
         <CartSidebar
           cart={cart} total={cartTotal}
@@ -649,7 +670,9 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload }: {
+function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick }: {
+  printPicked?: boolean;
+  onTogglePrintPick?: () => void;
   freeDownload?: boolean;
   freeBusy?: boolean;
   onFreeDownload?: () => void;
@@ -741,6 +764,13 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
             {downloadPrice === 0 ? t('Үнэгүй') : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
+        )}
+        {freeDownload && onTogglePrintPick && (
+          <button onClick={onTogglePrintPick}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              printPicked ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}>
+            <Printer className="w-3.5 h-3.5" /> {printPicked ? t('Угаалгахаар сонгосон ✓') : t('Угаалгуулах')}
+          </button>
         )}
 
         {allowPrint && hasPrintPrices && (

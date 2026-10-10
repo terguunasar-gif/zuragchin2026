@@ -23,6 +23,10 @@ interface WatermarkOptions {
   imageSize?: number;
   /** Preview-ийн хамгийн их өргөн/өндөр (px) */
   maxSize?: number;
+  /** Брэнд горим (үнэгүй цомог): зөвхөн булангийн лого/текст, давтагдах хамгаалалтын тамгагүй */
+  brandOnly?: boolean;
+  /** JPEG чанар (0–1) */
+  quality?: number;
 }
 
 const DEFAULT_TILED_TEXT = 'zuragchin.mn';
@@ -47,7 +51,9 @@ export async function applyWatermark(
       const layers: WatermarkLayer[] = JSON.parse(opts.value);
       hasTiled = layers.some(l => l.type === 'tiled-text' && !!l.text);
       for (const layer of layers) {
-        if (layer.type === 'tiled-text' && layer.text) {
+        if (layer.type === 'tiled-text' && opts.brandOnly) {
+          continue;
+        } else if (layer.type === 'tiled-text' && layer.text) {
           // Бүх зургийг бүрхэх давтагдах текст тамга
           await applyTextWatermarkTiled(
             ctx, canvas.width, canvas.height,
@@ -72,7 +78,7 @@ export async function applyWatermark(
     }
     // Цомогт давтагдах тамга тохируулаагүй ч зургийг хамгаалахын тулд
     // бүх зургийг бүрхэх нарийн "zuragchin.mn" тамгыг заавал нэмнэ.
-    if (!hasTiled) {
+    if (!hasTiled && !opts.brandOnly) {
       await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, DEFAULT_TILED_TEXT, 0.3);
     }
   } else if (opts.type === 'text' && opts.value) {
@@ -85,7 +91,7 @@ export async function applyWatermark(
     canvas.toBlob(
       blob => (blob ? resolve(blob) : reject(new Error('Canvas toBlob failed'))),
       'image/jpeg',
-      0.88,
+      opts.quality ?? 0.88,
     );
   });
 }

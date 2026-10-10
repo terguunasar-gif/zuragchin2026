@@ -397,8 +397,15 @@ export default function CreateAlbumPage() {
             </Section>
 
             {/* ── Watermark Layers ── */}
-            <Section title="Усан тэмдгийн тохиргоо" icon={<Type className="w-4 h-4" />}>
+            <Section title={isFree ? 'Брэнд: лого, мэндчилгээний үг' : 'Усан тэмдгийн тохиргоо'} icon={<Type className="w-4 h-4" />}>
               <div className="space-y-4">
+                {isFree && (
+                  <p className="text-emerald-200/80 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 leading-relaxed">
+                    Үнэгүй хуваалцах цомогт хамгаалалтын тамга тавигдахгүй. Энд нэмсэн <b>текст</b> (жишээ нь «Бат ❤ Сараа · 2026.10.08»)
+                    болон <b>лого</b> нь бүх зургийн буланд суугдаж, зочдын татах зурагт ч хамт гарна. «Битүү тамга» хэрэглэгдэхгүй.
+                    Брэнд хэрэггүй бол текст, лого давхаргуудыг устгана уу.
+                  </p>
+                )}
                 <div className="flex items-center gap-2 flex-wrap">
                   {wmLayers.map((layer, idx) => (
                     <button key={layer.id} type="button" onClick={() => setActiveLayerId(layer.id)}

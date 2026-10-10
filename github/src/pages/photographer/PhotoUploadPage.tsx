@@ -215,8 +215,15 @@ export default function PhotoUploadPage() {
 
       try {
         // «Үнэгүй хуваалцах» цомогт усан тэмдэг тавихгүй (зочид эх зургийг үнэгүй татна)
+        // Үнэгүй цомог: зохион байгуулагчийн лого / мэндчилгээг (булангийн давхарга) эх зурагт ч, preview-д ч суулгана
+        const brand = album.is_free && hasBrandLayers(album);
+        const originalBlob: Blob = brand
+          ? await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, quality: 0.92 })
+          : entry.file;
         const previewBlob = album.is_free
-          ? await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
+          ? await applyWatermark(entry.file, brand
+              ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, maxSize: 1600 }
+              : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
           : await applyWatermark(entry.file, {
               type: album.watermark_type,
               value: album.watermark_value,
@@ -226,7 +233,7 @@ export default function PhotoUploadPage() {
 
         setFileStatus(entry.id, { progress: 20 });
 
-        const ext = entry.file.name.split('.').pop() ?? 'jpg';
+        const ext = brand ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
         const baseName = `${crypto.randomUUID()}.${ext}`;
         const originalPath = `${profile.id}/${album.id}/${baseName}`;
         const previewPath = `${profile.id}/${album.id}/preview_${baseName.replace(/\.\w+$/, '.jpg')}`;
@@ -235,7 +242,7 @@ export default function PhotoUploadPage() {
 
         const { error: origErr } = await supabase.storage
           .from('photos-original')
-          .upload(originalPath, entry.file, { contentType: entry.file.type, upsert: false });
+          .upload(originalPath, originalBlob, { contentType: brand ? 'image/jpeg' : entry.file.type, upsert: false });
         if (origErr) throw new Error(origErr.message);
 
         setFileStatus(entry.id, { progress: 60 });
@@ -652,4 +659,13 @@ function StatusRow({ label, value, color }: { label: string; value: number; colo
       <span className={`font-semibold ${color}`}>{value}</span>
     </div>
   );
+}
+
+/** Цомогт булангийн лого / текст давхарга байгаа эсэх (давтагдах тамга тооцохгүй) */
+function hasBrandLayers(album: { watermark_type: string; watermark_value: string }): boolean {
+  if (album.watermark_type !== 'layers' || !album.watermark_value) return false;
+  try {
+    const layers = JSON.parse(album.watermark_value) as { type: string; text?: string; imagePreview?: string }[];
+    return Array.isArray(layers) && layers.some(l => (l.type === 'text' && !!l.text?.trim()) || (l.type === 'image' && !!l.imagePreview));
+  } catch { return false; }
 }
