@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { applyWatermark, WatermarkPosition } from '../../lib/watermark';
+import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
 
 interface AlbumInfo {
@@ -224,19 +224,14 @@ export default function PhotoUploadPage() {
           ? await applyWatermark(entry.file, brand
               ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, maxSize: 1600 }
               : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
-          : await applyWatermark(entry.file, {
-              type: album.watermark_type,
-              value: album.watermark_value,
-              position: album.watermark_position,
-              opacity: 0.70,
-            });
+          : await makeSalePreview(entry.file, album);
 
         setFileStatus(entry.id, { progress: 20 });
 
         const ext = brand ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
         const baseName = `${crypto.randomUUID()}.${ext}`;
         const originalPath = `${profile.id}/${album.id}/${baseName}`;
-        const previewPath = `${profile.id}/${album.id}/preview_${baseName.replace(/\.\w+$/, '.jpg')}`;
+        const previewPath = `${profile.id}/${album.id}/${album.is_free ? 'preview_' : 'preview_p2_'}${baseName.replace(/\.\w+$/, '.jpg')}`;
 
         setFileStatus(entry.id, { status: 'uploading', progress: 30 });
 

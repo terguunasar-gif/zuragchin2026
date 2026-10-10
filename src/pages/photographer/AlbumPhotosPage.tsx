@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { makeSalePreview } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
@@ -21,9 +22,11 @@ interface Photo {
   folder_id?: string | null;
   source?: string | null;
   faces_scanned_at?: string | null;
+  photographer_id?: string;
 }
 
 interface Folder { id: string; name: string; }
+interface AlbumWm { name: string; is_free: boolean; watermark_type: string; watermark_value: string; watermark_position: string }
 
 interface EditingPrices {
   [photoId: string]: {
@@ -39,6 +42,8 @@ export default function AlbumPhotosPage() {
   const navigate = useNavigate();
 
   const [albumName, setAlbumName] = useState('');
+  const [albumWm, setAlbumWm] = useState<AlbumWm | null>(null);
+  const [protectProgress, setProtectProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -89,8 +94,10 @@ export default function AlbumPhotosPage() {
       }
     }
 
-    const { data: albumData } = await supabase.from('albums').select('name').eq('id', albumId!).maybeSingle();
+    const { data: albumData } = await supabase.from('albums')
+      .select('name, is_free, watermark_type, watermark_value, watermark_position').eq('id', albumId!).maybeSingle();
     setAlbumName(albumData?.name ?? '');
+    setAlbumWm(albumData as AlbumWm | null);
     await Promise.all([loadPhotos(isManager), loadFolders(), albumFaceSearchEnabled(albumId!).then(setFaceEnabled)]);
     setLoading(false);
   }
@@ -98,7 +105,7 @@ export default function AlbumPhotosPage() {
   async function loadPhotos(isManager = canManage) {
     let q = supabase
       .from('photo_uploads')
-      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at')
+      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id')
       .eq('album_id', albumId!)
       .order('created_at', { ascending: false });
     if (!isManager) q = q.eq('photographer_id', profile!.id);
@@ -107,7 +114,7 @@ export default function AlbumPhotosPage() {
       // Хавтасны SQL ажиллаагүй үед
       let q2 = supabase
         .from('photo_uploads')
-        .select('id, filename, preview_url, original_url, print_prices, created_at')
+        .select('id, filename, preview_url, original_url, print_prices, created_at, photographer_id')
         .eq('album_id', albumId!)
         .order('created_at', { ascending: false });
       if (!isManager) q2 = q2.eq('photographer_id', profile!.id);
@@ -125,6 +132,46 @@ export default function AlbumPhotosPage() {
     if (error || !hidden?.length) return list;
     const set = new Set(hidden.map(h => h.id));
     return list.filter(p => !set.has(p.id));
+  }
+
+  /** Миний оруулсан, хуучин (том, хамгаалалтгүй) preview-тэй зургууд */
+  const unprotected = photos.filter(p =>
+    p.photographer_id === profile?.id && p.source !== 'ai_booth' && !p.preview_url.includes('preview_p2_'));
+
+  async function protectPreviews() {
+    if (!albumWm || albumWm.is_free || !profile) return;
+    const todo = unprotected;
+    if (!todo.length) return;
+    if (!confirm(`${todo.length} зургийн урьдчилан харах хувилбарыг жижиг, хамгаалалттай тамгатай болгох уу? Эх зураг өөрчлөгдөхгүй.`)) return;
+    setProtectProgress({ done: 0, total: todo.length, failed: 0 });
+    let failed = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const ph = todo[i];
+      try {
+        const origPath = ph.original_url.replace(/^photos-original\//, '');
+        const { data: blob, error: dlErr } = await supabase.storage.from('photos-original').download(origPath);
+        if (dlErr || !blob) throw dlErr ?? new Error('download');
+        const preview = await makeSalePreview(new File([blob], ph.filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }), albumWm);
+        const newPath = `${profile.id}/${albumId}/preview_p2_${crypto.randomUUID()}.jpg`;
+        const { error: upErr } = await supabase.storage.from('photos-preview').upload(newPath, preview, { contentType: 'image/jpeg' });
+        if (upErr) throw upErr;
+        const { data: { publicUrl } } = supabase.storage.from('photos-preview').getPublicUrl(newPath);
+        const { error: dbErr } = await supabase.rpc('set_photo_preview', { p_photo_id: ph.id, p_url: publicUrl });
+        if (dbErr) {
+          await supabase.storage.from('photos-preview').remove([newPath]);
+          throw dbErr;
+        }
+        const oldPath = ph.preview_url.includes('/photos-preview/') ? ph.preview_url.split('/photos-preview/')[1]?.split('?')[0] : null;
+        if (oldPath) await supabase.storage.from('photos-preview').remove([oldPath]);
+        setPhotos(prev => prev.map(x => (x.id === ph.id ? { ...x, preview_url: publicUrl } : x)));
+      } catch (e) {
+        console.warn('protect failed', ph.id, e);
+        failed++;
+      }
+      setProtectProgress({ done: i + 1, total: todo.length, failed });
+    }
+    showToast(failed ? `${todo.length - failed} зураг шинэчлэгдлээ, ${failed} алдаатай` : 'Бүх зураг хамгаалалттай боллоо');
+    setTimeout(() => setProtectProgress(null), 4000);
   }
 
   async function loadFolders() {
@@ -447,6 +494,27 @@ export default function AlbumPhotosPage() {
             Дахин байршуулах
           </button>
         </div>
+
+        {/* ── Хуучин preview-г хамгаалалттай болгох (худалдах цомог) ── */}
+        {albumWm && !albumWm.is_free && (unprotected.length > 0 || protectProgress) && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-white font-semibold">🛡️ Зургаа хулгайлахаас хамгаалах</p>
+              <p className="text-amber-100/70 text-sm mt-1 max-w-2xl">
+                Таны {unprotected.length} зургийн урьдчилан харах хувилбар том, тамга нь бүдэг байна — дэлгэцийн зураг авч AI-аар тамгыг арилгах эрсдэлтэй.
+                Нэг товчоор жижиг (1000px), өтгөн тамгатай болгоно. Эх зураг, худалдан авагчид очих зураг өөрчлөгдөхгүй.
+              </p>
+              {protectProgress && (
+                <p className="text-amber-300 text-xs mt-2">{protectProgress.done} / {protectProgress.total} боловсруулсан{protectProgress.failed ? ` · ${protectProgress.failed} алдаа` : ''}</p>
+              )}
+            </div>
+            <button onClick={protectPreviews} disabled={!!protectProgress && protectProgress.done < protectProgress.total}
+              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2.5 rounded-xl flex items-center gap-2">
+              {protectProgress && protectProgress.done < protectProgress.total ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Хамгаалалттай болгох
+            </button>
+          </div>
+        )}
 
         {/* ── Царайгаар хайх (цомгийн эзэн/админ) ── */}
         {canManage && (
