@@ -265,13 +265,18 @@ export default function ReceiptPage() {
       <header className="border-b border-white/10 bg-stone-950/90 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {albumShareLink && (
-              <button
-                onClick={() => navigate(`/album/${albumShareLink.replace(/^\/album\//, '')}`)}
-                className="text-stone-400 hover:text-white transition-colors">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            )}
+            <button
+              onClick={() => {
+                // Сайт дотроос (жишээ нь хяналтын самбараас) орсон бол өмнөх хуудас руу, шууд холбоосоор орсон бол цомог руу
+                const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+                if (idx > 0) navigate(-1);
+                else if (albumShareLink) navigate(`/album/${albumShareLink.replace(/^\/album\//, '')}`);
+                else navigate('/');
+              }}
+              title="Буцах"
+              className="text-stone-400 hover:text-white transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
             <a href="/" title="Нүүр хуудас" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
               <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
                 <Camera className="w-5 h-5 text-stone-950" />
