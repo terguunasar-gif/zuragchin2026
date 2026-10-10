@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Loader2, Phone, Printer, Receipt, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, MessageSquare, Phone, Printer, Receipt, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { printPurchase, PrintJobResult } from '../lib/printPhoto';
 
 // Зурагчин (өөрийн зураг) болон зохион байгуулагч (өөрийн цомог)-ийн борлуулалт,
 // угаалгах захиалгын жагсаалт. Мэдээллийг my_sales() RPC-ээс авна.
@@ -95,6 +96,21 @@ export default function SalesPanel({
   const { rows, setRows, loading, error, reload } = sales;
   const [filter, setFilter] = useState<'all' | 'print' | 'download'>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [printing, setPrinting] = useState<string | null>(null);
+  const [smsInfo, setSmsInfo] = useState<Record<string, PrintJobResult>>({});
+
+  async function doPrint(r: SaleRow) {
+    setPrinting(r.id);
+    try {
+      const res = await printPurchase(r.id);
+      setSmsInfo(prev => ({ ...prev, [r.id]: res }));
+      if (r.print_status === 'pending') setRows(prev => prev.map(x => (x.id === r.id ? { ...x, print_status: 'printed' } : x)));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Хэвлэхэд алдаа гарлаа');
+    } finally {
+      setPrinting(null);
+    }
+  }
 
   // Зурагчин: зөвхөн өөрийн зураг. Зохион байгуулагч: өөрийн цомгийн бүх борлуулалт.
   const scoped = useMemo(
@@ -196,6 +212,7 @@ export default function SalesPanel({
                       )}
                     </p>
                   )}
+                  {smsInfo[r.id] && <SmsNote info={smsInfo[r.id]} />}
                 </div>
               </div>
 
@@ -205,16 +222,24 @@ export default function SalesPanel({
                   <p className="text-emerald-400 text-sm font-semibold">{fmt(myShare(r))}</p>
                 </div>
                 {r.type === 'print' && (
-                  <select
-                    value={r.print_status}
-                    disabled={busyId === r.id}
-                    onChange={e => changeStatus(r, e.target.value as SaleRow['print_status'])}
-                    className={`text-xs font-medium rounded-lg border px-2 py-1.5 bg-stone-900 outline-none ${STATUS_STYLE[r.print_status]}`}
-                  >
-                    {(Object.keys(STATUS_LABEL) as SaleRow['print_status'][]).map(s => (
-                      <option key={s} value={s} className="bg-stone-900 text-white">{STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => doPrint(r)} disabled={printing === r.id}
+                      title="Принтерээр хэвлэх — төлөв «Угаасан» болж, худалдан авагчид SMS очно"
+                      className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 text-xs font-bold px-3 py-1.5 rounded-lg">
+                      {printing === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                      {r.print_status === 'pending' ? 'Принт' : 'Дахин принт'}
+                    </button>
+                    <select
+                      value={r.print_status}
+                      disabled={busyId === r.id}
+                      onChange={e => changeStatus(r, e.target.value as SaleRow['print_status'])}
+                      className={`text-xs font-medium rounded-lg border px-2 py-1.5 bg-stone-900 outline-none ${STATUS_STYLE[r.print_status]}`}
+                    >
+                      {r.print_status === 'pending' && <option value="pending" className="bg-stone-900 text-white">{STATUS_LABEL.pending}</option>}
+                      {r.print_status === 'printed' && <option value="printed" className="bg-stone-900 text-white">✓ {STATUS_LABEL.printed}</option>}
+                      <option value="delivered" className="bg-stone-900 text-white">{STATUS_LABEL.delivered}</option>
+                    </select>
+                  </div>
                 )}
               </div>
             </div>
@@ -239,6 +264,20 @@ function SplitLine({ r }: { r: SaleRow }) {
       <span>· Платформ {f(platform)}</span>
       <span className={r.is_my_album ? 'text-emerald-400' : ''}>· Зохион байгуулагч {f(owner)}</span>
       <span className={r.is_my_photo ? 'text-emerald-400' : ''}>· Зурагчин {f(photographer)}</span>
+    </p>
+  );
+}
+
+/** Хэвлэсний дараах SMS-ийн төлөв. SMS үйлчилгээ тохируулаагүй бол утаснаас гараар илгээх товч */
+function SmsNote({ info }: { info: PrintJobResult }) {
+  if (info.sms === 'sent') return <p className="text-emerald-400 text-[11px] mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Худалдан авагчид SMS илгээгдлээ</p>;
+  if (info.sms === 'already') return <p className="text-stone-500 text-[11px] mt-1">SMS өмнө нь илгээгдсэн</p>;
+  if (info.sms === 'no_phone') return null;
+  const href = `sms:${info.buyerPhone}?body=${encodeURIComponent(info.smsText)}`;
+  return (
+    <p className="text-[11px] mt-1 flex flex-wrap items-center gap-2">
+      <span className="text-amber-300">{info.sms === 'failed' ? 'SMS илгээж чадсангүй.' : 'Автомат SMS тохируулаагүй.'}</span>
+      <a href={href} className="inline-flex items-center gap-1 text-sky-400 underline"><MessageSquare className="w-3 h-3" />Утаснаасаа SMS илгээх</a>
     </p>
   );
 }

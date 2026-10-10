@@ -17,6 +17,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const QPAY_FEE_RATE = 0.01;
+// SMS үйлчилгээ (заавал биш). Жишээ: SMS_API_URL = https://api.example.mn/send?key={key}&from={from}&to={to}&text={text}
+const SMS_API_URL = Deno.env.get("SMS_API_URL") ?? "";
+const SMS_API_KEY = Deno.env.get("SMS_API_KEY") ?? "";
+const SMS_FROM = Deno.env.get("SMS_FROM") ?? "";
 const PLATFORM_FEE_RATE = 0.03;
 const OWNER_COMMISSION_RATE = 0.10;
 const AI_ALBUM_PRICE_DEFAULT = 3000;
@@ -524,6 +528,65 @@ Deno.serve(async (req: Request) => {
       let ok = false;
       if (paid.isPaid) ok = await processListing(db, invoiceId, paid.paymentId, paid.paidAmount);
       return json({ isPaid: ok });
+    }
+
+    // ── УГААЛГАХ ЗАХИАЛГА ХЭВЛЭХ: эх зургийн холбоос + төлөв «Угаасан» + худалдан авагчид SMS ──
+    if (req.method === "POST" && path === "/print-job") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { purchaseId } = await req.json() as { purchaseId: string };
+      // deno-lint-ignore no-explicit-any
+      let p: any = null;
+      const full = await db.from("purchases")
+        .select("id, type, payment_status, photographer_id, album_id, print_size, print_status, buyer_phone, sms_sent_at, photo_id")
+        .eq("id", purchaseId).maybeSingle();
+      if (full.error) {
+        const basic = await db.from("purchases")
+          .select("id, type, payment_status, photographer_id, album_id, print_size, print_status, buyer_phone, photo_id")
+          .eq("id", purchaseId).maybeSingle();
+        p = basic.data ? { ...basic.data, sms_sent_at: "n/a" } : null;
+      } else p = full.data;
+      if (!p) return json({ error: "Захиалга олдсонгүй" }, 404);
+      if (p.type !== "print" || p.payment_status !== "paid") return json({ error: "Зөвхөн төлөгдсөн угаалгах захиалга" }, 400);
+      const { data: album } = await db.from("albums").select("owner_id, contact_info").eq("id", p.album_id).maybeSingle();
+      if (p.photographer_id !== uid && album?.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
+
+      const { data: photo } = await db.from("photo_uploads").select("original_url, filename").eq("id", p.photo_id).maybeSingle();
+      const storagePath = String(photo?.original_url ?? "").replace(/^photos-original\//, "");
+      const { data: signed } = await db.storage.from("photos-original").createSignedUrl(storagePath, 3600);
+      if (!signed?.signedUrl) return json({ error: "Эх зураг олдсонгүй" }, 404);
+
+      if (p.print_status === "pending") {
+        await db.from("purchases").update({ print_status: "printed", print_status_updated_at: new Date().toISOString() }).eq("id", p.id);
+      }
+
+      // Хэвлэсэн хүний утас: зурагчны профайл → цомгийн холбоо барих
+      const { data: prof } = await db.from("photographer_profiles").select("phone").eq("user_id", uid).maybeSingle();
+      const contactPhone = String(prof?.phone || album?.contact_info?.phone || "").trim();
+      const smsText = `Zuragchin.mn: Tanii ugaalgah zurag beltgegdlee. ${contactPhone ? contactPhone + " dugaartai zuragchnaas" : "Zuragchnaas"} zurgaa avna uu.`;
+      const buyerPhone = String(p.buyer_phone ?? "").replace(/\D/g, "");
+      let sms: "sent" | "already" | "not_configured" | "failed" | "no_phone" = "not_configured";
+      if (!/^\d{8}$/.test(buyerPhone)) sms = "no_phone";
+      else if (p.sms_sent_at && p.sms_sent_at !== "n/a") sms = "already";
+      else if (SMS_API_URL) {
+        try {
+          const url = SMS_API_URL
+            .replace("{key}", encodeURIComponent(SMS_API_KEY))
+            .replace("{from}", encodeURIComponent(SMS_FROM))
+            .replace("{to}", encodeURIComponent(buyerPhone))
+            .replace("{text}", encodeURIComponent(smsText));
+          const r = await fetch(url);
+          const body = await r.text();
+          console.log("SMS:", r.status, body.slice(0, 200));
+          sms = r.ok ? "sent" : "failed";
+          if (sms === "sent" && p.sms_sent_at !== "n/a") await db.from("purchases").update({ sms_sent_at: new Date().toISOString() }).eq("id", p.id);
+        } catch (e) {
+          console.log("SMS ERROR:", e instanceof Error ? e.message : e);
+          sms = "failed";
+        }
+      }
+      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone });
     }
 
     // ── ҮНЭГҮЙ ЦОМОГ: зочин эх зургийг шууд татах холбоос ──

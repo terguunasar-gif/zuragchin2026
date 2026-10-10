@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import BankLinks, { BankLink } from '../../components/BankLinks';
+import BankLinks, { BankLink, canOpenBankApps } from '../../components/BankLinks';
 import {
   X, User, Phone, AlertCircle,
   Loader2, QrCode, CheckCircle2, RefreshCw,
@@ -300,7 +300,7 @@ export default function CheckoutModal({
                 {/* Deep links */}
                 {invoice.urls && invoice.urls.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-stone-500 text-xs">{t('Эсвэл апп-аар нээх:')}</p>
+                    {canOpenBankApps && <p className="text-stone-500 text-xs">{t('Эсвэл апп-аар нээх:')}</p>}
                     <BankLinks urls={invoice.urls} />
                   </div>
                 )}
