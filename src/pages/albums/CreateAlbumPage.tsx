@@ -134,6 +134,21 @@ export default function CreateAlbumPage() {
   const [copied, setCopied] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
+  // Цомгийн хугацааны бодлого (админ «Платформ» хэсэгт тохируулна)
+  const [policy, setPolicy] = useState({ openDays: 30, extendPrice: 10000, extendDays: 30, purgeDays: 60 });
+  useEffect(() => {
+    supabase.from('platform_settings').select('key, value')
+      .in('key', ['album_open_days', 'album_extend_price', 'album_extend_days', 'album_purge_after_days'])
+      .then(({ data }) => {
+        const m = Object.fromEntries((data ?? []).map((r: { key: string; value: unknown }) => [r.key, Number(r.value)]));
+        setPolicy(p => ({
+          openDays: m.album_open_days > 0 ? m.album_open_days : p.openDays,
+          extendPrice: m.album_extend_price > 0 ? m.album_extend_price : p.extendPrice,
+          extendDays: m.album_extend_days > 0 ? m.album_extend_days : p.extendDays,
+          purgeDays: m.album_purge_after_days > 0 ? m.album_purge_after_days : p.purgeDays,
+        }));
+      });
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -662,13 +677,13 @@ export default function CreateAlbumPage() {
                 <div className="flex items-start gap-2.5 mb-3">
                   <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5"><Clock className="w-3 h-3 text-amber-400" /></div>
                   <div>
-                    <p className="text-amber-300 text-sm font-semibold mb-2">Үнэгүй байршуулалтын хугацаа</p>
+                    <p className="text-amber-300 text-sm font-semibold mb-2">Цомгийн хугацаа</p>
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-bold flex-shrink-0">1</span><span className="text-stone-300">Үүсгэснээс <span className="text-green-400 font-semibold">21 хоног</span> үнэгүй бүрэн идэвхтэй байна</span></div>
-                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">2</span><span className="text-stone-300">21 хоног дуусвал <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй горимд орно</span></div>
-                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center font-bold flex-shrink-0">3</span><span className="text-stone-300">7 хоног дуусвал цомог болон бүх зураг <span className="text-red-400 font-semibold">бүр мөсөн устана</span></span></div>
+                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-bold flex-shrink-0">1</span><span className="text-stone-300">Арга хэмжээнээс хойш <span className="text-green-400 font-semibold">{policy.openDays} хоног</span> нээлттэй байна</span></div>
+                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">2</span><span className="text-stone-300">Дараа нь хаагдана — хэн ч <span className="text-amber-400 font-semibold">₮{policy.extendPrice.toLocaleString()} / {policy.extendDays} хоног</span>-оор сунгаж болно</span></div>
+                      <div className="flex items-center gap-2 text-xs"><span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center font-bold flex-shrink-0">3</span><span className="text-stone-300">Хаагдсанаас {policy.purgeDays} хоногийн дараа зургууд <span className="text-red-400 font-semibold">бүр мөсөн устана</span></span></div>
                     </div>
-                    <p className="text-stone-500 text-xs mt-2">Үргэлжлүүлэн байршуулахыг хүсвэл цаг тухайд нь төлбөр төлнө үү.</p>
+                    <p className="text-stone-500 text-xs mt-2">Борлуулалтын түүх, баримт устахгүй.</p>
                   </div>
                 </div>
                 <label className="flex items-start gap-2.5 cursor-pointer group">
@@ -679,7 +694,7 @@ export default function CreateAlbumPage() {
                     </div>
                   </div>
                   <span className="text-stone-400 text-xs leading-relaxed group-hover:text-stone-300 transition-colors">
-                    Би 21 хоногийн үнэгүй байршуулалтын нөхцөлийг ойлгосон бөгөөд хугацаа дуусахад төлбөр төлөх эсвэл цомог устах болохыг зөвшөөрч байна.
+                    Би цомгийн хугацааны нөхцөлийг ойлгосон бөгөөд хугацаа дуусахад сунгах эсвэл зургууд устах болохыг зөвшөөрч байна.
                   </span>
                 </label>
               </div>
@@ -697,29 +712,25 @@ export default function CreateAlbumPage() {
                 <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPricingOpen(false)}>
                   <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-5"><h3 className="text-white font-bold text-lg">Үнэ тариф</h3><button onClick={() => setPricingOpen(false)} className="text-stone-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button></div>
-                    <div className="mb-5">
-                      <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Байршуулалтын хугацаа</p>
-                      <div className="space-y-2">
-                        {[{ period: '21 хоног', price: 'Үнэгүй', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' }, { period: '1 сар', price: '₮9,900', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' }, { period: '3 сар', price: '₮24,900', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' }, { period: '6 сар', price: '₮44,900', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' }, { period: '1 жил', price: '₮79,900', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' }].map(r => (
-                          <div key={r.period} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${r.bg}`}><span className="text-stone-300 text-sm">{r.period}</span><span className={`text-sm font-bold ${r.color}`}>{r.price}</span></div>
-                        ))}
+                    <div className="space-y-4 text-sm">
+                      <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                        <p className="text-amber-300 text-xs font-semibold mb-2">«Худалдах» цомог — зураг бүрийн орлогоос</p>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-stone-400">QPay шимтгэл</span><span className="text-stone-300">1%</span></div>
+                          <div className="flex justify-between"><span className="text-stone-400">Zuragchin.mn</span><span className="text-stone-300">3%</span></div>
+                          <div className="flex justify-between"><span className="text-stone-400">Зохион байгуулагч</span><span className="text-stone-300">10%</span></div>
+                          <div className="flex justify-between font-semibold pt-1 border-t border-white/10"><span className="text-stone-300">Зурагчинд</span><span className="text-emerald-400">үлдсэн 86%</span></div>
+                        </div>
+                        <p className="text-stone-500 text-[11px] mt-2">Цомог үүсгэх нь үнэгүй. AI бүүтийн зураг: QPay 1%, зохион байгуулагч 10%, үлдсэн нь платформд.</p>
                       </div>
-                    </div>
-                    <div className="mb-5">
-                      <p className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-3">Зургийн тоогоор (сарын)</p>
-                      <div className="space-y-2">
-                        {[{ range: 'Хүртэл 500 зураг', price: 'Багтсан', color: 'text-green-400' }, { range: '500–2,000 зураг', price: '+₮5,000', color: 'text-stone-300' }, { range: '2,000–10,000 зураг', price: '+₮15,000', color: 'text-stone-300' }, { range: '10,000+ зураг', price: '+₮35,000', color: 'text-stone-300' }].map(r => (
-                          <div key={r.range} className="flex items-center justify-between px-4 py-2 rounded-xl bg-white/5 border border-white/10"><span className="text-stone-400 text-xs">{r.range}</span><span className={`text-xs font-semibold ${r.color}`}>{r.price}</span></div>
-                        ))}
+                      <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                        <p className="text-amber-300 text-xs font-semibold mb-2">Хугацаа</p>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-stone-400">Нээлттэй</span><span className="text-green-400 font-semibold">{policy.openDays} хоног · Үнэгүй</span></div>
+                          <div className="flex justify-between"><span className="text-stone-400">Сунгалт</span><span className="text-stone-300">₮{policy.extendPrice.toLocaleString()} / {policy.extendDays} хоног</span></div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
-                      <p className="text-amber-300 text-xs font-semibold mb-2">Платформын шимтгэл</p>
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs"><span className="text-stone-400">QPay шимтгэл</span><span className="text-stone-300">1.5%</span></div>
-                        <div className="flex justify-between text-xs"><span className="text-stone-400">Zuragchin.mn</span><span className="text-stone-300">5%</span></div>
-                        <div className="flex justify-between text-xs font-semibold pt-1 border-t border-white/10"><span className="text-stone-300">Нийт</span><span className="text-amber-400">6.5%</span></div>
-                      </div>
+                      <p className="text-stone-500 text-xs">«Үнэгүй хуваалцах» цомгийн багц, нүүр хуудсанд нийтлэх үнийг цомог үүсгэсний дараа тухайн хэсэгт харна.</p>
                     </div>
                     <button onClick={() => setPricingOpen(false)} className="w-full mt-5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 py-2.5 rounded-xl text-sm font-medium transition-colors">Хаах</button>
                   </div>
