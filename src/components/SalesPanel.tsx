@@ -153,7 +153,7 @@ export default function SalesPanel({
       <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-xs text-stone-400 leading-relaxed">
         <p><span className="text-white">Төлбөрийн хуваарилалт:</span> QPay шимтгэл 1% · Платформ 3% · Зохион байгуулагч 10% · үлдсэн нь зурагчинд.
           AI бүүтийн зураг: QPay 1% · Зохион байгуулагч 10% · үлдсэн нь платформд.</p>
-        <p className="mt-1"><span className="text-amber-300">«Хүлээгдэж буй»</span> = танд хараахан шилжүүлэгдээгүй үлдэгдэл. Зураг тус бүрийн задаргааг доор харна уу.</p>
+        <p className="mt-1"><span className="text-amber-300">«Татах боломжтой»</span> = танд хараахан шилжүүлэгдээгүй үлдэгдэл. Дээрх картыг дарж <a href="/dashboard/wallet" className="text-amber-300 underline">банкны данс руугаа татах хүсэлт</a> гаргана. Зураг тус бүрийн задаргааг доор харна уу.</p>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">

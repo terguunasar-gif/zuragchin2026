@@ -4,7 +4,6 @@ import {
   CreditCard, AlertCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface PayoutRequest {
   id: string;
@@ -27,7 +26,6 @@ const STATUS_CFG: Record<string, { label: string; color: string; icon: React.Rea
 };
 
 export default function AdminPayoutsTab() {
-  const { profile } = useAuth();
 
   const [pending, setPending] = useState<PayoutRequest[]>([]);
   const [history, setHistory] = useState<PayoutRequest[]>([]);
@@ -69,24 +67,10 @@ export default function AdminPayoutsTab() {
     setProcessingId(noteModal.request.id);
     setActionError('');
 
-    if (noteModal.action === 'paid') {
-      const { data, error } = await supabase.rpc('approve_payout', {
-        p_request_id: noteModal.request.id,
-        p_admin_id:   profile!.id,
-        p_admin_note: adminNote,
-      });
-      if (error || data?.error) {
-        setActionError(error?.message ?? data?.error ?? 'Failed');
-        setProcessingId(null);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('payout_requests')
-        .update({ status: 'rejected', admin_note: adminNote, processed_at: new Date().toISOString() })
-        .eq('id', noteModal.request.id);
-      if (error) { setActionError(error.message); setProcessingId(null); return; }
-    }
+    const { error } = noteModal.action === 'paid'
+      ? await supabase.rpc('admin_mark_payout_paid', { p_id: noteModal.request.id, p_note: adminNote })
+      : await supabase.rpc('admin_reject_payout', { p_id: noteModal.request.id, p_note: adminNote });
+    if (error) { setActionError(error.message); setProcessingId(null); return; }
 
     setProcessingId(null);
     setNoteModal(null);
@@ -174,14 +158,15 @@ export default function AdminPayoutsTab() {
             <div className="bg-white/5 rounded-xl px-4 py-3 text-sm space-y-1">
               <p className="text-white font-semibold">₮{Number(noteModal.request.amount).toLocaleString()}</p>
               <p className="text-stone-300">{noteModal.request.user_name}</p>
-              <p className="text-stone-500 text-xs">{noteModal.request.bank_info?.bank_name} — {noteModal.request.bank_info?.account_number}</p>
+              <p className="text-stone-300 text-xs">{noteModal.request.bank_info?.bank_name} · <span className="font-mono text-white select-all">{noteModal.request.bank_info?.account_number}</span></p>
+              <p className="text-stone-500 text-xs">Дансны эзэн: {noteModal.request.bank_info?.account_holder}</p>
             </div>
 
             {noteModal.action === 'paid' && (
               <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
                 <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                 <p className="text-amber-400 text-sm">
-                  Хэрэглэгчийн тооцоологдсон үлдэгдлээс хасагдана. Буцаах боломжгүй.
+                  Эхлээд өөрийн банкны аппаар дээрх данс руу ₮{Number(noteModal.request.amount).toLocaleString()} шилжүүлээд, дараа нь энд баталгаажуулна уу.
                 </p>
               </div>
             )}

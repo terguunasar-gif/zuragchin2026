@@ -149,10 +149,10 @@ export default function DashboardPage() {
   async function loadWalletBalance() {
     const { data } = await supabase
       .from('wallets')
-      .select('pending_balance')
+      .select('pending_balance, settled_balance')
       .eq('user_id', profile!.id)
       .maybeSingle();
-    setWalletBalance(Number(data?.pending_balance ?? 0));
+    setWalletBalance(Number(data?.pending_balance ?? 0) + Number(data?.settled_balance ?? 0));
   }
 
   async function loadPurchases() {
@@ -359,7 +359,7 @@ export default function DashboardPage() {
             <>
               <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
-              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Татах боломжтой · Мөнгө татах →" value={walletStr} onClick={() => navigate('/dashboard/wallet')} />
               {printReqCount !== null && (
                 <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
               )}
@@ -370,7 +370,7 @@ export default function DashboardPage() {
               <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Нийт цомог" value={albums.length} />
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
-              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Татах боломжтой · Мөнгө татах →" value={walletStr} onClick={() => navigate('/dashboard/wallet')} />
               {printReqCount !== null && (
                 <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
               )}

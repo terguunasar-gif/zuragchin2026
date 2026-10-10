@@ -29,6 +29,7 @@ import AlbumActivatePage from './pages/albums/AlbumActivatePage';
 import PrintRequestsPage from './pages/organizer/PrintRequestsPage';
 import AlbumListingPage from './pages/albums/AlbumListingPage';
 import ExploreAlbumsPage from './pages/ExploreAlbumsPage';
+import WalletPage from './pages/wallet/WalletPage';
 
 export default function App() {
   return (
@@ -68,6 +69,10 @@ export default function App() {
           <Route
             path="/dashboard/albums/:albumId/upload"
             element={<ProtectedRoute><PhotoUploadPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/wallet"
+            element={<ProtectedRoute><WalletPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/albums/:albumId/listing"

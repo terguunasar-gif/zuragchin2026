@@ -33,7 +33,7 @@ interface PayoutRequest {
   admin_note: string;
 }
 
-const MIN_PAYOUT = 10000;
+const DEFAULT_MIN_PAYOUT = 10000;
 
 const BANKS = [
   'Хаан банк',
@@ -41,8 +41,14 @@ const BANKS = [
   'Хас банк',
   'Төрийн банк',
   'TDB (Худалдаа хөгжлийн банк)',
-  'Капитал банк',
-  'Ардын банк',
+  'Капитрон банк',
+  'М банк',
+  'Богд банк',
+  'Тээвэр хөгжлийн банк',
+  'Чингис хаан банк',
+  'Ариг банк',
+  'Кредит банк',
+  'ҮХО банк',
 ];
 
 const TX_TYPE_META: Record<string, { label: string; icon: React.ReactNode; color: string; sign: string }> = {
@@ -51,6 +57,8 @@ const TX_TYPE_META: Record<string, { label: string; icon: React.ReactNode; color
   sale:          { label: 'Борлуулалт',         icon: <Download className="w-3.5 h-3.5" />,     color: 'text-green-400',  sign: '+' },
   commission:    { label: 'Комисс',             icon: <TrendingUp className="w-3.5 h-3.5" />,   color: 'text-blue-400',   sign: '+' },
   settlement:    { label: 'Тооцоо',             icon: <BarChart3 className="w-3.5 h-3.5" />,    color: 'text-amber-400',  sign: '+' },
+  credit_pending:{ label: 'Борлуулалтын орлого', icon: <Download className="w-3.5 h-3.5" />,     color: 'text-green-400',  sign: '+' },
+  refund:        { label: 'Буцаан олголт',       icon: <ArrowUpCircle className="w-3.5 h-3.5" />, color: 'text-green-400', sign: '+' },
   payout:        { label: 'Мөнгө татах',        icon: <ArrowUpCircle className="w-3.5 h-3.5" />, color: 'text-red-400',   sign: '−' },
 };
 
@@ -77,8 +85,12 @@ export default function WalletTab() {
   const [payoutError, setPayoutError] = useState('');
   const [payoutSubmitting, setPayoutSubmitting] = useState(false);
   const [payoutSuccess, setPayoutSuccess] = useState(false);
+  const [MIN_PAYOUT, setMinPayout] = useState(DEFAULT_MIN_PAYOUT);
 
   useEffect(() => { if (profile) load(); }, [profile]);
+
+  /** Татах боломжтой = хүлээгдэж буй + тооцоологдсон */
+  const available = Number(wallet?.pending_balance ?? 0) + Number(wallet?.settled_balance ?? 0);
 
   async function load() {
     setLoading(true);
@@ -96,7 +108,18 @@ export default function WalletTab() {
     ]);
     setWallet(walletRes.data ?? { pending_balance: 0, settled_balance: 0, total_earned: 0 });
     setTransactions((txRes.data ?? []) as unknown as Transaction[]);
-    setPayoutRequests(payoutRes.data ?? []);
+    const reqs = (payoutRes.data ?? []) as PayoutRequest[];
+    setPayoutRequests(reqs);
+    // Өмнөх хүсэлтийн дансыг автоматаар бөглөнө
+    const last = reqs.find(r => r.bank_info?.account_number);
+    if (last) {
+      setBankName(b => b || last.bank_info.bank_name || '');
+      setAccountNumber(a => a || last.bank_info.account_number || '');
+      setAccountHolder(h => h || last.bank_info.account_holder || '');
+    }
+    const { data: minRow } = await supabase.from('platform_settings').select('value').eq('key', 'payout_min').maybeSingle();
+    const m = Number((minRow as { value?: unknown } | null)?.value);
+    if (Number.isFinite(m) && m > 0) setMinPayout(m);
     setLoading(false);
   }
 
@@ -107,8 +130,8 @@ export default function WalletTab() {
       setPayoutError(`Хамгийн бага дүн ₮${MIN_PAYOUT.toLocaleString()}`);
       return;
     }
-    if ((wallet?.settled_balance ?? 0) < amount) {
-      setPayoutError('Тооцоологдсон үлдэгдэл хүрэлцэхгүй байна');
+    if (available < amount) {
+      setPayoutError('Үлдэгдэл хүрэлцэхгүй байна');
       return;
     }
     if (!bankName || !accountNumber.trim() || !accountHolder.trim()) {
@@ -117,11 +140,9 @@ export default function WalletTab() {
     }
 
     setPayoutSubmitting(true);
-    const { error } = await supabase.from('payout_requests').insert({
-      user_id: profile!.id,
-      amount,
-      status: 'pending',
-      bank_info: { bank_name: bankName, account_number: accountNumber.trim(), account_holder: accountHolder.trim() },
+    const { error } = await supabase.rpc('request_payout', {
+      p_amount: amount,
+      p_bank: { bank_name: bankName, account_number: accountNumber.trim(), account_holder: accountHolder.trim() },
     });
 
     if (error) {
@@ -129,7 +150,7 @@ export default function WalletTab() {
     } else {
       setPayoutSuccess(true);
       setShowPayoutForm(false);
-      setBankName(''); setAccountNumber(''); setAccountHolder(''); setPayoutAmount('');
+      setPayoutAmount('');
       await load();
     }
     setPayoutSubmitting(false);
@@ -143,8 +164,7 @@ export default function WalletTab() {
     );
   }
 
-  const settledBalance = Number(wallet?.settled_balance ?? 0);
-  const canRequestPayout = settledBalance >= MIN_PAYOUT;
+  const canRequestPayout = available >= MIN_PAYOUT;
   const hasPendingPayout = payoutRequests.some(p => p.status === 'pending');
 
   return (
@@ -152,21 +172,21 @@ export default function WalletTab() {
       {/* ── Balance cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <BalanceCard
-          label="Хүлээгдэж буй"
-          sublabel="Pending balance"
-          value={wallet?.pending_balance ?? 0}
-          iconBg="bg-amber-500/10"
-          iconColor="text-amber-400"
-          icon={<Clock className="w-5 h-5" />}
-        />
-        <BalanceCard
-          label="Тооцоологдсон"
-          sublabel="Settled balance"
-          value={wallet?.settled_balance ?? 0}
+          label="Татах боломжтой"
+          sublabel="Таны данс руу шилжүүлэх боломжтой дүн"
+          value={available}
           iconBg="bg-green-500/10"
           iconColor="text-green-400"
           icon={<CheckCircle2 className="w-5 h-5" />}
           highlight
+        />
+        <BalanceCard
+          label="Шилжүүлэг хүлээгдэж буй"
+          sublabel="Илгээсэн хүсэлт"
+          value={payoutRequests.filter(r => r.status === 'pending').reduce((s2, r) => s2 + Number(r.amount), 0)}
+          iconBg="bg-amber-500/10"
+          iconColor="text-amber-400"
+          icon={<Clock className="w-5 h-5" />}
         />
         <BalanceCard
           label="Нийт орлого"
@@ -215,15 +235,14 @@ export default function WalletTab() {
             <div className="mt-4 flex items-center gap-2.5 bg-white/5 rounded-xl px-4 py-3">
               <AlertCircle className="w-4 h-4 text-stone-500 flex-shrink-0" />
               <p className="text-stone-500 text-sm">
-                Тооцоологдсон үлдэгдэл ₮{MIN_PAYOUT.toLocaleString()}-аас бага байна.
-                Мөнгө татахын тулд тооцоо хийлгэнэ үү.
+                Үлдэгдэл ₮{MIN_PAYOUT.toLocaleString()}-өөс бага байна. Борлуулалт нэмэгдэхээр мөнгө татах боломжтой болно.
               </p>
             </div>
           )}
           {hasPendingPayout && !showPayoutForm && (
             <div className="mt-4 flex items-center gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
               <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <p className="text-amber-400 text-sm">Хүлээгдэж буй хүсэлт байна. Администратор хянаж байна.</p>
+              <p className="text-amber-400 text-sm">Хүсэлт илгээгдсэн. Админ таны данс руу шилжүүлмэгц «Олгосон» болно (ихэвчлэн 1–2 ажлын өдөр).</p>
             </div>
           )}
         </div>
@@ -248,10 +267,10 @@ export default function WalletTab() {
                   value={payoutAmount}
                   onChange={e => setPayoutAmount(e.target.value)}
                   placeholder={`Min ₮${MIN_PAYOUT.toLocaleString()}`}
-                  max={settledBalance}
+                  max={available}
                   className="w-full bg-white/5 border border-white/10 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm"
                 />
-                <p className="text-stone-600 text-xs mt-1">Боломжтой: ₮{settledBalance.toLocaleString()}</p>
+                <p className="text-stone-600 text-xs mt-1">Боломжтой: ₮{available.toLocaleString()} <button type="button" onClick={() => setPayoutAmount(String(Math.floor(available)))} className="text-amber-400 underline ml-1">Бүгдийг</button></p>
               </div>
 
               <div>
@@ -420,7 +439,7 @@ export default function WalletTab() {
                       </td>
                       {/* Дүн */}
                       <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${meta.color}`}>
-                        {meta.sign}₮{Number(tx.amount).toLocaleString()}
+                        {meta.sign}₮{Math.abs(Number(tx.amount)).toLocaleString()}
                       </td>
                       {/* Төлөв */}
                       <td className="px-6 py-3 text-right">
