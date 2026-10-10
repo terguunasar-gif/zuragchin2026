@@ -25,6 +25,10 @@ import MyPurchasesPage from './pages/MyPurchasesPage';
 import BoothResultPage from './pages/booth/BoothResultPage';
 import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
 import OrganizerRequestsPage from './pages/organizer/OrganizerRequestsPage';
+import AlbumActivatePage from './pages/albums/AlbumActivatePage';
+import PrintRequestsPage from './pages/organizer/PrintRequestsPage';
+import AlbumListingPage from './pages/albums/AlbumListingPage';
+import ExploreAlbumsPage from './pages/ExploreAlbumsPage';
 
 export default function App() {
   return (
@@ -40,6 +44,10 @@ export default function App() {
           <Route
             path="/dashboard"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/print-requests"
+            element={<ProtectedRoute><PrintRequestsPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/requests"
@@ -62,6 +70,14 @@ export default function App() {
             element={<ProtectedRoute><PhotoUploadPage /></ProtectedRoute>}
           />
           <Route
+            path="/dashboard/albums/:albumId/listing"
+            element={<ProtectedRoute><AlbumListingPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/albums/:albumId/activate"
+            element={<ProtectedRoute><AlbumActivatePage /></ProtectedRoute>}
+          />
+          <Route
             path="/dashboard/albums/:albumId/photos"
             element={<ProtectedRoute><AlbumPhotosPage /></ProtectedRoute>}
           />
@@ -78,6 +94,7 @@ export default function App() {
             element={<AdminRoute><AdminDashboard /></AdminRoute>}
           />
           <Route path="/listings" element={<EventListingsPage />} />
+          <Route path="/explore" element={<ExploreAlbumsPage />} />
           <Route path="/photographers" element={<PhotographersPage />} />
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />

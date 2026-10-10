@@ -434,8 +434,14 @@ export default function AlbumEditPage() {
             <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <span className="w-6 h-6 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 text-xs">💧</span>
-                Усан тэмдгийн тохиргоо
+                {isFree ? 'Брэнд: лого, мэндчилгээний үг' : 'Усан тэмдгийн тохиргоо'}
               </h2>
+              {isFree && (
+                <p className="text-emerald-200/80 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 leading-relaxed">
+                  Үнэгүй хуваалцах цомогт текст, лого давхарга нь <b>шинээр оруулах</b> бүх зургийн буланд суугдаж, зочдын татах зурагт ч гарна.
+                  Өмнө оруулсан зурагт нөлөөлөхгүй. «Битүү тамга» хэрэглэгдэхгүй.
+                </p>
+              )}
 
               {/* Layer tabs */}
               <div className="flex flex-wrap gap-2">

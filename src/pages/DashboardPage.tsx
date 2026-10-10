@@ -21,6 +21,10 @@ interface Album {
   created_at: string;
   expires_at?: string | null;
   files_purged_at?: string | null;
+  is_free?: boolean;
+  free_activated?: boolean;
+  photo_limit?: number | null;
+  listed_until?: string | null;
 }
 
 interface Purchase {
@@ -48,6 +52,8 @@ export default function DashboardPage() {
     });
   }
   const [pendingCount, setPendingCount] = useState(0);
+  // Үнэгүй цомгийн шинэ угаалгах хүсэлт
+  const [printReqCount, setPrintReqCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [printOrders, setPrintOrders] = useState<any[]>([]);
@@ -80,6 +86,7 @@ export default function DashboardPage() {
     const roles: string[] = profile.role ?? [];
     if (roles.includes('organizer')) { loadOrganizerAlbums(); loadPendingCount(); }
     if (roles.includes('buyer')) { loadPurchases(); loadPrintOrders(); }
+    if (roles.includes('organizer') || roles.includes('photographer')) loadPrintRequestCount();
   }, [profile]);
 
   useEffect(() => {
@@ -96,7 +103,9 @@ export default function DashboardPage() {
     const uid = profile!.id;
     const q = (cols: string) => supabase.from('albums').select(cols).eq('owner_id', uid)
       .order('created_at', { ascending: false }).limit(50);
-    let { data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at');
+    let { data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at, is_free, free_activated, photo_limit, listed_until');
+    if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at, is_free, free_activated, photo_limit'));
+    if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at'));
     // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр
     if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at'));
     if (error) console.error('loadOrganizerAlbums:', error);
@@ -116,6 +125,11 @@ export default function DashboardPage() {
       console.error('deleteAlbum error:', error);
       alert('Устгахад алдаа гарлаа: ' + error.message);
     }
+  }
+
+  async function loadPrintRequestCount() {
+    const { count, error } = await supabase.from('print_requests').select('id', { count: 'exact', head: true }).eq('status', 'new');
+    setPrintReqCount(error ? null : (count ?? 0));
   }
 
   async function loadPendingCount() {
@@ -346,6 +360,9 @@ export default function DashboardPage() {
               <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              {printReqCount !== null && (
+                <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
+              )}
             </>
           )}
           {activeRole === 'organizer' && isOrganizer && (
@@ -354,6 +371,9 @@ export default function DashboardPage() {
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Хүлээгдэж буй" value={walletStr} onClick={scrollToSales} />
+              {printReqCount !== null && (
+                <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
+              )}
             </>
           )}
           {isAdmin && (
@@ -404,6 +424,34 @@ export default function DashboardPage() {
                         <Calendar className="w-3.5 h-3.5" />
                         {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </div>
+                      {/* Үнэгүй хуваалцах цомог: багцын төлөв */}
+                      {album.is_free && (
+                        album.free_activated ? (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/activate`); }}
+                            className="mt-2 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                            🎁 Үнэгүй хуваалцах · {album.photo_limit} хүртэл зураг
+                          </button>
+                        ) : (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/activate`); }}
+                            className="mt-2 w-full text-xs font-semibold text-stone-950 bg-emerald-400 hover:bg-emerald-300 px-3 py-2 rounded-lg">
+                            🎁 Багц сонгож идэвхжүүлэх
+                          </button>
+                        )
+                      )}
+                      {/* Худалдах цомог: нүүр хуудсанд нийтлэх */}
+                      {!album.is_free && album.status === 'active' && 'listed_until' in album && (
+                        album.listed_until && new Date(album.listed_until).getTime() > Date.now() ? (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/listing`); }}
+                            className="mt-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                            📣 Нүүр хуудсанд · {Math.max(1, Math.ceil((new Date(album.listed_until).getTime() - Date.now()) / 86400000))} хоног
+                          </button>
+                        ) : (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/dashboard/albums/${album.id}/listing`); }}
+                            className="mt-2 text-[11px] text-stone-300 hover:text-amber-300 bg-white/5 border border-white/10 hover:border-amber-500/30 px-2 py-0.5 rounded-md">
+                            📣 Нүүр хуудсанд нийтлэх
+                          </button>
+                        )
+                      )}
                       {/* Expiry countdown */}
                       {(() => {
                         const days = albumExpiryDays(album);

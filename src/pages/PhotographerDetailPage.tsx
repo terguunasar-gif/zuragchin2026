@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
+import PublicAlbumCard from '../components/PublicAlbumCard';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
 
@@ -17,6 +19,7 @@ export default function PhotographerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
+  const [albums, setAlbums] = useState<PublicAlbum[]>([]);
 
   useEffect(() => {
     if (id) loadProfile();
@@ -31,6 +34,7 @@ export default function PhotographerDetailPage() {
       .maybeSingle();
     setP(data);
     setLoading(false);
+    if (data?.user_id) fetchPublicAlbums({ photographer: data.user_id, limit: 12 }).then(setAlbums).catch(() => setAlbums([]));
   }
 
   function copyZurId() {
@@ -240,6 +244,15 @@ export default function PhotographerDetailPage() {
             )}
           </div>
         </div>
+
+        {albums.length > 0 && (
+          <section className="mt-10">
+            <h2 className="text-white text-xl font-bold mb-5">Цомгууд</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {albums.map(a => <PublicAlbumCard key={a.id} album={a} photographerId={p.user_id} />)}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

@@ -15,11 +15,18 @@ interface WatermarkLayer {
 }
 
 interface WatermarkOptions {
-  type: 'text' | 'image' | 'layers';
+  /** 'none' — үнэгүй хуваалцах цомог: тамгагүй, зөвхөн жижигрүүлсэн preview */
+  type: 'text' | 'image' | 'layers' | 'none';
   value: string;
   position: WatermarkPosition;
   opacity?: number;
   imageSize?: number;
+  /** Preview-ийн хамгийн их өргөн/өндөр (px) */
+  maxSize?: number;
+  /** Брэнд горим (үнэгүй цомог): зөвхөн булангийн лого/текст, давтагдах хамгаалалтын тамгагүй */
+  brandOnly?: boolean;
+  /** JPEG чанар (0–1) */
+  quality?: number;
 }
 
 const DEFAULT_TILED_TEXT = 'zuragchin.mn';
@@ -30,18 +37,23 @@ export async function applyWatermark(
 ): Promise<Blob> {
   const img = await loadImage(sourceFile);
   const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
+  const scale = opts.maxSize ? Math.min(1, opts.maxSize / Math.max(img.naturalWidth, img.naturalHeight)) : 1;
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
   const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-  if (opts.type === 'layers') {
+  if (opts.type === 'none') {
+    // тамгагүй
+  } else if (opts.type === 'layers') {
     let hasTiled = false;
     try {
       const layers: WatermarkLayer[] = JSON.parse(opts.value);
       hasTiled = layers.some(l => l.type === 'tiled-text' && !!l.text);
       for (const layer of layers) {
-        if (layer.type === 'tiled-text' && layer.text) {
+        if (layer.type === 'tiled-text' && opts.brandOnly) {
+          continue;
+        } else if (layer.type === 'tiled-text' && layer.text) {
           // Бүх зургийг бүрхэх давтагдах текст тамга
           await applyTextWatermarkTiled(
             ctx, canvas.width, canvas.height,
@@ -66,7 +78,7 @@ export async function applyWatermark(
     }
     // Цомогт давтагдах тамга тохируулаагүй ч зургийг хамгаалахын тулд
     // бүх зургийг бүрхэх нарийн "zuragchin.mn" тамгыг заавал нэмнэ.
-    if (!hasTiled) {
+    if (!hasTiled && !opts.brandOnly) {
       await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, DEFAULT_TILED_TEXT, 0.3);
     }
   } else if (opts.type === 'text' && opts.value) {
@@ -79,7 +91,7 @@ export async function applyWatermark(
     canvas.toBlob(
       blob => (blob ? resolve(blob) : reject(new Error('Canvas toBlob failed'))),
       'image/jpeg',
-      0.88,
+      opts.quality ?? 0.88,
     );
   });
 }

@@ -7,7 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const QPAY_BASE = "https://merchant.qpay.mn/v2";
+// Туршилтын орчин: QPAY_BASE_URL=https://merchant-sandbox.qpay.mn/v2
+const QPAY_BASE = (Deno.env.get("QPAY_BASE_URL") || "https://merchant.qpay.mn/v2").replace(/\/+$/, "");
 const QPAY_USERNAME = Deno.env.get("QPAY_USERNAME") ?? "";
 const QPAY_PASSWORD = Deno.env.get("QPAY_PASSWORD") ?? "";
 const QPAY_INVOICE_CODE = Deno.env.get("QPAY_INVOICE_CODE") ?? "";
@@ -138,6 +139,28 @@ Deno.serve(async (req: Request) => {
 
     console.log("REQUEST PATH:", path, "METHOD:", req.method);
 
+    // ── QPay тохиргоо шалгах (нууц утгыг харуулахгүй) ──
+    if (req.method === "GET" && path === "/health") {
+      const report: Record<string, unknown> = {
+        environment: QPAY_BASE.includes("sandbox") ? "sandbox (туршилт)" : "production (жинхэнэ)",
+        QPAY_USERNAME: QPAY_USERNAME ? "✓ байна" : "✗ ДУТУУ",
+        QPAY_PASSWORD: QPAY_PASSWORD ? "✓ байна" : "✗ ДУТУУ",
+        QPAY_INVOICE_CODE: QPAY_INVOICE_CODE ? "✓ байна" : "✗ ДУТУУ",
+      };
+      if (QPAY_USERNAME && QPAY_PASSWORD) {
+        try {
+          await qpayToken();
+          report.token = "✓ QPay нэвтрэлт амжилттай";
+        } catch (e) {
+          report.token = "✗ " + (e instanceof Error ? e.message : String(e));
+        }
+      } else {
+        report.token = "✗ Нэвтрэх мэдээлэл дутуу";
+      }
+      report.ready = String(report.token).startsWith("✓") && !!QPAY_INVOICE_CODE;
+      return json(report);
+    }
+
     // CALLBACK
     if (req.method === "POST" && path === "/callback") {
       const body = await req.json().catch(() => ({}));
@@ -149,6 +172,8 @@ Deno.serve(async (req: Request) => {
         const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
         await processPayment(db, invoiceId, paid.paymentId, paid.paidAmount);
         await processExtension(db, invoiceId, paid.paymentId, paid.paidAmount);
+        await processPackage(db, invoiceId, paid.paymentId, paid.paidAmount);
+        await processListing(db, invoiceId, paid.paymentId, paid.paidAmount);
       }
       return json({ ok: true });
     }
@@ -411,6 +436,114 @@ Deno.serve(async (req: Request) => {
     }
 
     // SIGNED URLS
+    // ── ҮНЭГҮЙ ЦОМОГ: багцын нэхэмжлэх (зөвхөн цомгийн эзэн / админ) ──
+    if (req.method === "POST" && path === "/package-invoice") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { albumId, packageCode } = await req.json() as { albumId: string; packageCode: string };
+      const { data: album } = await db.from("albums").select("id, name, title, owner_id, is_free").eq("id", albumId).maybeSingle();
+      if (!album) return json({ error: "Цомог олдсонгүй" }, 404);
+      if (album.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
+      if (!album.is_free) return json({ error: "Цомог «Үнэгүй хуваалцах» горимд биш байна" }, 400);
+      const pkg = (await freePackages(db)).find(p => p.code === packageCode);
+      if (!pkg || !(pkg.price > 0)) return json({ error: "Багц олдсонгүй" }, 400);
+      const { count } = await db.from("photo_uploads").select("id", { count: "exact", head: true })
+        .eq("album_id", albumId).neq("source", "ai_booth");
+      if ((count ?? 0) > pkg.photos) {
+        return json({ error: `Цомогт ${count} зураг байна — «${pkg.name}» багц ${pkg.photos} хүртэл зурагтай. Илүү том багц сонгоно уу.` }, 400);
+      }
+      const token = await qpayToken();
+      const invoice = await qpayCreateInvoice(token, {
+        invoiceCode: QPAY_INVOICE_CODE,
+        senderName: "Zuragchin.mn",
+        senderPhone: "",
+        description: `Zuragchin.mn - ${pkg.name} багц (${pkg.photos} зураг, ${pkg.days} хоног)`,
+        amount: pkg.price,
+        callbackUrl: `${SUPABASE_URL}/functions/v1/qpay/callback`,
+      });
+      const { error: insErr } = await db.from("album_package_orders").insert({
+        album_id: albumId, package_code: pkg.code, photos: pkg.photos, days: pkg.days, amount: pkg.price,
+        qpay_invoice_id: invoice.invoice_id, created_by: uid,
+      });
+      if (insErr) throw new Error(`DB insert failed: ${insErr.message}`);
+      return json({ invoiceId: invoice.invoice_id, qrImage: invoice.qr_image, qrText: invoice.qr_text, urls: invoice.urls ?? [], amount: pkg.price });
+    }
+
+    // ── ҮНЭГҮЙ ЦОМОГ: багцын төлбөр шалгах ──
+    if (req.method === "GET" && path.startsWith("/check-package/")) {
+      const invoiceId = path.replace("/check-package/", "").split("?")[0];
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const paid = await verifyPaid(invoiceId);
+      let ok = false;
+      if (paid.isPaid) ok = await processPackage(db, invoiceId, paid.paymentId, paid.paidAmount);
+      return json({ isPaid: ok });
+    }
+
+    // ── НҮҮР ХУУДСАНД НИЙТЛЭХ: нэхэмжлэх (зөвхөн цомгийн эзэн / админ) ──
+    if (req.method === "POST" && path === "/listing-invoice") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { albumId, packageCode } = await req.json() as { albumId: string; packageCode: string };
+      const { data: album } = await db.from("albums")
+        .select("id, name, owner_id, is_free, status, share_link, expires_at, listing_hidden").eq("id", albumId).maybeSingle();
+      if (!album) return json({ error: "Цомог олдсонгүй" }, 404);
+      if (album.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
+      if (album.is_free) return json({ error: "Зөвхөн «Худалдах» горимын цомгийг нийтэлнэ" }, 400);
+      if (album.status !== "active" || !album.share_link) return json({ error: "Цомог идэвхтэй биш байна" }, 400);
+      if (album.listing_hidden) return json({ error: "Энэ цомгийн нийтлэлийг админ хаасан байна" }, 403);
+      if (album.expires_at && new Date(album.expires_at).getTime() < Date.now()) return json({ error: "Цомгийн хугацаа дууссан байна. Эхлээд сунгана уу." }, 400);
+      const { count } = await db.from("photo_uploads").select("id", { count: "exact", head: true })
+        .eq("album_id", albumId).neq("source", "ai_booth");
+      if (!count) return json({ error: "Цомогт зураг алга. Эхлээд зураг оруулна уу." }, 400);
+      const pkg = (await listingPackages(db)).find(p => p.code === packageCode);
+      if (!pkg || !(pkg.price > 0)) return json({ error: "Багц олдсонгүй" }, 400);
+      const token = await qpayToken();
+      const invoice = await qpayCreateInvoice(token, {
+        invoiceCode: QPAY_INVOICE_CODE,
+        senderName: "Zuragchin.mn",
+        senderPhone: "",
+        description: `Zuragchin.mn - нүүр хуудсанд нийтлэх (${pkg.days} хоног)`,
+        amount: pkg.price,
+        callbackUrl: `${SUPABASE_URL}/functions/v1/qpay/callback`,
+      });
+      const { error: insErr } = await db.from("album_listing_orders").insert({
+        album_id: albumId, package_code: pkg.code, days: pkg.days, amount: pkg.price,
+        qpay_invoice_id: invoice.invoice_id, created_by: uid,
+      });
+      if (insErr) throw new Error(`DB insert failed: ${insErr.message}`);
+      return json({ invoiceId: invoice.invoice_id, qrImage: invoice.qr_image, qrText: invoice.qr_text, urls: invoice.urls ?? [], amount: pkg.price });
+    }
+
+    // ── НҮҮР ХУУДСАНД НИЙТЛЭХ: төлбөр шалгах ──
+    if (req.method === "GET" && path.startsWith("/check-listing/")) {
+      const invoiceId = path.replace("/check-listing/", "").split("?")[0];
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const paid = await verifyPaid(invoiceId);
+      let ok = false;
+      if (paid.isPaid) ok = await processListing(db, invoiceId, paid.paymentId, paid.paidAmount);
+      return json({ isPaid: ok });
+    }
+
+    // ── ҮНЭГҮЙ ЦОМОГ: зочин эх зургийг шууд татах холбоос ──
+    if (req.method === "POST" && path === "/free-download") {
+      const { photoId } = await req.json() as { photoId: string };
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: photo } = await db.from("photo_uploads")
+        .select("id, album_id, original_url, filename, source").eq("id", photoId).maybeSingle();
+      if (!photo) return json({ error: "Зураг олдсонгүй" }, 404);
+      if (photo.source === "ai_booth") return json({ error: "AI бүүтийн зураг төлбөртэй" }, 403);
+      const { data: album } = await db.from("albums")
+        .select("is_free, free_activated, status, expires_at").eq("id", photo.album_id).maybeSingle();
+      if (!album?.is_free || !album.free_activated || album.status !== "active") return json({ error: "Үнэгүй татах боломжгүй" }, 403);
+      if (album.expires_at && new Date(album.expires_at).getTime() < Date.now()) return json({ error: "Цомгийн хугацаа дууссан байна" }, 403);
+      const storagePath = String(photo.original_url ?? "").replace(/^photos-original\//, "");
+      const { data: signed } = await db.storage.from("photos-original").createSignedUrl(storagePath, 3600);
+      if (!signed?.signedUrl) return json({ error: "Холбоос үүсгэж чадсангүй" }, 500);
+      return json({ signedUrl: signed.signedUrl, filename: photo.filename ?? "photo.jpg" });
+    }
+
     if (req.method === "POST" && path === "/signed-urls") {
       const { invoiceId } = await req.json() as { invoiceId: string };
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -456,6 +589,78 @@ Deno.serve(async (req: Request) => {
     return json({ error: msg }, 500);
   }
 });
+
+// deno-lint-ignore no-explicit-any
+interface FreePackage { code: string; name: string; photos: number; days: number; price: number }
+// deno-lint-ignore no-explicit-any
+async function freePackages(db: any): Promise<FreePackage[]> {
+  const { data } = await db.from("platform_settings").select("value").eq("key", "free_packages").maybeSingle();
+  const arr = Array.isArray(data?.value) ? data.value : [];
+  // deno-lint-ignore no-explicit-any
+  return arr.map((p: any) => ({ code: String(p.code), name: String(p.name ?? p.code), photos: Number(p.photos), days: Number(p.days), price: Number(p.price) }))
+    .filter((p: FreePackage) => p.code && p.photos > 0 && p.days > 0 && p.price >= 0);
+}
+
+// deno-lint-ignore no-explicit-any
+async function userIdFromRequest(db: any, req: Request): Promise<string | null> {
+  const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return null;
+  const { data } = await db.auth.getUser(jwt);
+  return data?.user?.id ?? null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function isAdmin(db: any, uid: string): Promise<boolean> {
+  const { data: me } = await db.from("users").select("role").eq("id", uid).maybeSingle();
+  const roles = Array.isArray(me?.role) ? me.role : [me?.role];
+  return roles.includes("admin");
+}
+
+/** Багцын төлбөр — цомгийг идэвхжүүлж, платформын орлогыг нэг л удаа бүртгэнэ */
+// deno-lint-ignore no-explicit-any
+async function processPackage(db: any, invoiceId: string, paymentId: string, paidAmount: number | null): Promise<boolean> {
+  const { data: order } = await db.from("album_package_orders").select("amount, status").eq("qpay_invoice_id", invoiceId).maybeSingle();
+  if (!order) return false;
+  if (order.status !== "paid" && paidAmount !== null && paidAmount + 0.5 < Number(order.amount)) {
+    console.log("PACKAGE AMOUNT MISMATCH:", invoiceId, paidAmount, order.amount);
+    return false;
+  }
+  const { data: res, error } = await db.rpc("apply_album_package", { p_invoice_id: invoiceId, p_payment_id: paymentId });
+  if (error) { console.log("PACKAGE APPLY ERROR:", error.message); return false; }
+  if (res === "applied") {
+    const net = Math.round(Number(order.amount) * (1 - QPAY_FEE_RATE) * 100) / 100;
+    await db.rpc("increment_platform_wallet", { p_amount: net });
+  }
+  return res === "applied" || res === "paid";
+}
+
+interface ListingPackage { code: string; name: string; days: number; price: number }
+// deno-lint-ignore no-explicit-any
+async function listingPackages(db: any): Promise<ListingPackage[]> {
+  const { data } = await db.from("platform_settings").select("value").eq("key", "listing_packages").maybeSingle();
+  const arr = Array.isArray(data?.value) ? data.value : [];
+  // deno-lint-ignore no-explicit-any
+  return arr.map((p: any) => ({ code: String(p.code), name: String(p.name ?? p.code), days: Number(p.days), price: Number(p.price) }))
+    .filter((p: ListingPackage) => p.code && p.days > 0 && p.price > 0);
+}
+
+/** Нийтлэлийн төлбөр — хугацааг сунгаж, платформын орлогыг нэг л удаа бүртгэнэ */
+// deno-lint-ignore no-explicit-any
+async function processListing(db: any, invoiceId: string, paymentId: string, paidAmount: number | null): Promise<boolean> {
+  const { data: order } = await db.from("album_listing_orders").select("amount, status").eq("qpay_invoice_id", invoiceId).maybeSingle();
+  if (!order) return false;
+  if (order.status !== "paid" && paidAmount !== null && paidAmount + 0.5 < Number(order.amount)) {
+    console.log("LISTING AMOUNT MISMATCH:", invoiceId, paidAmount, order.amount);
+    return false;
+  }
+  const { data: res, error } = await db.rpc("apply_album_listing", { p_invoice_id: invoiceId, p_payment_id: paymentId });
+  if (error) { console.log("LISTING APPLY ERROR:", error.message); return false; }
+  if (res === "applied") {
+    const net = Math.round(Number(order.amount) * (1 - QPAY_FEE_RATE) * 100) / 100;
+    await db.rpc("increment_platform_wallet", { p_amount: net });
+  }
+  return res === "applied" || res === "paid";
+}
 
 // deno-lint-ignore no-explicit-any
 async function settingNumber(db: any, key: string, fallback: number): Promise<number> {

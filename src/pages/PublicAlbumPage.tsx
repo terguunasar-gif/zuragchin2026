@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace,
+  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, withTimeout } from '../lib/supabase';
@@ -15,6 +15,10 @@ import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePic
 import FaceSearchModal from '../components/FaceSearchModal';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
+import SaveImageViewer from '../components/SaveImageViewer';
+import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
+import { saveImageToDevice } from '../lib/browserEnv';
+import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 
@@ -34,6 +38,7 @@ export interface AlbumData {
   watermark_opacity?: number;
   watermark_logo_url?: string;
   expires_at?: string | null;
+  free_activated?: boolean;
 }
 
 export interface PhotoData {
@@ -118,11 +123,46 @@ export default function PublicAlbumPage() {
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
   const [folders, setFolders] = useState<AlbumFolder[]>([]);
   const [folderFilter, setFolderFilter] = useState<FolderFilter>('all');
+  // Зурагчнаар шүүх (?ph=<photographer_id>)
+  const [searchParams] = useSearchParams();
+  const [phFilter, setPhFilter] = useState<string>(searchParams.get('ph') || '');
+  const [albumPhotographers, setAlbumPhotographers] = useState<{ photographer_id: string; name: string; photo_count: number }[]>([]);
   // Царайгаар хайх
   const [faceEnabled, setFaceEnabled] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
   const [faceIds, setFaceIds] = useState<string[] | null>(null);
   const [aiPrice, setAiPrice] = useState<number>(AI_ALBUM_PRICE_DEFAULT);
+  const { profile } = useAuth();
+  // Үнэгүй хуваалцах цомог: эх зургийг шууд татах
+  const [freeBusy, setFreeBusy] = useState<string | null>(null);
+  // Үнэгүй цомгийн угаалгах хүсэлт (төлбөргүй)
+  const [printPicks, setPrintPicks] = useState<PrintPick[]>([]);
+  const [printReqOpen, setPrintReqOpen] = useState(false);
+  const togglePrintPick = (photoId: string, previewUrl: string) => setPrintPicks(prev =>
+    prev.some(p => p.photoId === photoId) ? prev.filter(p => p.photoId !== photoId) : [...prev, { photoId, previewUrl, size: '10x15', qty: 1 }]);
+  const [freeViewer, setFreeViewer] = useState<{ url: string; name: string; hint: 'manual' | 'downloaded' | 'shared' } | null>(null);
+  async function freeDownload(photoId: string) {
+    setFreeBusy(photoId);
+    try {
+      const res = await fetch(`${QPAY_FN_URL}/free-download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ photoId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.signedUrl) throw new Error(data.error || 'error');
+      try {
+        const { result, blobUrl } = await saveImageToDevice(data.signedUrl, data.filename);
+        if (result !== 'shared') setFreeViewer({ url: result === 'manual' ? data.signedUrl : (blobUrl || data.signedUrl), name: data.filename, hint: result });
+      } catch {
+        setFreeViewer({ url: data.signedUrl, name: data.filename, hint: 'manual' });
+      }
+    } catch (e) {
+      window.alert(t('Татаж чадсангүй:') + ' ' + (e instanceof Error ? e.message : ''));
+    } finally {
+      setFreeBusy(null);
+    }
+  }
   const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
@@ -174,16 +214,21 @@ export default function PublicAlbumPage() {
     // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let albumData: any = null;
+    const FULL_COLS = BASE_COLS + ', expires_at, files_purged_at, free_activated';
     let withExpiry;
     try {
-      withExpiry = await withTimeout(supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle(), 15000);
+      withExpiry = await withTimeout(supabase.from('albums').select(FULL_COLS).or(byLink).maybeSingle(), 15000);
     } catch {
       // Сүлжээ удаан — нэг удаа дахин оролдоно, бүтэхгүй бол «олдсонгүй» харуулна
       try {
-        withExpiry = await withTimeout(supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle(), 15000);
+        withExpiry = await withTimeout(supabase.from('albums').select(FULL_COLS).or(byLink).maybeSingle(), 15000);
       } catch {
         setNotFound(true); setLoading(false); return;
       }
+    }
+    // Багцын багана байхгүй (SQL ажиллуулаагүй) бол хугацааны баганатайгаар
+    if (withExpiry.error) {
+      withExpiry = await supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle();
     }
     if (withExpiry.error) {
       ({ data: albumData } = await supabase.from('albums').select(BASE_COLS).or(byLink).eq('status', 'active').maybeSingle());
@@ -240,6 +285,8 @@ export default function PublicAlbumPage() {
       .order('created_at', { ascending: true });
     setFolders((folderData ?? []) as AlbumFolder[]);
     albumFaceSearchEnabled(albumData.id).then(setFaceEnabled);
+    supabase.rpc('album_public_photographers', { p_album_id: albumData.id })
+      .then(({ data }) => setAlbumPhotographers((data ?? []) as { photographer_id: string; name: string; photo_count: number }[]));
 
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
@@ -292,7 +339,7 @@ export default function PublicAlbumPage() {
     ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
     ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
   ];
-  const visiblePhotos = photos.filter(p =>
+  const visiblePhotos = photos.filter(p => !phFilter || p.photographer_id === phFilter).filter(p =>
     folderFilter === 'all' ? true
     : folderFilter === 'mine' ? faceSet.has(p.id)
     : folderFilter === 'ai' ? isAi(p)
@@ -331,6 +378,25 @@ export default function PublicAlbumPage() {
       </div>
     );
   }
+
+  // Үнэгүй хуваалцах цомог идэвхжээгүй — зочдод харуулахгүй, эзэнд идэвхжүүлэх товч
+  const isOwner = !!profile && profile.id === album.owner_id;
+  const freeMode = album.is_free && album.free_activated !== undefined;
+  if (freeMode && !album.free_activated && !isOwner) {
+    return (
+      <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
+        <LanguagePickerModal />
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FolderOpen className="w-8 h-8 text-emerald-400" />
+          </div>
+          <p className="text-white font-semibold text-xl mb-2">{album.name}</p>
+          <p className="text-stone-400 text-sm">{t('Цомог бэлтгэгдэж байна. Удахгүй нээгдэнэ.')}</p>
+        </div>
+      </div>
+    );
+  }
+  const freeActive = freeMode && !!album.free_activated;
 
   // watermark_value-с layers parse хийх (шинэ формат)
   let wmLayers: WatermarkLayer[] = [];
@@ -463,6 +529,13 @@ export default function PublicAlbumPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {freeMode && !album.free_activated && isOwner && (
+          <div className="mb-6 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center gap-3 justify-between">
+            <p className="text-emerald-200 text-sm">🎁 Энэ цомог идэвхжээгүй тул зочдод харагдахгүй байна (зөвхөн танд харагдаж байна).</p>
+            <button onClick={() => navigate(`/dashboard/albums/${album.id}/activate`)}
+              className="bg-emerald-400 hover:bg-emerald-300 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl">Багц сонгож идэвхжүүлэх</button>
+          </div>
+        )}
         {faceEnabled && photos.length > 0 && (
           <div className="mb-5 flex items-center gap-3 flex-wrap">
             <button onClick={() => setFaceOpen(true)}
@@ -475,6 +548,19 @@ export default function PublicAlbumPage() {
                 {t('Хайлтыг цуцлах')}
               </button>
             )}
+          </div>
+        )}
+        {albumPhotographers.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-1 -mx-1 px-1 items-center">
+            <span className="text-stone-500 text-xs flex-shrink-0">{t('Зурагчин')}:</span>
+            {[{ photographer_id: '', name: t('Бүгд'), photo_count: photos.length }, ...albumPhotographers].map(ph => (
+              <button key={ph.photographer_id || 'all'} onClick={() => setPhFilter(ph.photographer_id)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  phFilter === ph.photographer_id ? 'bg-white text-stone-950 border-white' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}>
+                <span className="whitespace-nowrap">{ph.name}</span>
+                <span className={phFilter === ph.photographer_id ? 'text-stone-600' : 'text-stone-500'}>{ph.photo_count}</span>
+              </button>
+            ))}
           </div>
         )}
         {(folderTabs.length > 1 || faceIds) && (
@@ -509,7 +595,12 @@ export default function PublicAlbumPage() {
                 key={photo.id}
                 photo={photo}
                 album={album}
-                wmLayers={wmLayers}
+                wmLayers={freeMode ? [] : wmLayers}
+                freeDownload={freeActive && photo.source !== 'ai_booth'}
+                freeBusy={freeBusy === photo.id}
+                onFreeDownload={() => freeDownload(photo.id)}
+                printPicked={printPicks.some(p => p.photoId === photo.id)}
+                onTogglePrintPick={() => togglePrintPick(photo.id, photo.watermarked_url)}
                 allowPrint={allowPrint}
                 aiPrice={aiPrice}
                 inCart={cart.filter(c => c.photoId === photo.id)}
@@ -541,7 +632,27 @@ export default function PublicAlbumPage() {
             ))}
           </div>
         )}
+        {freeMode && (
+          <p className="text-center text-stone-600 text-xs mt-10">
+            {t('Энэ цомгийг')} <a href="/" className="text-amber-500 hover:underline">Zuragchin.mn</a>{t('-ээр бүтээв')}
+          </p>
+        )}
       </main>
+
+      {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}
+
+      {freeActive && printPicks.length > 0 && !printReqOpen && (
+        <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 z-40">
+          <button onClick={() => setPrintReqOpen(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-5 py-3 rounded-2xl shadow-2xl">
+            <Printer className="w-5 h-5" /> {t('Угаалгах хүсэлт илгээх')} · {printPicks.length}
+          </button>
+        </div>
+      )}
+      {printReqOpen && album && (
+        <PrintRequestModal albumId={album.id} picks={printPicks} onChange={setPrintPicks}
+          onClose={() => setPrintReqOpen(false)} onSent={() => setPrintPicks([])} />
+      )}
 
       {cartOpen && (
         <CartSidebar
@@ -578,7 +689,12 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint }: {
+function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick }: {
+  printPicked?: boolean;
+  onTogglePrintPick?: () => void;
+  freeDownload?: boolean;
+  freeBusy?: boolean;
+  onFreeDownload?: () => void;
   photo: PhotoData;
   album: AlbumData;
   wmLayers: WatermarkLayer[];
@@ -643,6 +759,16 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
       </div>
 
       <div className="p-3 space-y-2">
+        {freeDownload ? (
+          <button onClick={onFreeDownload} disabled={freeBusy}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-stone-950 transition-colors">
+            <span className="flex items-center gap-2">
+              {freeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              {t('Татах')}
+            </span>
+            <span className="text-xs">{t('Үнэгүй')}</span>
+          </button>
+        ) : (
         <button onClick={onAddDownload} disabled={downloadInCart}
           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
             downloadInCart
@@ -657,6 +783,14 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
             {downloadPrice === 0 ? t('Үнэгүй') : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
+        )}
+        {freeDownload && onTogglePrintPick && (
+          <button onClick={onTogglePrintPick}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              printPicked ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}>
+            <Printer className="w-3.5 h-3.5" /> {printPicked ? t('Угаалгахаар сонгосон ✓') : t('Угаалгуулах')}
+          </button>
+        )}
 
         {allowPrint && hasPrintPrices && (
           <div>

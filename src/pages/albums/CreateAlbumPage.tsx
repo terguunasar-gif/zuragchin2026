@@ -397,8 +397,15 @@ export default function CreateAlbumPage() {
             </Section>
 
             {/* ── Watermark Layers ── */}
-            <Section title="Усан тэмдгийн тохиргоо" icon={<Type className="w-4 h-4" />}>
+            <Section title={isFree ? 'Брэнд: лого, мэндчилгээний үг' : 'Усан тэмдгийн тохиргоо'} icon={<Type className="w-4 h-4" />}>
               <div className="space-y-4">
+                {isFree && (
+                  <p className="text-emerald-200/80 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 leading-relaxed">
+                    Үнэгүй хуваалцах цомогт хамгаалалтын тамга тавигдахгүй. Энд нэмсэн <b>текст</b> (жишээ нь «Бат ❤ Сараа · 2026.10.08»)
+                    болон <b>лого</b> нь бүх зургийн буланд суугдаж, зочдын татах зурагт ч хамт гарна. «Битүү тамга» хэрэглэгдэхгүй.
+                    Брэнд хэрэггүй бол текст, лого давхаргуудыг устгана уу.
+                  </p>
+                )}
                 <div className="flex items-center gap-2 flex-wrap">
                   {wmLayers.map((layer, idx) => (
                     <button key={layer.id} type="button" onClick={() => setActiveLayerId(layer.id)}
@@ -542,17 +549,25 @@ export default function CreateAlbumPage() {
             <Section title="Үнэлгээ" icon={<span className="text-xs font-bold text-stone-400">₮</span>}>
               <div className="space-y-5">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
-                  <TypeToggleBtn active={isFree} onClick={() => setIsFree(true)} icon={<span className="text-xs font-bold">FREE</span>} label="Үнэгүй татах" />
-                  <TypeToggleBtn active={!isFree} onClick={() => setIsFree(false)} icon={<span className="text-xs font-bold">₮</span>} label="Төлбөртэй татах" />
+                  <TypeToggleBtn active={isFree} onClick={() => setIsFree(true)} icon={<span className="text-xs font-bold">FREE</span>} label="Үнэгүй хуваалцах" />
+                  <TypeToggleBtn active={!isFree} onClick={() => setIsFree(false)} icon={<span className="text-xs font-bold">₮</span>} label="Худалдах" />
                 </div>
+                {isFree && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-xs text-emerald-100/80 leading-relaxed space-y-1.5">
+                    <p className="text-emerald-200 font-semibold text-sm">🎁 Үнэгүй хуваалцах горим</p>
+                    <p>• Зургуудад <b>усан тэмдэг тавигдахгүй</b>, зочид эх зургаа <b>үнэгүй</b> татна.</p>
+                    <p>• Зургаа оруулсны дараа зургийн тоонд тохирох <b>багцыг нэг удаа төлж</b> цомгоо идэвхжүүлнэ
+                      (Туршилт 20 зураг үнэгүй · 100 зураг 15,000₮ · 500 зураг 39,000₮ · 2,000 зураг 79,000₮ — үнэ өөрчлөгдөж болно).</p>
+                    <p>• Идэвхжүүлэх хүртэл зочид цомгийг харахгүй. Самбар дээрх «Багц сонгож идэвхжүүлэх» товчоор төлнө.</p>
+                  </div>
+                )}
                 {!isFree && (
                   <div className="space-y-4">
                     <div className="bg-red-500/8 border border-red-500/20 rounded-xl p-3 flex items-start gap-2.5">
                       <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5"><AlertCircle className="w-3 h-3 text-red-400" /></div>
                       <div className="text-xs text-stone-400 leading-relaxed">
-                        <span className="text-red-400 font-semibold">Анхааруулга:</span> Цомог үүсгэснээс хойш <span className="text-amber-400 font-semibold">21 хоног</span> үнэгүй байршина.
-                        21 хоног дууссаны дараа цомог <span className="text-amber-400 font-semibold">7 хоног</span> идэвхгүй болно.
-                        7 хоног дууссаны дараа цомог <span className="text-red-400 font-semibold">бүр мөсөн устана</span>.
+                        <span className="text-red-400 font-semibold">Анхааруулга:</span> Цомог арга хэмжээний өдрөөс хойш <span className="text-amber-400 font-semibold">30 хоног</span> нээлттэй байна.
+                        Дараа нь хаагдах ба сунгалтын төлбөр төлж дахин нээж болно. Хаагдсанаас хойш <span className="text-amber-400 font-semibold">60 хоногт</span> сунгаагүй бол зургууд <span className="text-red-400 font-semibold">бүрмөсөн устна</span>.
                       </div>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">

@@ -18,6 +18,9 @@ interface AlbumInfo {
   watermark_value: string;
   watermark_position: WatermarkPosition;
   owner_id: string;
+  is_free?: boolean;
+  free_activated?: boolean;
+  photo_limit?: number | null;
 }
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
@@ -101,7 +104,7 @@ export default function PhotoUploadPage() {
     (async () => {
       const { data: albumData } = await supabase
         .from('albums')
-        .select('id, name, event_date, watermark_type, watermark_value, watermark_position, owner_id')
+        .select('id, name, event_date, watermark_type, watermark_value, watermark_position, owner_id, is_free, free_activated, photo_limit')
         .eq('id', albumId)
         .maybeSingle();
 
@@ -194,21 +197,43 @@ export default function PhotoUploadPage() {
     setUploadStarted(true);
     let succeeded = 0;
 
+    // Идэвхжсэн «үнэгүй хуваалцах» цомгийн багцын хязгаар
+    let remaining = Infinity;
+    if (album.is_free && album.free_activated && album.photo_limit) {
+      const { count } = await supabase.from('photo_uploads').select('id', { count: 'exact', head: true })
+        .eq('album_id', album.id).neq('source', 'ai_booth');
+      remaining = Math.max(0, album.photo_limit - (count ?? 0));
+    }
+
     for (const entry of files) {
       if (entry.status === 'done') { succeeded++; continue; }
+      if (remaining <= 0) {
+        setFileStatus(entry.id, { status: 'error', errorMsg: `Багцын хязгаар (${album.photo_limit} зураг) хүрсэн. Илүү том багц авна уу.` });
+        continue;
+      }
       setFileStatus(entry.id, { status: 'processing', progress: 0 });
 
       try {
-        const previewBlob = await applyWatermark(entry.file, {
-          type: album.watermark_type,
-          value: album.watermark_value,
-          position: album.watermark_position,
-          opacity: 0.70,
-        });
+        // «Үнэгүй хуваалцах» цомогт усан тэмдэг тавихгүй (зочид эх зургийг үнэгүй татна)
+        // Үнэгүй цомог: зохион байгуулагчийн лого / мэндчилгээг (булангийн давхарга) эх зурагт ч, preview-д ч суулгана
+        const brand = album.is_free && hasBrandLayers(album);
+        const originalBlob: Blob = brand
+          ? await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, quality: 0.92 })
+          : entry.file;
+        const previewBlob = album.is_free
+          ? await applyWatermark(entry.file, brand
+              ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, maxSize: 1600 }
+              : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
+          : await applyWatermark(entry.file, {
+              type: album.watermark_type,
+              value: album.watermark_value,
+              position: album.watermark_position,
+              opacity: 0.70,
+            });
 
         setFileStatus(entry.id, { progress: 20 });
 
-        const ext = entry.file.name.split('.').pop() ?? 'jpg';
+        const ext = brand ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
         const baseName = `${crypto.randomUUID()}.${ext}`;
         const originalPath = `${profile.id}/${album.id}/${baseName}`;
         const previewPath = `${profile.id}/${album.id}/preview_${baseName.replace(/\.\w+$/, '.jpg')}`;
@@ -217,7 +242,7 @@ export default function PhotoUploadPage() {
 
         const { error: origErr } = await supabase.storage
           .from('photos-original')
-          .upload(originalPath, entry.file, { contentType: entry.file.type, upsert: false });
+          .upload(originalPath, originalBlob, { contentType: brand ? 'image/jpeg' : entry.file.type, upsert: false });
         if (origErr) throw new Error(origErr.message);
 
         setFileStatus(entry.id, { progress: 60 });
@@ -266,6 +291,7 @@ export default function PhotoUploadPage() {
 
         setFileStatus(entry.id, { status: 'done', progress: 100 });
         succeeded++;
+        remaining--;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
         setFileStatus(entry.id, { status: 'error', errorMsg: msg });
@@ -633,4 +659,13 @@ function StatusRow({ label, value, color }: { label: string; value: number; colo
       <span className={`font-semibold ${color}`}>{value}</span>
     </div>
   );
+}
+
+/** Цомогт булангийн лого / текст давхарга байгаа эсэх (давтагдах тамга тооцохгүй) */
+function hasBrandLayers(album: { watermark_type: string; watermark_value: string }): boolean {
+  if (album.watermark_type !== 'layers' || !album.watermark_value) return false;
+  try {
+    const layers = JSON.parse(album.watermark_value) as { type: string; text?: string; imagePreview?: string }[];
+    return Array.isArray(layers) && layers.some(l => (l.type === 'text' && !!l.text?.trim()) || (l.type === 'image' && !!l.imagePreview));
+  } catch { return false; }
 }

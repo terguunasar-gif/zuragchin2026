@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, Image, User, ChevronDown, LogOut, Settings } from 'lucide-react';
+import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
+import PublicAlbumCard from '../components/PublicAlbumCard';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
 
@@ -20,14 +22,6 @@ const fallbackPhotographers = [
   { id: 4, name: 'О. Номин', specialty: 'Мода, Портрет', rating: 4.9, image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=800&h=400&fit=crop', location: 'Улаанбаатар' },
 ];
 
-const featuredAlbums = [
-  { id: 1, title: 'Зуны хурим 2024', photographer: 'Б. Мөнхбаяр', photos: 48, price: '₮25,000', image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=600&h=400&fit=crop' },
-  { id: 2, title: 'Наадам 2024', photographer: 'Г. Батбаяр', photos: 120, price: '₮15,000', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=600&h=400&fit=crop' },
-  { id: 3, title: 'Горхи аялал', photographer: 'Д. Энхтуяа', photos: 85, price: '₮20,000', image: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=600&h=400&fit=crop' },
-  { id: 4, title: 'Загварын шоу', photographer: 'О. Номин', photos: 200, price: '₮30,000', image: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=600&h=400&fit=crop' },
-  { id: 5, title: 'Марафон 2024', photographer: 'Г. Батбаяр', photos: 300, price: '₮10,000', image: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=600&h=400&fit=crop' },
-  { id: 6, title: 'Хөгжмийн шөнө', photographer: 'Д. Энхтуяа', photos: 95, price: '₮18,000', image: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600&h=400&fit=crop' },
-];
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
 
@@ -40,6 +34,7 @@ export default function HomePage() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [realPhotographers, setRealPhotographers] = useState<any[]>([]);
   const [loadingPhotographers, setLoadingPhotographers] = useState(true);
+  const [publicAlbums, setPublicAlbums] = useState<PublicAlbum[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,6 +48,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { loadPhotographers(); }, []);
+  useEffect(() => { fetchPublicAlbums({ limit: 6 }).then(setPublicAlbums).catch(() => setPublicAlbums([])); }, []);
 
   async function loadPhotographers() {
     setLoadingPhotographers(true);
@@ -301,38 +297,22 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Цомгууд */}
-      <section className="py-16 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
-            <button onClick={() => navigate('/albums')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
-              Бүгдийг харах <ChevronRight className="w-4 h-4" />
-            </button>
+      {/* Цомгууд — зөвхөн төлбөртэй нийтлэгдсэн жинхэнэ цомгууд */}
+      {publicAlbums.length > 0 && (
+        <section className="py-16 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
+              <button onClick={() => navigate('/explore')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
+                Бүгдийг харах <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {publicAlbums.map(album => <PublicAlbumCard key={album.id} album={album} />)}
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredAlbums.map(album => (
-              <div key={album.id} onClick={() => navigate('/albums')} className="group cursor-pointer">
-                <div className="relative rounded-2xl overflow-hidden mb-3 aspect-video">
-                  <img src={album.image} alt={album.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
-                  <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
-                    <div>
-                      <p className="text-white font-semibold text-sm">{album.title}</p>
-                      <p className="text-stone-300 text-xs">{album.photographer}</p>
-                    </div>
-                    <div className="bg-amber-500 text-stone-950 font-bold text-xs px-2.5 py-1 rounded-lg">{album.price}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-stone-500 text-xs">
-                  <Image className="w-3.5 h-3.5" />
-                  <span>{album.photos} зураг</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-white/10 py-12 px-6">

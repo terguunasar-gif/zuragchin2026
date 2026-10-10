@@ -29,7 +29,8 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 
-const QPAY_BASE = "https://merchant.qpay.mn/v2";
+// Туршилтын орчин: QPAY_BASE_URL=https://merchant-sandbox.qpay.mn/v2
+const QPAY_BASE = (Deno.env.get("QPAY_BASE_URL") || "https://merchant.qpay.mn/v2").replace(/\/+$/, "");
 const QPAY_USERNAME = Deno.env.get("QPAY_USERNAME") ?? "";
 const QPAY_PASSWORD = Deno.env.get("QPAY_PASSWORD") ?? "";
 const QPAY_INVOICE_CODE = Deno.env.get("QPAY_INVOICE_CODE") ?? "";

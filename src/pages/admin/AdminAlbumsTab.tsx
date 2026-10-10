@@ -17,6 +17,8 @@ interface AdminAlbum {
   total_revenue: number;
   expires_at: string | null;
   files_purged_at: string | null;
+  listed_until: string | null;
+  listing_hidden: boolean;
 }
 
 const STATUS_CFG: Record<string, string> = {
@@ -36,7 +38,8 @@ export default function AdminAlbumsTab() {
 
   useEffect(() => {
     let list = albums;
-    if (statusFilter !== 'all') list = list.filter(a => a.status === statusFilter);
+    if (statusFilter === 'listed') list = list.filter(a => isListed(a));
+    else if (statusFilter !== 'all') list = list.filter(a => a.status === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(a => a.name.toLowerCase().includes(q) || a.owner_name.toLowerCase().includes(q));
@@ -50,7 +53,8 @@ export default function AdminAlbumsTab() {
     const COLS = 'id,name,event_date,status,share_link,download_price,created_at,owner_id,users(name,email)';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let albumsData: any[] | null = null;
-    const withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at').order('created_at', { ascending: false });
+    let withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at,listed_until,listing_hidden').order('created_at', { ascending: false });
+    if (withExpiry.error) withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at').order('created_at', { ascending: false });
     if (withExpiry.error) {
       ({ data: albumsData } = await supabase.from('albums').select(COLS).order('created_at', { ascending: false }));
     } else {
@@ -94,6 +98,8 @@ export default function AdminAlbumsTab() {
       total_revenue: salesMap[a.id]?.revenue ?? 0,
       expires_at: a.expires_at ?? null,
       files_purged_at: a.files_purged_at ?? null,
+      listed_until: a.listed_until ?? null,
+      listing_hidden: !!a.listing_hidden,
     }));
 
     setAlbums(enriched);
@@ -124,7 +130,7 @@ export default function AdminAlbumsTab() {
           />
         </div>
         <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
-          {['all', 'active', 'draft', 'closed'].map(s => (
+          {['all', 'active', 'draft', 'closed', 'listed'].map(s => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -132,7 +138,7 @@ export default function AdminAlbumsTab() {
                 statusFilter === s ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-white'
               }`}
             >
-              {s === 'all' ? 'Бүгд' : s}
+              {s === 'all' ? 'Бүгд' : s === 'listed' ? 'Нийтлэгдсэн' : s}
             </button>
           ))}
         </div>
@@ -160,6 +166,7 @@ export default function AdminAlbumsTab() {
                 <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Эзэмшигч</th>
                 <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Төлөв</th>
                 <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Хаагдах</th>
+                <th className="text-left px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Нүүр хуудас</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Зурагнууд</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Борлуулалт</th>
                 <th className="text-right px-4 py-3 text-stone-500 font-medium text-xs uppercase tracking-wider">Орлого</th>
@@ -169,7 +176,7 @@ export default function AdminAlbumsTab() {
             <tbody className="divide-y divide-white/5">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-stone-500 text-sm">
+                  <td colSpan={9} className="px-6 py-12 text-center text-stone-500 text-sm">
                     Цомог олдсонгүй.
                   </td>
                 </tr>
@@ -198,6 +205,7 @@ export default function AdminAlbumsTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3"><ExpiryCell expiresAt={a.expires_at} purgedAt={a.files_purged_at} /></td>
+                  <td className="px-4 py-3"><ListingCell album={a} onChange={hidden => setAlbums(prev => prev.map(x => (x.id === a.id ? { ...x, listing_hidden: hidden } : x)))} /></td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.photo_count}</td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.total_sales}</td>
                   <td className="px-4 py-3 text-right text-green-400 font-semibold text-sm">
@@ -240,6 +248,38 @@ function ExpiryCell({ expiresAt, purgedAt }: { expiresAt: string | null; purgedA
       <p className={`text-xs ${days <= 0 ? 'text-red-400 font-semibold' : days <= 7 ? 'text-amber-400' : 'text-stone-500'}`}>
         {days <= 0 ? `Дууссан (${-days} хоногийн өмнө)` : `${days} хоног үлдсэн`}
       </p>
+    </div>
+  );
+}
+
+const isListed = (a: AdminAlbum) => !!a.listed_until && new Date(a.listed_until).getTime() > Date.now();
+
+/** Нүүр хуудсанд нийтлэгдсэн эсэх + админ нуух/харуулах */
+function ListingCell({ album, onChange }: { album: AdminAlbum; onChange: (hidden: boolean) => void }) {
+  const [busy, setBusy] = useState(false);
+  if (!album.listed_until) return <span className="text-stone-600 text-xs">—</span>;
+  const d = new Date(album.listed_until);
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  async function toggle() {
+    const next = !album.listing_hidden;
+    if (next && !confirm('Энэ цомгийг нүүр хуудаснаас нуух уу?')) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('admin_set_listing_hidden', { p_album_id: album.id, p_hidden: next });
+    setBusy(false);
+    if (error) { alert(error.message); return; }
+    onChange(next);
+  }
+  return (
+    <div className="whitespace-nowrap space-y-1">
+      <p className={`text-xs ${album.listing_hidden ? 'text-red-400' : days > 0 ? 'text-amber-300' : 'text-stone-500'}`}>
+        {album.listing_hidden ? 'Нуусан' : days > 0 ? `📣 ${days} хоног` : 'Дууссан'}
+      </p>
+      {days > 0 && (
+        <button onClick={toggle} disabled={busy}
+          className="text-[11px] px-2 py-0.5 rounded-md border border-white/10 text-stone-300 hover:bg-white/10 disabled:opacity-50">
+          {album.listing_hidden ? 'Буцааж харуулах' : 'Нуух'}
+        </button>
+      )}
     </div>
   );
 }
