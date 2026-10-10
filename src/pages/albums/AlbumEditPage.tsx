@@ -316,15 +316,26 @@ export default function AlbumEditPage() {
   }
 
   async function handleLogoUpload(id: string, file: File) {
-    setLogoUploading(true);
-    updateLayer(id, { logoPreview: URL.createObjectURL(file) });
-    const ext  = file.name.split('.').pop();
-    const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.${ext}`;
-    const { error: uploadErr } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
-    if (uploadErr) { setError('Лого байршуулахад алдаа: ' + uploadErr.message); setLogoUploading(false); return; }
-    const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(path);
-    updateLayer(id, { logoUrl: publicUrl, logoPreview: publicUrl });
-    setLogoUploading(false);
+    setLogoUploading(true); setError('');
+    try {
+      // Логог 600px хүртэл жижигрүүлж PNG болгоно (тунгалаг дэвсгэр хадгалагдана)
+      const { blob, dataUrl } = await shrinkLogo(file, 600);
+      updateLayer(id, { logoPreview: dataUrl, logoUrl: dataUrl });
+      const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.png`;
+      const { error: uploadErr } = await supabase.storage.from('covers').upload(path, blob, { upsert: true, contentType: 'image/png' });
+      if (!uploadErr) {
+        const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(path);
+        updateLayer(id, { logoUrl: publicUrl, logoPreview: publicUrl });
+      } else {
+        // Хадгалалтад байршуулж чадаагүй ч лого цомгийн тохиргоонд (data URL) хадгалагдана
+        console.warn('logo upload failed, using inline image:', uploadErr.message);
+      }
+    } catch (e) {
+      setError('Лого уншиж чадсангүй: ' + (e instanceof Error ? e.message : String(e)));
+      updateLayer(id, { logoPreview: '', logoUrl: '' });
+    } finally {
+      setLogoUploading(false);
+    }
   }
 
   function updateSizePrice(size: string, field: 'price' | 'enabled', value: string | boolean) {
@@ -333,12 +344,14 @@ export default function AlbumEditPage() {
 
   async function handleSave() {
     if (!albumName.trim()) { setError('Цомгийн нэр оруулна уу'); return; }
+    if (logoUploading) { setError('Лого байршуулж дуусаагүй байна. Түр хүлээгээд дахин хадгална уу.'); return; }
+    if (layers.some(l => l.type === 'logo' && !l.logoUrl)) { setError('Лого сонгоогүй давхарга байна. Лого сонгох эсвэл тэр давхаргыг устгана уу.'); return; }
     setSaving(true); setError('');
     const first = layers[0];
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
     const watermarkValue = layersToWatermarkValue(layers);
-    const { error: err } = await supabase.from('albums').update({
+    const { data: savedRows, error: err } = await supabase.from('albums').update({
       title: albumName.trim(), name: albumName.trim(),
       event_date: eventDate || null, description: description.trim(),
       status, is_free: isFree,
@@ -353,9 +366,10 @@ export default function AlbumEditPage() {
       watermark_position: first?.position || 'bottom-right',
       watermark_opacity: (first?.opacity ?? 70) / 100,
       watermark_logo_url: first?.type === 'logo' ? (first?.logoUrl || null) : null,
-    }).eq('id', albumId).eq('owner_id', profile!.id);
+    }).eq('id', albumId).select('id');
     setSaving(false);
     if (err) { setError(err.message); return; }
+    if (!savedRows || savedRows.length === 0) { setError('Хадгалагдсангүй — энэ цомгийг засах эрх алга (зөвхөн цомгийн эзэн засна).'); return; }
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   }
 
@@ -720,4 +734,24 @@ export default function AlbumEditPage() {
       </main>
     </div>
   );
+}
+
+/** Логог жижигрүүлж PNG blob + data URL болгоно */
+function shrinkLogo(file: File, max: number): Promise<{ blob: Blob; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round((img.naturalWidth || max) * scale));
+      c.height = Math.max(1, Math.round((img.naturalHeight || max) * scale));
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL('image/png');
+      c.toBlob(b => (b ? resolve({ blob: b, dataUrl }) : reject(new Error('PNG болгож чадсангүй'))), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Зураг уншигдсангүй')); };
+    img.src = url;
+  });
 }

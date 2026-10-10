@@ -549,7 +549,7 @@ Deno.serve(async (req: Request) => {
       } else p = full.data;
       if (!p) return json({ error: "Захиалга олдсонгүй" }, 404);
       if (p.type !== "print" || p.payment_status !== "paid") return json({ error: "Зөвхөн төлөгдсөн угаалгах захиалга" }, 400);
-      const { data: album } = await db.from("albums").select("owner_id, contact_info").eq("id", p.album_id).maybeSingle();
+      const { data: album } = await db.from("albums").select("owner_id, contact_info, watermark_type, watermark_value").eq("id", p.album_id).maybeSingle();
       if (p.photographer_id !== uid && album?.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
 
       const { data: photo } = await db.from("photo_uploads").select("original_url, filename").eq("id", p.photo_id).maybeSingle();
@@ -586,7 +586,7 @@ Deno.serve(async (req: Request) => {
           sms = "failed";
         }
       }
-      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone });
+      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone, brand: album?.watermark_type === "layers" ? (album?.watermark_value ?? "") : "" });
     }
 
     // ── ҮНЭГҮЙ ЦОМОГ: зочин эх зургийг шууд татах холбоос ──
