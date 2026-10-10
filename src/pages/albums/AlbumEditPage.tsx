@@ -417,6 +417,23 @@ export default function AlbumEditPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-10 space-y-6">
         {error && <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" /><p className="text-red-400 text-sm">{error}</p></div>}
+        {/* Нүүр хуудсанд нийтлэх — зөвхөн «Худалдах» цомог */}
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-white font-semibold text-sm">📣 Нүүр хуудсанд нийтлэх</p>
+            <p className="text-amber-100/70 text-xs mt-0.5">
+              {isFree
+                ? '«Үнэгүй хуваалцах» цомгийг нийтлэх боломжгүй — линкээр нь хуваалцана. Нийтлэхийн тулд цомгийн загварыг «Худалдах» болгоно.'
+                : 'Цомгоо Zuragchin.mn-ийн нүүр хуудас ба «Бүх цомог» хэсэгт гаргаж, олон хүнд зарна.'}
+            </p>
+          </div>
+          {!isFree && (
+            <button type="button" onClick={() => navigate(`/dashboard/albums/${albumId}/listing`)}
+              className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl">
+              Нийтлэх
+            </button>
+          )}
+        </div>
         {saved && <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3"><CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" /><p className="text-green-400 text-sm">Амжилттай хадгалагдлаа!</p></div>}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -460,10 +477,16 @@ export default function AlbumEditPage() {
               {/* Layer tabs */}
               <div className="flex flex-wrap gap-2">
                 {layers.map((l, i) => (
-                  <button key={l.id} type="button" onClick={() => setActiveId(l.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeId === l.id ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-400 border border-white/10 hover:text-white'}`}>
-                    {layerTabIcon(l.type)}{layerTabLabel(l, i)}
-                  </button>
+                  <div key={l.id}
+                    className={`flex items-center rounded-lg text-xs font-medium transition-all ${activeId === l.id ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-400 border border-white/10 hover:text-white'}`}>
+                    <button type="button" onClick={() => setActiveId(l.id)} className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5">
+                      {layerTabIcon(l.type)}{layerTabLabel(l, i)}
+                    </button>
+                    <button type="button" title="Устгах" onClick={() => removeLayer(l.id)}
+                      className={`mr-1 w-5 h-5 rounded-full flex items-center justify-center ${activeId === l.id ? 'hover:bg-stone-950/20' : 'hover:bg-red-500/20 hover:text-red-400'}`}>
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 ))}
                 <button type="button" onClick={addText} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 text-stone-400 border border-white/10 hover:text-white transition-all">
                   <Plus className="w-3 h-3" /><Type className="w-3 h-3" /> Текст
