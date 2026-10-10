@@ -52,7 +52,7 @@ export default function LoginPage() {
         />
         <div className="absolute inset-0 bg-gradient-to-br from-stone-950/80 via-stone-950/40 to-transparent" />
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
-          <div className="flex items-center gap-3">
+          <a href="/" title="Нүүр хуудас" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
               <Camera className="w-6 h-6 text-stone-950" />
             </div>
@@ -60,7 +60,7 @@ export default function LoginPage() {
               <span className="text-white font-bold text-xl tracking-tight">Zuragchin</span>
               <span className="text-amber-400 font-bold text-xl">.mn</span>
             </div>
-          </div>
+          </a>
           <div>
             <h2 className="text-white text-4xl font-bold leading-tight mb-4">
               {t('Таны үйл ажиллагаа,')}<br />{t('гоёор дүрслэгдсэн.')}
@@ -76,7 +76,7 @@ export default function LoginPage() {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-md">
           {/* Mobile logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
+          <a href="/" title="Нүүр хуудас" className="flex items-center gap-3 mb-8 lg:hidden hover:opacity-80 transition-opacity">
             <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
               <Camera className="w-6 h-6 text-stone-950" />
             </div>
@@ -84,7 +84,7 @@ export default function LoginPage() {
               <span className="text-white font-bold text-xl tracking-tight">Zuragchin</span>
               <span className="text-amber-400 font-bold text-xl">.mn</span>
             </div>
-          </div>
+          </a>
 
           <div className="flex justify-end mb-4"><LanguageSwitcher /></div>
           <h1 className="text-white text-3xl font-bold mb-2">{t('Тавтай морилно уу')}</h1>

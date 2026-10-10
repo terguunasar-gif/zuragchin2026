@@ -256,6 +256,16 @@ Deno.serve(async (req: Request) => {
     // CREATE INVOICE
     if (req.method === "POST" && path === "/create-invoice") {
       const body = await req.json();
+      // Нэвтэрсэн худалдан авагч бол захиалгыг түүний бүртгэлд холбоно (нэвтрээгүй бол null)
+      let buyerUserId: string | null = null;
+      try {
+        const dbAuth = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const uid = await userIdFromRequest(dbAuth, req);
+        if (uid) {
+          const { data: u } = await dbAuth.from("users").select("id").eq("id", uid).maybeSingle();
+          if (u) buyerUserId = uid;
+        }
+      } catch { /* нэвтрээгүй */ }
       const { cartItems, buyerName, buyerPhone, albumId } = body as {
         cartItems: CartItem[];
         buyerName: string;
@@ -373,7 +383,7 @@ Deno.serve(async (req: Request) => {
         const itemPhotographerPool = item.isAi ? 0 : item.price - itemQpay - itemPlatform - itemOwner;
 
         return {
-          buyer_id: null,
+          buyer_id: buyerUserId,
           photo_id: item.photoId,
           album_id: albumId,
           photographer_id: item.photographerId,

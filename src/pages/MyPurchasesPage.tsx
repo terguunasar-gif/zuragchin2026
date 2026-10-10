@@ -21,9 +21,9 @@ export default function MyPurchasesPage() {
           <button onClick={() => navigate(-1)} className="text-stone-400 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+          <a href="/" title="Нүүр хуудас" className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center hover:opacity-80">
             <Camera className="w-5 h-5 text-stone-950" />
-          </div>
+          </a>
           <p className="text-white font-bold flex-1">{t('Миний худалдан авалт')}</p>
           <LanguageSwitcher />
         </div>

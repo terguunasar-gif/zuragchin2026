@@ -10,6 +10,9 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
 import PhotographerProfileTab from './photographer/PhotographerProfileTab';
+import BuyerPurchases, { useBuyerPurchases } from '../components/BuyerPurchases';
+import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
+import PublicAlbumCard from '../components/PublicAlbumCard';
 import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
 
 interface Album {
@@ -27,14 +30,6 @@ interface Album {
   listed_until?: string | null;
 }
 
-interface Purchase {
-  id: string;
-  photo_id: string;
-  type: string;
-  gross_amount: number;
-  created_at: string;
-  expires_at: string;
-}
 
 export default function DashboardPage() {
   const { profile, signOut, refreshProfile } = useAuth();
@@ -55,14 +50,13 @@ export default function DashboardPage() {
   // Үнэгүй цомгийн шинэ угаалгах хүсэлт
   const [printReqCount, setPrintReqCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [printOrders, setPrintOrders] = useState<any[]>([]);
   const sales = useMySales();
   const photographerSum = summarize(sales.rows.filter(r => r.is_my_photo));
   const organizerSum = summarize(sales.rows.filter(r => r.is_my_album));
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [activeRole, setActiveRole] = useState<'buyer' | 'photographer' | 'organizer'>('buyer');
+  const buyer = useBuyerPurchases(!!profile && activeRole === 'buyer');
 
   useEffect(() => {
     if (!profile) return;
@@ -85,7 +79,6 @@ export default function DashboardPage() {
     // hasRole-г шууд profile.role-оос шалгана — isOrganizer derived variable байна
     const roles: string[] = profile.role ?? [];
     if (roles.includes('organizer')) { loadOrganizerAlbums(); loadPendingCount(); }
-    if (roles.includes('buyer')) { loadPurchases(); loadPrintOrders(); }
     if (roles.includes('organizer') || roles.includes('photographer')) loadPrintRequestCount();
   }, [profile]);
 
@@ -155,37 +148,9 @@ export default function DashboardPage() {
     setWalletBalance(Number(data?.pending_balance ?? 0) + Number(data?.settled_balance ?? 0));
   }
 
-  async function loadPurchases() {
-    const { data } = await supabase
-      .from('purchases')
-      .select('id, photo_id, type, gross_amount, created_at')
-      .eq('buyer_id', profile!.id)
-      .eq('type', 'download')
-      .order('created_at', { ascending: false });
-    if (data) {
-      setPurchases(data.map((p: any) => ({
-        ...p,
-        expires_at: new Date(new Date(p.created_at).getTime() + 21 * 24 * 60 * 60 * 1000).toISOString(),
-      })));
-    }
-  }
-
-  const [publicAlbums, setPublicAlbums] = useState<any[]>([]);
+  const [publicAlbums, setPublicAlbums] = useState<PublicAlbum[]>([]);
 
   useEffect(() => { loadPublicAlbums(); }, []);
-
-  async function loadPrintOrders() {
-    const { data } = await supabase
-      .from('print_orders')
-      .select(`
-        id, size, price, status, created_at, phone,
-        photos!print_orders_photo_id_fkey ( watermarked_url ),
-        profiles!print_orders_photographer_id_fkey ( name, photographer_id )
-      `)
-      .eq('buyer_id', profile!.id)
-      .order('created_at', { ascending: false });
-    setPrintOrders(data ?? []);
-  }
 
   async function addPhotographerRole() {
     if (!profile || isPhotographer) return;
@@ -203,22 +168,11 @@ export default function DashboardPage() {
   }
 
   async function loadPublicAlbums() {
-    const { data } = await supabase
-      .from('albums')
-      .select('id, name, title, event_date, owner_id, visibility, is_public, share_link')
-      .or('visibility.eq.public,is_public.eq.true')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    setPublicAlbums(data ?? []);
+    fetchPublicAlbums({ limit: 6 }).then(setPublicAlbums).catch(() => setPublicAlbums([]));
   }
 
-  function daysLeft(expiresAt: string): number {
-    const diff = new Date(expiresAt).getTime() - Date.now();
-    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-  }
 
-  const activePurchases = purchases.filter(p => daysLeft(p.expires_at) > 0);
+
 
   /** Цомог хаагдах хүртэл үлдсэн хоног (expires_at; байхгүй бол үйл явдлаас 30 хоног) */
   /** «Миний хувь / Хүлээгдэж буй» картыг дарахад борлуулалтын задаргаа руу гүйлгэнэ */
@@ -351,8 +305,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {activeRole === 'buyer' && (
             <>
-              <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={activePurchases.length} />
-              <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={printOrders.length} />
+              <StatCard icon={<ShoppingBag className="w-5 h-5 text-blue-400" />} label="Татсан зурагнууд" value={buyer.rows.filter(r => r.type === 'download').length} />
+              <StatCard icon={<Printer className="w-5 h-5 text-green-400" />} label="Угаалгах зурагнууд" value={buyer.rows.filter(r => r.type === 'print').length} />
             </>
           )}
           {activeRole === 'photographer' && isPhotographer && (
@@ -534,75 +488,19 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── BUYER: Print orders ── */}
-        {activeRole === 'buyer' && printOrders.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-white font-semibold text-lg mb-4">Угаалгах зурагнууд</h2>
-            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-              <ul className="divide-y divide-white/5">
-                {printOrders.map((order: any) => (
-                  <li key={order.id} className="flex items-center gap-4 px-5 py-4">
-                    <div className="w-12 h-12 bg-stone-900 rounded-xl overflow-hidden flex-shrink-0">
-                      {order.photos?.watermarked_url
-                        ? <img src={order.photos.watermarked_url} alt="" className="w-full h-full object-cover" />
-                        : <div className="w-full h-full flex items-center justify-center"><Image className="w-5 h-5 text-stone-600" /></div>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium">{order.size ?? '—'} хэмжээ</p>
-                      <p className="text-stone-500 text-xs mt-0.5">Зурагчин: <span className="text-stone-300">{order.profiles?.name ?? '—'}</span></p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-amber-400 text-sm font-semibold">₮{Number(order.price ?? 0).toLocaleString()}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                        order.status === 'ready' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                        order.status === 'delivered' ? 'bg-stone-500/10 text-stone-400 border-stone-500/20' :
-                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {order.status === 'ready' ? 'Бэлэн' : order.status === 'delivered' ? 'Хүргэгдсэн' : 'Хүлээгдэж буй'}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
+        {/* ── BUYER: Миний худалдан авалт ── */}
+        {activeRole === 'buyer' && <BuyerPurchases rows={buyer.rows} loading={buyer.loading} />}
 
-        {/* ── BUYER: Public albums ── */}
-        {activeRole === 'buyer' && (
+        {/* ── BUYER: Нийтлэгдсэн цомгууд ── */}
+        {activeRole === 'buyer' && publicAlbums.length > 0 && (
           <div className="mt-10">
-            <h2 className="text-white font-semibold text-lg mb-4">Нээлттэй цомгууд</h2>
-            {publicAlbums.length === 0 ? (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
-                <div className="w-14 h-14 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FolderOpen className="w-7 h-7 text-amber-400" />
-                </div>
-                <p className="text-white font-medium mb-1">Цомог байхгүй байна</p>
-                <p className="text-stone-500 text-sm">Зохион байгуулагчийн хуваалцсан QR эсвэл линкээр цомог үзнэ үү.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {publicAlbums.map(album => (
-                  <button key={album.id} onClick={() => navigate(`/album/${album.id}`)}
-                    className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-amber-500/30 rounded-2xl p-5 text-left transition-all group">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <Camera className="w-5 h-5 text-amber-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">{album.title || album.name}</p>
-                        <p className="text-stone-500 text-xs">
-                          {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-stone-600 group-hover:text-amber-400 flex-shrink-0" />
-                    </div>
-                    <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-full">Нээлттэй</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold text-lg">Зургийн цомгууд</h2>
+              <button onClick={() => navigate('/explore')} className="text-amber-400 hover:text-amber-300 text-sm flex items-center gap-1">Бүгдийг харах <ChevronRight className="w-4 h-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {publicAlbums.map(album => <PublicAlbumCard key={album.id} album={album} />)}
+            </div>
           </div>
         )}
       </main>

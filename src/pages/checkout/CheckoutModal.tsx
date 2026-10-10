@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from '../../lib/supabase';
 import BankLinks, { BankLink, canOpenBankApps } from '../../components/BankLinks';
 import {
   X, User, Phone, AlertCircle,
@@ -94,9 +95,11 @@ export default function CheckoutModal({
     setError('');
 
     try {
+      // Нэвтэрсэн бол өөрийн токеноор — захиалга «Худалдан авагч» хэсэгт харагдана
+      const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
       const res = await fetch(`${QPAY_FN_URL}/create-invoice`, {
         method: 'POST',
-        headers,
+        headers: session?.access_token ? { ...headers, Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY } : headers,
         body: JSON.stringify({
           cartItems: cart.map(c => ({
             photoId: c.photoId,
