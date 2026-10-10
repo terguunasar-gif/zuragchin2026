@@ -1,3 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Сайт бараан өнгөтэй — сонголтын (select) жагсаалтыг Windows/Chrome дээр цагаан дэвсгэр дээр цагаан бичгээр харуулахаас сэргийлнэ */
+:root { color-scheme: dark; }
+select option, select optgroup { background-color: #1c1917; color: #ffffff; }
