@@ -290,7 +290,11 @@ export default function PublicAlbumPage() {
 
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
-    const mapped: PhotoData[] = (photoData ?? []).map((p: any) => {
+    // Нуусан (худалдагдсан тул устгаагүй) зургийг харуулахгүй
+    const { data: hiddenRows, error: hiddenErr } = await supabase.from('photo_uploads').select('id')
+      .eq('album_id', albumData.id).not('hidden_at', 'is', null);
+    const hiddenSet = new Set(hiddenErr ? [] : (hiddenRows ?? []).map((h: { id: string }) => h.id));
+    const mapped: PhotoData[] = (photoData ?? []).filter((p: any) => !hiddenSet.has(p.id)).map((p: any) => {
       const own = p.print_prices && typeof p.print_prices === 'object' ? p.print_prices : {};
       return {
         id: p.id,

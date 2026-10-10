@@ -112,10 +112,19 @@ export default function AlbumPhotosPage() {
         .order('created_at', { ascending: false });
       if (!isManager) q2 = q2.eq('photographer_id', profile!.id);
       const { data: d2 } = await q2;
-      setPhotos((d2 ?? []) as Photo[]);
+      setPhotos(await withoutHidden((d2 ?? []) as Photo[]));
       return;
     }
-    setPhotos((data ?? []) as Photo[]);
+    setPhotos(await withoutHidden((data ?? []) as Photo[]));
+  }
+
+  /** Нуусан (худалдагдсан тул устгаагүй) зургийг жагсаалтаас хасна */
+  async function withoutHidden(list: Photo[]): Promise<Photo[]> {
+    const { data: hidden, error } = await supabase.from('photo_uploads').select('id')
+      .eq('album_id', albumId!).not('hidden_at', 'is', null);
+    if (error || !hidden?.length) return list;
+    const set = new Set(hidden.map(h => h.id));
+    return list.filter(p => !set.has(p.id));
   }
 
   async function loadFolders() {
@@ -251,34 +260,27 @@ export default function AlbumPhotosPage() {
   }
 
   async function deletePhoto(photo: Photo) {
+    if (!confirm('Энэ зургийг цомгоос устгах уу?')) return;
     setDeleting(photo.id);
-
-    // Extract storage paths from URLs
-    const originalPath = photo.original_url.replace('photos-original/', '');
-    const previewPath = photo.preview_url.includes('photos-preview')
-      ? photo.preview_url.split('/photos-preview/')[1]?.split('?')[0]
-      : null;
-
-    const [origDel, prevDel] = await Promise.all([
-      supabase.storage.from('photos-original').remove([originalPath]),
-      previewPath
-        ? supabase.storage.from('photos-preview').remove([previewPath])
-        : Promise.resolve({ error: null }),
-    ]);
-
-    if (origDel.error || prevDel.error) {
-      showToast('Хадгалалтаас устгахад алдаа гарлаа', 'error');
+    const { data: res, error } = await supabase.rpc('delete_album_photo', { p_photo_id: photo.id });
+    if (error) {
+      showToast('Устгахад алдаа гарлаа: ' + error.message, 'error');
       setDeleting(null);
       return;
     }
-
-    const { error: dbErr } = await supabase.from('photo_uploads').delete().eq('id', photo.id);
-    if (dbErr) {
-      showToast('Бичлэг устгахад алдаа гарлаа', 'error');
-    } else {
-      setPhotos(prev => prev.filter(p => p.id !== photo.id));
-      showToast('Зураг устгагдлаа');
+    if (res === 'deleted') {
+      // Файлуудыг хадгалалтаас цэвэрлэнэ (алдаа гарвал бичлэг аль хэдийн устсан тул саадгүй)
+      const originalPath = photo.original_url.replace(/^photos-original\//, '');
+      const previewPath = photo.preview_url.includes('/photos-preview/')
+        ? photo.preview_url.split('/photos-preview/')[1]?.split('?')[0]
+        : null;
+      await Promise.all([
+        supabase.storage.from('photos-original').remove([originalPath]).catch(() => null),
+        previewPath ? supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null) : null,
+      ]);
     }
+    setPhotos(prev => prev.filter(p => p.id !== photo.id));
+    showToast(res === 'hidden' ? 'Зураг цомгоос нуугдлаа (худалдагдсан тул худалдан авагчид татах боломжтой хэвээр)' : 'Зураг устгагдлаа');
     setDeleting(null);
   }
 
@@ -620,7 +622,8 @@ export default function AlbumPhotosPage() {
                     <button
                       onClick={() => deletePhoto(photo)}
                       disabled={deleting === photo.id}
-                      className="absolute top-2 right-2 w-8 h-8 bg-stone-950/80 hover:bg-red-500 rounded-lg flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                      title="Устгах"
+                      className="absolute top-2 right-2 w-8 h-8 bg-stone-950/80 hover:bg-red-500 rounded-lg flex items-center justify-center transition-colors sm:opacity-0 sm:group-hover:opacity-100 disabled:opacity-50"
                     >
                       {deleting === photo.id
                         ? <Loader2 className="w-4 h-4 text-white animate-spin" />
