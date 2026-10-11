@@ -22,6 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 import PriceOfferModal from '../components/PriceOfferModal';
+import { rememberAlbum } from '../lib/visitedAlbums';
 
 export interface AlbumData {
   id: string;
@@ -340,6 +341,13 @@ export default function PublicAlbumPage() {
       };
     });
     setPhotos(mapped);
+    // Нүүр хуудсанд «Таны цомог» товчоор буцаж орох боломжтой болгоно
+    rememberAlbum({
+      id: albumObj.id,
+      name: albumObj.name,
+      link: String(albumData.share_link || link),
+      cover: mapped.find(p => p.source !== 'ai_booth')?.watermarked_url ?? mapped[0]?.watermarked_url,
+    });
     // AI бүүтийн зургийн цомог дахь үнийг сайтын админ тогтооно
     const { data: aiSetting } = await supabase.from('platform_settings').select('value').eq('key', 'ai_album_price').maybeSingle();
     const aiVal = Number((aiSetting as { value?: unknown } | null)?.value);
