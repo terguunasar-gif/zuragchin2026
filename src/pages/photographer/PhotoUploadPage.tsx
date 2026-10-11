@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback, DragEvent, ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, X, CheckCircle2, AlertCircle, LogOut, User, Loader2, Tag, ChevronDown, ChevronUp, Eye, FolderOpen, FolderPlus,
+  ArrowLeft, Upload, X, CheckCircle2, AlertCircle, LogOut, User, Loader2, Tag, ChevronDown, ChevronUp, Eye, FolderOpen, FolderPlus, Gauge,
 } from 'lucide-react';
+import QuotaPayModal, { QuotaPackage, normalizeQuotaPackages, DEFAULT_QUOTA_PACKAGES } from '../../components/QuotaPayModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/watermark';
@@ -46,6 +47,15 @@ const defaultPrintPrices = (): PrintPrices =>
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 20 * 1024 * 1024;
+/** Эх файлыг хадгалахын өмнө шахах: урт тал 4000px, JPEG 90% — утас, A4 хэвлэлд ялгаагүй, 3–4 дахин бага зай */
+const ORIGINAL_MAX_EDGE = 4000;
+const ORIGINAL_QUALITY = 0.9;
+
+interface PhotoQuota { applies: boolean; used: number; free_quota: number; extra: number; quota: number }
+
+function fmtSize(bytes: number): string {
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+}
 
 export default function PhotoUploadPage() {
   const { albumId } = useParams<{ albumId: string }>();
@@ -72,6 +82,25 @@ export default function PhotoUploadPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderError, setFolderError] = useState('');
   const [faceEnabled, setFaceEnabled] = useState(false);
+  // «Худалдах» цомогт зурагчин бүрийн зургийн хязгаар (update-49)
+  const [quota, setQuota] = useState<PhotoQuota | null>(null);
+  const [quotaPkgs, setQuotaPkgs] = useState<QuotaPackage[]>(DEFAULT_QUOTA_PACKAGES);
+  const [payPkg, setPayPkg] = useState<QuotaPackage | null>(null);
+
+  async function loadQuota(albumIdArg: string): Promise<PhotoQuota | null> {
+    const { data, error } = await supabase.rpc('photographer_quota', { p_album_id: albumIdArg });
+    const row = !error && Array.isArray(data) ? (data[0] as PhotoQuota | undefined) : undefined;
+    const q = row && row.applies ? row : null;
+    setQuota(q);
+    return q;
+  }
+
+  useEffect(() => {
+    if (!album || album.is_free) return;
+    loadQuota(album.id);
+    supabase.from('platform_settings').select('value').eq('key', 'photo_quota_packages').maybeSingle()
+      .then(({ data }) => { if (data) setQuotaPkgs(normalizeQuotaPackages(data.value)); });
+  }, [album]);
 
   useEffect(() => {
     if (!album) return;
@@ -198,6 +227,11 @@ export default function PhotoUploadPage() {
 
     // Идэвхжсэн «үнэгүй хуваалцах» цомгийн багцын хязгаар
     let remaining = Infinity;
+    let quotaLimit = 0;
+    if (!album.is_free) {
+      const q = await loadQuota(album.id);
+      if (q) { remaining = Math.max(0, q.quota - q.used); quotaLimit = q.quota; }
+    }
     if (album.is_free && album.free_activated && album.photo_limit) {
       const { count } = await supabase.from('photo_uploads').select('id', { count: 'exact', head: true })
         .eq('album_id', album.id).neq('source', 'ai_booth');
@@ -207,7 +241,12 @@ export default function PhotoUploadPage() {
     for (const entry of files) {
       if (entry.status === 'done') { succeeded++; continue; }
       if (remaining <= 0) {
-        setFileStatus(entry.id, { status: 'error', errorMsg: `Багцын хязгаар (${album.photo_limit} зураг) хүрсэн. Илүү том багц авна уу.` });
+        setFileStatus(entry.id, {
+          status: 'error',
+          errorMsg: album.is_free
+            ? `Багцын хязгаар (${album.photo_limit} зураг) хүрсэн. Илүү том багц авна уу.`
+            : `Таны зургийн хязгаар (${quotaLimit.toLocaleString()} зураг) дүүрсэн. Нэмэлт багц аваад дахин оролдоно уу.`,
+        });
         continue;
       }
       setFileStatus(entry.id, { status: 'processing', progress: 0 });
@@ -216,9 +255,18 @@ export default function PhotoUploadPage() {
         // «Үнэгүй хуваалцах» цомогт усан тэмдэг тавихгүй (зочид эх зургийг үнэгүй татна)
         // Үнэгүй цомог: зохион байгуулагчийн лого / мэндчилгээг (булангийн давхарга) эх зурагт ч, preview-д ч суулгана
         const brand = album.is_free && hasBrandLayers(album);
-        const originalBlob: Blob = brand
-          ? await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, quality: 0.92 })
-          : entry.file;
+        let originalBlob: Blob = entry.file;
+        let compressed = false;
+        if (brand) {
+          originalBlob = await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
+          compressed = true;
+        } else {
+          // Эх файлыг шахна — илт багасах үед л (аль хэдийн жижиг файлыг хөндөхгүй)
+          try {
+            const c = await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
+            if (c.size < entry.file.size * 0.9) { originalBlob = c; compressed = true; }
+          } catch { /* шахаж чадаагүй бол эх файлаар нь */ }
+        }
         const previewBlob = album.is_free
           ? await applyWatermark(entry.file, brand
               ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, maxSize: 1600 }
@@ -227,7 +275,7 @@ export default function PhotoUploadPage() {
 
         setFileStatus(entry.id, { progress: 20 });
 
-        const ext = brand ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
+        const ext = compressed ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
         const baseName = `${crypto.randomUUID()}.${ext}`;
         const originalPath = `${profile.id}/${album.id}/${baseName}`;
         const previewPath = `${profile.id}/${album.id}/${album.is_free ? 'preview_' : 'preview_p2_'}${baseName.replace(/\.\w+$/, '.jpg')}`;
@@ -236,7 +284,7 @@ export default function PhotoUploadPage() {
 
         const { error: origErr } = await supabase.storage
           .from('photos-original')
-          .upload(originalPath, originalBlob, { contentType: brand ? 'image/jpeg' : entry.file.type, upsert: false });
+          .upload(originalPath, originalBlob, { contentType: compressed ? 'image/jpeg' : entry.file.type, upsert: false });
         if (origErr) throw new Error(origErr.message);
 
         setFileStatus(entry.id, { progress: 60 });
@@ -271,7 +319,16 @@ export default function PhotoUploadPage() {
           filename: entry.file.name,
           ...(folderId ? { folder_id: folderId } : {}),
         }).select('id').single();
-        if (dbErr) throw new Error(dbErr.message);
+        if (dbErr) {
+          // Бүртгэл амжилтгүй бол байршуулсан файлуудыг устгана (зай эзлэхгүй)
+          await supabase.storage.from('photos-original').remove([originalPath]).catch(() => null);
+          await supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null);
+          if (/QUOTA_EXCEEDED/.test(dbErr.message)) {
+            remaining = 0;
+            throw new Error(dbErr.message.replace(/^.*QUOTA_EXCEEDED:\s*/, ''));
+          }
+          throw new Error(dbErr.message);
+        }
 
         // Царайгаар хайх асаалттай бол царайны хээг тооцоолно (алдаа гарвал байршуулалтад нөлөөлөхгүй)
         if (faceEnabled && inserted?.id) {
@@ -292,6 +349,7 @@ export default function PhotoUploadPage() {
       }
     }
     setSuccessCount(succeeded);
+    if (!album.is_free) loadQuota(album.id);
   }
 
   const allDone = files.length > 0 && files.every(f => f.status === 'done' || f.status === 'error');
@@ -526,6 +584,45 @@ export default function PhotoUploadPage() {
               )}
             </div>
 
+            {quota && (() => {
+              const left = Math.max(0, quota.quota - quota.used);
+              const pending = files.filter(f => f.status === 'idle');
+              const over = Math.max(0, pending.length - left);
+              const overBytes = pending.slice(left).reduce((n, f) => n + f.file.size, 0);
+              const pct = Math.min(100, Math.round((quota.used / Math.max(1, quota.quota)) * 100));
+              return (
+                <div className={`rounded-2xl p-5 border ${over > 0 ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white/5 border-white/10'}`}>
+                  <h3 className="text-white font-medium flex items-center gap-2 mb-3"><Gauge className="w-4 h-4 text-amber-400" />Таны зургийн хязгаар</h3>
+                  <div className="flex justify-between text-sm mb-1.5">
+                    <span className="text-stone-400">Оруулсан</span>
+                    <span className="text-white font-semibold">{quota.used.toLocaleString()} / {quota.quota.toLocaleString()} зураг</span>
+                  </div>
+                  <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className={`h-full ${pct >= 90 ? 'bg-red-400' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} /></div>
+                  <p className="text-stone-500 text-xs mt-2">
+                    Үнэгүй {quota.free_quota.toLocaleString()} зураг{quota.extra > 0 ? ` + нэмэлт ${quota.extra.toLocaleString()}` : ''}. AI бүүтийн зураг тооцогдохгүй.
+                  </p>
+                  {over > 0 && (
+                    <div className="mt-4 pt-4 border-t border-amber-500/30 space-y-3">
+                      <p className="text-amber-100 text-sm leading-relaxed">
+                        Та <b>{pending.length.toLocaleString()}</b> зураг сонгосон. Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг тул
+                        <b className="text-amber-300"> {over.toLocaleString()} зураг ({fmtSize(overBytes)})</b> хязгаараас хэтэрч байна.
+                        Эдгээрийг цомогт оруулахын тулд нэмэлт багц авна уу:
+                      </p>
+                      <div className="grid gap-2">
+                        {quotaPkgs.map(p => (
+                          <button key={p.code} onClick={() => setPayPkg(p)}
+                            className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${p.photos >= over ? 'bg-amber-500 hover:bg-amber-400 text-stone-950' : 'bg-white/10 hover:bg-white/15 text-white'}`}>
+                            <span>{p.name}</span><span>₮{p.price.toLocaleString()} · QPay</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-stone-400 text-xs">Төлөхгүй бол «Зураг байршуулах» дарахад эхний {left.toLocaleString()} зураг л орно.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {files.length > 0 && !allDone && (
               <button onClick={uploadAll} disabled={anyUploading || files.length === 0}
                 className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-stone-950 font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2.5 text-base">
@@ -549,6 +646,11 @@ export default function PhotoUploadPage() {
           </div>
         </div>
       </main>
+      {payPkg && album && (
+        <QuotaPayModal albumId={album.id} pkg={payPkg}
+          onClose={() => setPayPkg(null)}
+          onPaid={() => { setPayPkg(null); loadQuota(album.id); }} />
+      )}
     </div>
   );
 }
