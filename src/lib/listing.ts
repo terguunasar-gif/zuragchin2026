@@ -26,6 +26,8 @@ export async function loadListingPackages(): Promise<ListingPackage[]> {
 export interface PublicAlbum {
   id: string; name: string; share_link: string; cover_url: string | null; photographers: string | null;
   photo_count: number; price: number; category: string; location: string; event_date: string | null;
+  /** Цомгийн хамгийн өндөр зургийн үнэ (update-41). price нь хамгийн бага үнэ. */
+  max_price?: number | null;
 }
 
 export async function fetchPublicAlbums(opts: { category?: string; q?: string; photographer?: string; limit?: number; offset?: number } = {}): Promise<PublicAlbum[]> {
@@ -37,7 +39,7 @@ export async function fetchPublicAlbums(opts: { category?: string; q?: string; p
     p_offset: opts.offset ?? 0,
   }), 12000);
   if (error) throw error;
-  return ((data ?? []) as PublicAlbum[]).map(a => ({ ...a, price: Number(a.price ?? 0) }));
+  return ((data ?? []) as PublicAlbum[]).map(a => ({ ...a, price: Number(a.price ?? 0), max_price: a.max_price == null ? null : Number(a.max_price) }));
 }
 
 export const albumHref = (shareLink: string) => `/album/${shareLink.replace(/^\/?album\//, '')}`;
