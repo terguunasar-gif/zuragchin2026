@@ -21,9 +21,12 @@ export default function PublicAlbumCard({ album, photographerId }: { album: Publ
             <p className="text-white font-semibold text-sm truncate">{album.name}</p>
             {album.photographers && <p className="text-stone-300 text-xs truncate">{album.photographers}</p>}
           </div>
-          {album.price > 0 && (
+          {(album.price > 0 || (album.max_price ?? 0) > 0) && (
             <div className="bg-amber-500 text-stone-950 font-bold text-xs px-2.5 py-1 rounded-lg whitespace-nowrap">
-              ₮{Math.round(album.price).toLocaleString('en-US')}<span className="font-medium"> / зураг</span>
+              {album.max_price && album.max_price > album.price
+                ? <>₮{Math.round(album.price).toLocaleString('en-US')} – ₮{Math.round(album.max_price).toLocaleString('en-US')}</>
+                : <>₮{Math.round(album.price).toLocaleString('en-US')}</>}
+              <span className="font-medium"> / зураг</span>
             </div>
           )}
         </div>
