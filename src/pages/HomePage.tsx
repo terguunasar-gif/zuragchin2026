@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
+import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import { listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
+import { useSiteContact, normalizeUrl } from '../lib/siteContact';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
 
@@ -330,25 +331,10 @@ export default function HomePage() {
               </div>
               <p className="text-stone-500 text-sm leading-relaxed">Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.</p>
             </div>
-            <div>
-              <h4 className="text-white font-semibold mb-4">Холбоо барих</h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-stone-400 text-sm"><Phone className="w-4 h-4" /><span>+976 9911-2233</span></div>
-                <div className="flex items-center gap-2 text-stone-400 text-sm"><Mail className="w-4 h-4" /><span>info@zuragchin.mn</span></div>
-                <div className="flex items-center gap-2 text-stone-400 text-sm"><MapPin className="w-4 h-4" /><span>Улаанбаатар, Монгол</span></div>
-              </div>
-            </div>
-            <div>
-              <h4 className="text-white font-semibold mb-4">Сошиал хаяг</h4>
-              <div className="flex gap-3">
-                <button className="w-10 h-10 bg-white/5 hover:bg-pink-500/20 border border-white/10 hover:border-pink-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-pink-400 transition-all"><Instagram className="w-4 h-4" /></button>
-                <button className="w-10 h-10 bg-white/5 hover:bg-blue-500/20 border border-white/10 hover:border-blue-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-blue-400 transition-all"><Facebook className="w-4 h-4" /></button>
-                <button className="w-10 h-10 bg-white/5 hover:bg-sky-500/20 border border-white/10 hover:border-sky-500/30 rounded-xl flex items-center justify-center text-stone-400 hover:text-sky-400 transition-all"><Twitter className="w-4 h-4" /></button>
-              </div>
-            </div>
+            <FooterContact />
           </div>
           <div className="border-t border-white/10 pt-6 text-center text-stone-600 text-sm">
-            © 2024 Zuragchin.mn — Бүх эрх хуулиар хамгаалагдсан
+            © {new Date().getFullYear()} Zuragchin.mn — Бүх эрх хуулиар хамгаалагдсан
           </div>
         </div>
       </footer>
@@ -395,5 +381,46 @@ function MyAlbumsBar() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Нүүр хуудасны доод хэсгийн холбоо барих мэдээлэл — Админ → Платформ хэсгээс засна */
+function FooterContact() {
+  const c = useSiteContact();
+  const socials = [
+    { url: c.social_facebook, icon: <Facebook className="w-4 h-4" />, label: 'Facebook', cls: 'hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400' },
+    { url: c.social_instagram, icon: <Instagram className="w-4 h-4" />, label: 'Instagram', cls: 'hover:bg-pink-500/20 hover:border-pink-500/30 hover:text-pink-400' },
+    { url: c.social_tiktok, icon: <Music2 className="w-4 h-4" />, label: 'TikTok', cls: 'hover:bg-white/15 hover:border-white/30 hover:text-white' },
+    { url: c.social_youtube, icon: <Youtube className="w-4 h-4" />, label: 'YouTube', cls: 'hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400' },
+  ].filter(s => !!s.url);
+  const phoneHref = c.contact_phone ? 'tel:' + c.contact_phone.replace(/[^\d+]/g, '') : '';
+  return (
+    <>
+      <div>
+        <h4 className="text-white font-semibold mb-4">Холбоо барих</h4>
+        <div className="space-y-2">
+          {c.contact_phone && (
+            <a href={phoneHref} className="flex items-center gap-2 text-stone-400 hover:text-white text-sm"><Phone className="w-4 h-4" /><span>{c.contact_phone}</span></a>
+          )}
+          {c.contact_email && (
+            <a href={`mailto:${c.contact_email}`} className="flex items-center gap-2 text-stone-400 hover:text-white text-sm"><Mail className="w-4 h-4" /><span>{c.contact_email}</span></a>
+          )}
+          <div className="flex items-center gap-2 text-stone-400 text-sm"><MapPin className="w-4 h-4" /><span>{c.contact_address || 'Улаанбаатар, Монгол'}</span></div>
+        </div>
+      </div>
+      {socials.length > 0 && (
+        <div>
+          <h4 className="text-white font-semibold mb-4">Сошиал хаяг</h4>
+          <div className="flex gap-3">
+            {socials.map(s => (
+              <a key={s.label} href={normalizeUrl(s.url!)} target="_blank" rel="noopener noreferrer" title={s.label} aria-label={s.label}
+                className={`w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-stone-400 transition-all ${s.cls}`}>
+                {s.icon}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
