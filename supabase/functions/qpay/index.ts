@@ -642,13 +642,26 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/free-download") {
       const { photoId } = await req.json() as { photoId: string };
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: photo } = await db.from("photo_uploads")
-        .select("id, album_id, original_url, filename, source").eq("id", photoId).maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      let { data: photo }: { data: any } = await db.from("photo_uploads")
+        .select("id, album_id, original_url, filename, source, download_price").eq("id", photoId).maybeSingle();
+      if (!photo) {
+        // update-40-ийн SQL ажиллаагүй үед
+        ({ data: photo } = await db.from("photo_uploads")
+          .select("id, album_id, original_url, filename, source").eq("id", photoId).maybeSingle());
+      }
       if (!photo) return json({ error: "Зураг олдсонгүй" }, 404);
       if (photo.source === "ai_booth") return json({ error: "AI бүүтийн зураг төлбөртэй" }, 403);
       const { data: album } = await db.from("albums")
-        .select("is_free, free_activated, status, expires_at").eq("id", photo.album_id).maybeSingle();
-      if (!album?.is_free || !album.free_activated || album.status !== "active") return json({ error: "Үнэгүй татах боломжгүй" }, 403);
+        .select("is_free, free_activated, status, expires_at, download_price").eq("id", photo.album_id).maybeSingle();
+      if (!album || album.status !== "active") return json({ error: "Цомог идэвхгүй байна" }, 403);
+      if (album.is_free) {
+        if (!album.free_activated) return json({ error: "Цомгийн багц идэвхжээгүй байна. Зохион байгуулагч багцаа төлсний дараа татах боломжтой." }, 403);
+      } else {
+        // Худалдах цомогт 0₮ үнэтэй зургийг мөн шууд татуулна
+        const price = Number(photo.download_price ?? album.download_price ?? 0);
+        if (price > 0) return json({ error: "Энэ зураг төлбөртэй" }, 403);
+      }
       if (album.expires_at && new Date(album.expires_at).getTime() < Date.now()) return json({ error: "Цомгийн хугацаа дууссан байна" }, 403);
       const storagePath = String(photo.original_url ?? "").replace(/^photos-original\//, "");
       const { data: signed } = await db.storage.from("photos-original").createSignedUrl(storagePath, 3600);

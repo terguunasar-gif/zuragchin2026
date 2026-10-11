@@ -196,7 +196,11 @@ export default function PublicAlbumPage() {
     const saved = loadCart<CartItem>(albumId).flatMap(c => {
       const photo = byId.get(c.photoId);
       if (!photo) return [];
-      if (c.type === 'download') return [{ ...c, price: photoDownloadPrice(photo, albumForPrice, aiPrice) }];
+      if (c.type === 'download') {
+        // Үнэгүй (0₮) зураг сагсанд байх ёсгүй — шууд татна
+        const price = photoDownloadPrice(photo, albumForPrice, aiPrice);
+        return price > 0 ? [{ ...c, price }] : [];
+      }
       const price = Number(photo.print_prices?.[c.printSize ?? ''] ?? 0);
       return price > 0 ? [{ ...c, price }] : [];
     });
@@ -346,6 +350,7 @@ export default function PublicAlbumPage() {
   }
 
   const addToCart = useCallback((item: Omit<CartItem, 'id'>) => {
+    if (item.type === 'download' && !(item.price > 0)) return; // үнэгүй зургийг сагсанд хийхгүй
     const dup = cart.find(c =>
       c.photoId === item.photoId && c.type === item.type && c.printSize === item.printSize
     );
@@ -486,15 +491,18 @@ export default function PublicAlbumPage() {
           <div className="flex items-center gap-3 min-w-0">
             {/* ── Буцах товч ── */}
             <button
-              onClick={() => navigate(-1)}
+              // Линкээр шууд орж ирсэн бол буцах түүх байхгүй — нүүр хуудас руу
+              onClick={() => (window.history.length > 1 && document.referrer.startsWith(window.location.origin) ? navigate(-1) : navigate('/'))}
               className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-white transition-colors flex-shrink-0"
               title={t('Буцах')}
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center flex-shrink-0">
+            {/* Лого → сайтын нүүр хуудас */}
+            <a href="/" onClick={e => { e.preventDefault(); navigate('/'); }} title="Zuragchin.mn"
+              className="w-8 h-8 bg-amber-500 hover:bg-amber-400 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
               <Camera className="w-5 h-5 text-stone-950" />
-            </div>
+            </a>
             <div className="min-w-0">
               <p className="text-white font-bold truncate leading-tight">{album.name}</p>
               <p className="text-stone-500 text-xs truncate">{album.organizer_name || t('Зохион байгуулагч')}</p>
@@ -629,7 +637,7 @@ export default function PublicAlbumPage() {
                 photo={photo}
                 album={album}
                 wmLayers={freeMode ? [] : wmLayers}
-                freeDownload={freeActive && photo.source !== 'ai_booth'}
+                freeDownload={photo.source !== 'ai_booth' && (freeActive || photoDownloadPrice(photo, album, aiPrice) === 0)}
                 freeBusy={freeBusy === photo.id}
                 onFreeDownload={() => freeDownload(photo.id)}
                 printPicked={printPicks.some(p => p.photoId === photo.id)}
