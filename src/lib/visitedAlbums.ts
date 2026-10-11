@@ -35,3 +35,8 @@ export function forgetAlbum(id: string) {
     localStorage.setItem(KEY, JSON.stringify(listVisitedAlbums().filter(x => x.id !== id)));
   } catch { /* */ }
 }
+
+/** «Таны цомог» товчийг X-ээр хаахад бүх жагсаалтыг арилгана. Линкээр дахин орвол rememberAlbum дахин нэмнэ. */
+export function clearVisitedAlbums() {
+  try { localStorage.removeItem(KEY); } catch { /* */ }
+}
