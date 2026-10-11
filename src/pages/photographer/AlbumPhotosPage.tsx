@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera, ArrowLeft, Upload, Trash2, LogOut, User,
   Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle,
-  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace,
+  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -23,10 +23,12 @@ interface Photo {
   source?: string | null;
   faces_scanned_at?: string | null;
   photographer_id?: string;
+  /** Зураг тус бүрийн татах үнэ. null бол цомгийн үнэ */
+  download_price?: number | null;
 }
 
 interface Folder { id: string; name: string; }
-interface AlbumWm { name: string; is_free: boolean; watermark_type: string; watermark_value: string; watermark_position: string }
+interface AlbumWm { name: string; is_free: boolean; watermark_type: string; watermark_value: string; watermark_position: string; download_price?: number }
 
 interface EditingPrices {
   [photoId: string]: {
@@ -60,6 +62,11 @@ export default function AlbumPhotosPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTarget, setMoveTarget] = useState<string>('');
   const [moving, setMoving] = useState(false);
+  // Зураг тус бүрийн татах үнэ (update-40)
+  const [bulkPrice, setBulkPrice] = useState('');
+  const [dlEdit, setDlEdit] = useState<Record<string, string>>({});
+  const [priceBusy, setPriceBusy] = useState(false);
+  const [offerCfg, setOfferCfg] = useState<{ accept: boolean; autoPct: string; loaded: boolean; saving: boolean }>({ accept: true, autoPct: '', loaded: false, saving: false });
 
   // Царайгаар хайх
   const [faceEnabled, setFaceEnabled] = useState(false);
@@ -95,9 +102,16 @@ export default function AlbumPhotosPage() {
     }
 
     const { data: albumData } = await supabase.from('albums')
-      .select('name, is_free, watermark_type, watermark_value, watermark_position').eq('id', albumId!).maybeSingle();
+      .select('name, is_free, watermark_type, watermark_value, watermark_position, download_price').eq('id', albumId!).maybeSingle();
     setAlbumName(albumData?.name ?? '');
     setAlbumWm(albumData as AlbumWm | null);
+    if (isManager) {
+      const { data: cfg, error: cfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumId!).maybeSingle();
+      if (!cfgErr && cfg) {
+        const r = Number((cfg as { offer_auto_accept_ratio: number | null }).offer_auto_accept_ratio ?? 0);
+        setOfferCfg({ accept: (cfg as { accept_offers: boolean }).accept_offers !== false, autoPct: r > 0 ? String(Math.round(r * 100)) : '', loaded: true, saving: false });
+      }
+    }
     await Promise.all([loadPhotos(isManager), loadFolders(), albumFaceSearchEnabled(albumId!).then(setFaceEnabled)]);
     setLoading(false);
   }
@@ -105,11 +119,22 @@ export default function AlbumPhotosPage() {
   async function loadPhotos(isManager = canManage) {
     let q = supabase
       .from('photo_uploads')
-      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id')
+      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price')
       .eq('album_id', albumId!)
       .order('created_at', { ascending: false });
     if (!isManager) q = q.eq('photographer_id', profile!.id);
-    const { data, error } = await q;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let { data, error }: { data: any[] | null; error: unknown } = await q;
+    if (error) {
+      // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
+      let qOld = supabase
+        .from('photo_uploads')
+        .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id')
+        .eq('album_id', albumId!)
+        .order('created_at', { ascending: false });
+      if (!isManager) qOld = qOld.eq('photographer_id', profile!.id);
+      ({ data, error } = await qOld);
+    }
     if (error) {
       // Хавтасны SQL ажиллаагүй үед
       let q2 = supabase
@@ -298,6 +323,31 @@ export default function AlbumPhotosPage() {
     showToast(`${data ?? 0} зураг зөөгдлөө`);
     setSelected(new Set());
     await loadPhotos();
+  }
+
+  /** Сонгосон зургуудад татах үнэ тавих. null = цомгийн үнэ рүү буцаах */
+  async function applyDownloadPrice(ids: string[], price: number | null) {
+    if (ids.length === 0) return;
+    if (price !== null && !(price > 0)) { showToast('Үнээ зөв оруулна уу', 'error'); return; }
+    setPriceBusy(true);
+    const { data, error } = await supabase.rpc('set_photo_download_price', { p_photo_ids: ids, p_price: price });
+    setPriceBusy(false);
+    if (error) { showToast('Үнэ хадгалахад алдаа: ' + error.message, 'error'); return; }
+    showToast(price === null ? `${data ?? 0} зураг цомгийн үнэ рүү буцлаа` : `${data ?? 0} зурагт ₮${price.toLocaleString()} үнэ тавигдлаа`);
+    setPhotos(prev => prev.map(p => (ids.includes(p.id) && p.source !== 'ai_booth' ? { ...p, download_price: price } : p)));
+    setDlEdit(prev => { const n = { ...prev }; ids.forEach(id => delete n[id]); return n; });
+  }
+
+  async function saveOfferSettings() {
+    const pct = offerCfg.autoPct.trim() === '' ? null : Number(offerCfg.autoPct);
+    if (pct !== null && !(pct >= 1 && pct <= 100)) { showToast('Автомат зөвшөөрөх хувь 1–100 байна', 'error'); return; }
+    setOfferCfg(c => ({ ...c, saving: true }));
+    const { error } = await supabase.rpc('set_album_offer_settings', {
+      p_album_id: albumId!, p_accept: offerCfg.accept, p_auto_ratio: pct === null ? null : pct / 100,
+    });
+    setOfferCfg(c => ({ ...c, saving: false }));
+    if (error) showToast('Хадгалахад алдаа: ' + error.message, 'error');
+    else showToast('Үнийн саналын тохиргоо хадгалагдлаа');
   }
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
@@ -495,6 +545,38 @@ export default function AlbumPhotosPage() {
           </button>
         </div>
 
+        {/* ── Үнийн санал ба зургийн үнэ (худалдах цомог) ── */}
+        {albumWm && !albumWm.is_free && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6 space-y-3">
+            <p className="text-white font-semibold flex items-center gap-2"><HandCoins className="w-5 h-5 text-amber-400" /> Үнэ ба үнийн санал</p>
+            <p className="text-stone-400 text-xs leading-relaxed">
+              Цомгийн анхдагч татах үнэ: <span className="text-white font-semibold">₮{Number(albumWm.download_price ?? 0).toLocaleString()}</span>.
+              Зураг бүр дээр өөр үнэ тавьж болно (доорх ☐ тэмдгээр олон зургийг сонгоод нэг дор). Худалдан авагч төлсний дараа 14 хоногийн дотор эх файлаа татна.
+            </p>
+            {canManage && offerCfg.loaded && (
+              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5">
+                <label className="flex items-center gap-2 text-sm text-stone-200 cursor-pointer">
+                  <input type="checkbox" checked={offerCfg.accept} onChange={e => setOfferCfg(c => ({ ...c, accept: e.target.checked }))}
+                    className="w-4 h-4 accent-amber-500" />
+                  Зочдоос үнийн санал хүлээн авах
+                </label>
+                <label className="flex items-center gap-2 text-sm text-stone-400">
+                  Үнийн
+                  <input type="number" inputMode="numeric" min={1} max={100} value={offerCfg.autoPct} disabled={!offerCfg.accept}
+                    onChange={e => setOfferCfg(c => ({ ...c, autoPct: e.target.value.replace(/[^\d]/g, '').slice(0, 3) }))}
+                    placeholder="—" className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-white text-sm outline-none disabled:opacity-40" />
+                  %-иас дээш саналыг автоматаар зөвшөөрөх
+                </label>
+                <button onClick={saveOfferSettings} disabled={offerCfg.saving}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-1.5 rounded-lg text-sm">
+                  {offerCfg.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Хадгалах
+                </button>
+                <button onClick={() => navigate('/dashboard/offers')} className="text-amber-400 hover:text-amber-300 text-sm ml-auto">Ирсэн саналууд →</button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Хуучин preview-г хамгаалалттай болгох (худалдах цомог) ── */}
         {albumWm && !albumWm.is_free && (unprotected.length > 0 || protectProgress) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -629,6 +711,19 @@ export default function AlbumPhotosPage() {
               className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-1.5 rounded-lg text-sm">
               {moving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Зөөх
             </button>
+            {albumWm && !albumWm.is_free && (
+              <span className="flex items-center gap-1.5 border-l border-white/10 pl-3">
+                <input type="number" inputMode="numeric" value={bulkPrice} placeholder="₮ татах үнэ"
+                  onChange={e => setBulkPrice(e.target.value.replace(/[^\d]/g, ''))}
+                  className="w-28 bg-stone-800 border border-white/10 text-white rounded-lg px-2 py-1.5 text-sm outline-none" />
+                <button onClick={() => applyDownloadPrice([...selected], Number(bulkPrice))} disabled={priceBusy || !bulkPrice}
+                  className="flex items-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-semibold px-3 py-1.5 rounded-lg text-sm">
+                  {priceBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tag className="w-4 h-4" />} Үнэ тавих
+                </button>
+                <button onClick={() => applyDownloadPrice([...selected], null)} disabled={priceBusy}
+                  className="text-stone-400 hover:text-white text-xs">Цомгийн үнэ рүү</button>
+              </span>
+            )}
             <button onClick={() => setSelected(new Set(shownPhotos.map(p => p.id)))} className="text-stone-400 hover:text-white text-sm">Бүгдийг сонгох</button>
             <button onClick={() => setSelected(new Set())} className="text-stone-400 hover:text-white text-sm ml-auto">Цуцлах</button>
           </div>
@@ -705,6 +800,35 @@ export default function AlbumPhotosPage() {
                     <p className="text-stone-600 text-xs">
                       {new Date(photo.created_at).toLocaleDateString('mn-MN', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
+
+                    {/* Татах үнэ (зураг тус бүр) */}
+                    {albumWm && !albumWm.is_free && photo.source !== 'ai_booth' && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <Download className="w-3 h-3 text-stone-500 flex-shrink-0" />
+                        {dlEdit[photo.id] !== undefined ? (
+                          <>
+                            <input type="number" inputMode="numeric" autoFocus value={dlEdit[photo.id]}
+                              onChange={e => setDlEdit(d => ({ ...d, [photo.id]: e.target.value.replace(/[^\d]/g, '') }))}
+                              onKeyDown={e => { if (e.key === 'Enter') applyDownloadPrice([photo.id], Number(dlEdit[photo.id])); }}
+                              className="w-20 bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-white outline-none focus:border-amber-500/50" />
+                            <button onClick={() => applyDownloadPrice([photo.id], Number(dlEdit[photo.id]))} disabled={priceBusy || !dlEdit[photo.id]}
+                              className="text-amber-400 disabled:opacity-40"><Check className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setDlEdit(d => { const n = { ...d }; delete n[photo.id]; return n; })} className="text-stone-500">✕</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setDlEdit(d => ({ ...d, [photo.id]: String(photo.download_price ?? albumWm.download_price ?? '') }))}
+                            className="flex items-center gap-1 text-stone-300 hover:text-white">
+                            {photo.download_price !== null && photo.download_price !== undefined
+                              ? <><span className="text-amber-300 font-semibold">₮{Number(photo.download_price).toLocaleString()}</span> <span className="text-stone-500">тусгай</span></>
+                              : <><span>₮{Number(albumWm.download_price ?? 0).toLocaleString()}</span> <span className="text-stone-500">цомгийн</span></>}
+                            <Pencil className="w-3 h-3 text-stone-500" />
+                          </button>
+                        )}
+                        {photo.download_price !== null && photo.download_price !== undefined && dlEdit[photo.id] === undefined && (
+                          <button onClick={() => applyDownloadPrice([photo.id], null)} title="Цомгийн үнэ рүү буцаах" className="text-stone-500 hover:text-white ml-auto">↺</button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Print price summary */}
                     <div className="text-xs text-stone-500 flex items-center gap-1.5">

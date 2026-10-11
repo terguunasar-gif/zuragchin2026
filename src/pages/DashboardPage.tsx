@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [pendingCount, setPendingCount] = useState(0);
   // Үнэгүй цомгийн шинэ угаалгах хүсэлт
   const [printReqCount, setPrintReqCount] = useState<number | null>(null);
+  const [offerCount, setOfferCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const sales = useMySales();
   const photographerSum = summarize(sales.rows.filter(r => r.is_my_photo));
@@ -123,6 +124,9 @@ export default function DashboardPage() {
   async function loadPrintRequestCount() {
     const { count, error } = await supabase.from('print_requests').select('id', { count: 'exact', head: true }).eq('status', 'new');
     setPrintReqCount(error ? null : (count ?? 0));
+    // Хариулаагүй үнийн санал (update-40-ийн SQL ажиллаагүй бол картыг нуух)
+    const offers = await supabase.rpc('my_pending_offer_count');
+    setOfferCount(offers.error ? null : Number(offers.data ?? 0));
   }
 
   async function loadPendingCount() {
@@ -317,6 +321,9 @@ export default function DashboardPage() {
               {printReqCount !== null && (
                 <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
               )}
+              {offerCount !== null && (
+                <StatCard icon={<HandCoins className="w-5 h-5 text-amber-400" />} label="Үнийн санал (хариулаагүй)" value={offerCount} onClick={() => navigate('/dashboard/offers')} />
+              )}
             </>
           )}
           {activeRole === 'organizer' && isOrganizer && (
@@ -327,6 +334,9 @@ export default function DashboardPage() {
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Татах боломжтой · Мөнгө татах →" value={walletStr} onClick={() => navigate('/dashboard/wallet')} />
               {printReqCount !== null && (
                 <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах хүсэлт (шинэ)" value={printReqCount} onClick={() => navigate('/dashboard/print-requests')} />
+              )}
+              {offerCount !== null && (
+                <StatCard icon={<HandCoins className="w-5 h-5 text-amber-400" />} label="Үнийн санал (хариулаагүй)" value={offerCount} onClick={() => navigate('/dashboard/offers')} />
               )}
             </>
           )}
