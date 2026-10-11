@@ -5,6 +5,7 @@ import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 import AlbumPolicySetting from './AlbumPolicySetting';
 import FreePackagesSetting from './FreePackagesSetting';
 import ListingPackagesSetting from './ListingPackagesSetting';
+import SiteContactSetting from './SiteContactSetting';
 
 interface MonthlyFee {
   month: string;
@@ -94,6 +95,7 @@ export default function AdminWalletTab() {
       <AlbumPolicySetting />
       <FreePackagesSetting />
       <ListingPackagesSetting />
+      <SiteContactSetting />
       {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5">
