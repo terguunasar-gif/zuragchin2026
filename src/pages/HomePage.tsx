@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
+import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import HomeAlbumsSection from '../components/HomeAlbumsSection';
-import { listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
+import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
 import AiBoothShowcase from '../components/AiBoothShowcase';
 import { useSiteContact, normalizeUrl } from '../lib/siteContact';
@@ -332,7 +332,7 @@ export default function HomePage() {
 /** Энэ төхөөрөмжөөс үзсэн цомгууд руу буцах товч (нүүр хуудасны толгой хэсэгт) */
 function MyAlbumsBar() {
   const navigate = useNavigate();
-  const [albums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
+  const [albums, setAlbums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
   const [open, setOpen] = useState(false);
   if (albums.length === 0) return null;
   const last = albums[0];
@@ -353,6 +353,10 @@ function MyAlbumsBar() {
             <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
         )}
+        <button onClick={() => { clearVisitedAlbums(); setOpen(false); setAlbums([]); }} title="Хаах" aria-label="«Таны цомог» товчийг хаах"
+          className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-stone-400 hover:text-white flex-shrink-0">
+          <X className="w-4 h-4" />
+        </button>
         {open && (
           <div className="absolute right-6 top-full mt-1 w-72 max-w-[calc(100vw-3rem)] bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-50">
             {albums.map(a => (
