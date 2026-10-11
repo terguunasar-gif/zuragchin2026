@@ -24,6 +24,8 @@ interface Photo {
   photographer_id?: string;
   /** Зураг тус бүрийн татах үнэ. null бол цомгийн үнэ */
   download_price?: number | null;
+  /** Зурагчны өгсөн нэр — нүүр хуудасны хайлтад гарна (update-50) */
+  title?: string | null;
 }
 
 interface Folder { id: string; name: string; }
@@ -64,6 +66,9 @@ export default function AlbumPhotosPage() {
   // Зураг тус бүрийн татах үнэ (update-40)
   const [bulkPrice, setBulkPrice] = useState('');
   const [dlEdit, setDlEdit] = useState<Record<string, string>>({});
+  const [titleEdit, setTitleEdit] = useState<Record<string, string>>({});
+  const [bulkTitle, setBulkTitle] = useState('');
+  const [titleBusy, setTitleBusy] = useState(false);
   const [priceBusy, setPriceBusy] = useState(false);
   const [offerCfg, setOfferCfg] = useState<{ accept: boolean; autoPct: string; loaded: boolean; saving: boolean }>({ accept: true, autoPct: '', loaded: false, saving: false });
 
@@ -118,12 +123,22 @@ export default function AlbumPhotosPage() {
   async function loadPhotos(isManager = canManage) {
     let q = supabase
       .from('photo_uploads')
-      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price')
+      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price, title')
       .eq('album_id', albumId!)
       .order('created_at', { ascending: false });
     if (!isManager) q = q.eq('photographer_id', profile!.id);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let { data, error }: { data: any[] | null; error: unknown } = await q;
+    if (error) {
+      // Зургийн нэрийн багана байхгүй (update-50-ийн SQL ажиллаагүй)
+      let qNoTitle = supabase
+        .from('photo_uploads')
+        .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price')
+        .eq('album_id', albumId!)
+        .order('created_at', { ascending: false });
+      if (!isManager) qNoTitle = qNoTitle.eq('photographer_id', profile!.id);
+      ({ data, error } = await qNoTitle);
+    }
     if (error) {
       // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
       let qOld = supabase
@@ -335,6 +350,23 @@ export default function AlbumPhotosPage() {
     showToast(price === null ? `${data ?? 0} зураг цомгийн үнэ рүү буцлаа` : `${data ?? 0} зурагт ₮${price.toLocaleString()} үнэ тавигдлаа`);
     setPhotos(prev => prev.map(p => (ids.includes(p.id) && p.source !== 'ai_booth' ? { ...p, download_price: price } : p)));
     setDlEdit(prev => { const n = { ...prev }; ids.forEach(id => delete n[id]); return n; });
+  }
+
+  /** Зурагт нэр өгөх — хайлтаар олдоно. Хоосон бол нэрийг арилгана */
+  async function applyTitle(ids: string[], title: string) {
+    if (ids.length === 0) return;
+    const t = title.trim().slice(0, 120);
+    setTitleBusy(true);
+    const { data, error } = await supabase.rpc('set_photo_title', { p_photo_ids: ids, p_title: t });
+    setTitleBusy(false);
+    if (error) {
+      showToast(/set_photo_title|schema cache/i.test(error.message) ? 'Зургийн нэрийн SQL (update-50) ажиллуулаагүй байна' : 'Нэр хадгалахад алдаа: ' + error.message, 'error');
+      return;
+    }
+    showToast(t ? `${data ?? 0} зурагт «${t}» нэр өгөгдлөө` : `${data ?? 0} зургийн нэр арилгагдлаа`);
+    setPhotos(prev => prev.map(p => (ids.includes(p.id) ? { ...p, title: t } : p)));
+    setTitleEdit(prev => { const n = { ...prev }; ids.forEach(id => delete n[id]); return n; });
+    setBulkTitle('');
   }
 
   async function saveOfferSettings() {
@@ -721,6 +753,16 @@ export default function AlbumPhotosPage() {
                   className="text-stone-400 hover:text-white text-xs">Цомгийн үнэ рүү</button>
               </span>
             )}
+            <span className="flex items-center gap-1.5 border-l border-white/10 pl-3">
+              <input value={bulkTitle} placeholder="Зургийн нэр (хайлтад)" maxLength={120}
+                onChange={e => setBulkTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && bulkTitle.trim()) applyTitle([...selected], bulkTitle); }}
+                className="w-44 bg-stone-800 border border-white/10 text-white rounded-lg px-2 py-1.5 text-sm outline-none" />
+              <button onClick={() => applyTitle([...selected], bulkTitle)} disabled={titleBusy || !bulkTitle.trim()}
+                className="flex items-center gap-1 bg-white/10 hover:bg-white/15 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg text-sm">
+                {titleBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />} Нэр өгөх
+              </button>
+            </span>
             <button onClick={() => setSelected(new Set(shownPhotos.map(p => p.id)))} className="text-stone-400 hover:text-white text-sm">Бүгдийг сонгох</button>
             <button onClick={() => setSelected(new Set())} className="text-stone-400 hover:text-white text-sm ml-auto">Цуцлах</button>
           </div>
@@ -793,7 +835,29 @@ export default function AlbumPhotosPage() {
                   </div>
 
                   <div className="p-3 space-y-2">
-                    <p className="text-stone-300 text-xs truncate">{photo.filename}</p>
+                    {/* Зургийн нэр — худалдан авагч нүүр хуудаснаас хайж олно */}
+                    {titleEdit[photo.id] !== undefined ? (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <input autoFocus value={titleEdit[photo.id]} maxLength={120} placeholder="Жишээ: Төгсөлтийн бүжиг"
+                          onChange={e => setTitleEdit(d => ({ ...d, [photo.id]: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') applyTitle([photo.id], titleEdit[photo.id]);
+                            if (e.key === 'Escape') setTitleEdit(d => { const n = { ...d }; delete n[photo.id]; return n; });
+                          }}
+                          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-white outline-none focus:border-amber-500/50" />
+                        <button onClick={() => applyTitle([photo.id], titleEdit[photo.id])} disabled={titleBusy}
+                          className="text-amber-400 disabled:opacity-40"><Check className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setTitleEdit(d => { const n = { ...d }; delete n[photo.id]; return n; })} className="text-stone-500">✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setTitleEdit(d => ({ ...d, [photo.id]: photo.title ?? '' }))}
+                        className="w-full flex items-center gap-1 text-left text-xs group/title" title="Нэр өгвөл нүүр хуудасны хайлтаар олдоно">
+                        {photo.title
+                          ? <span className="text-white font-medium truncate">{photo.title}</span>
+                          : <span className="text-stone-500 truncate">+ Нэр өгөх <span className="text-stone-600">({photo.filename})</span></span>}
+                        <Pencil className="w-3 h-3 text-stone-500 flex-shrink-0 group-hover/title:text-white" />
+                      </button>
+                    )}
                     <p className="text-stone-600 text-xs">
                       {new Date(photo.created_at).toLocaleDateString('mn-MN', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
