@@ -7,6 +7,7 @@ import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import { listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
+import AiBoothShowcase from '../components/AiBoothShowcase';
 import { useSiteContact, normalizeUrl } from '../lib/siteContact';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
@@ -316,6 +317,9 @@ export default function HomePage() {
           </div>
         </section>
       )}
+
+      {/* AI зургийн бүүт — загварууд, захиалгат загвар */}
+      <AiBoothShowcase />
 
       {/* Footer */}
       <footer className="border-t border-white/10 py-12 px-6">
