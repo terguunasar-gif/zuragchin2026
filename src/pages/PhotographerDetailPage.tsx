@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
+import BrandMark from '../components/BrandMark';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
 
@@ -78,10 +79,8 @@ export default function PhotographerDetailPage() {
             </button>
             <div className="w-px h-5 bg-white/10" />
             <button onClick={() => navigate('/')} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <div className="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-4 h-4 text-stone-950" />
-              </div>
-              <span className="text-white font-bold text-sm">Zuragchin<span className="text-amber-400">.mn</span></span>
+              <BrandMark className="w-7 h-7 flex-shrink-0" />
+              <span className="font-brand text-white font-semibold text-sm">Zuragchin<span className="text-amber-400">.mn</span></span>
             </button>
           </div>
           {profile

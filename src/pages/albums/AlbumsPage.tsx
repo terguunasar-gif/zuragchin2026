@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import BrandMark from '../../components/BrandMark';
 
 interface AlbumSummary {
   id: string;
@@ -165,12 +166,10 @@ export default function AlbumsPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <button onClick={() => navigate('/')} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-5 h-5 text-stone-950" />
-              </div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <div>
-                <span className="text-white font-bold tracking-tight">Zuragchin</span>
-                <span className="text-amber-400 font-bold">.mn</span>
+                <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                <span className="font-brand text-amber-400 font-semibold">.mn</span>
               </div>
             </button>
           </div>

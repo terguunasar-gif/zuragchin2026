@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, useCallback, DragEvent, ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Camera, ArrowLeft, Upload, X, CheckCircle2, AlertCircle,
-  LogOut, User, Loader2, Tag, ChevronDown,
-  ChevronUp, Eye, FolderOpen, FolderPlus,
+  ArrowLeft, Upload, X, CheckCircle2, AlertCircle, LogOut, User, Loader2, Tag, ChevronDown, ChevronUp, Eye, FolderOpen, FolderPlus,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
+import BrandMark from '../../components/BrandMark';
 
 interface AlbumInfo {
   id: string;
@@ -347,12 +346,10 @@ export default function PhotoUploadPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <a href="/" title="Нүүр хуудас" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-5 h-5 text-stone-950" />
-              </div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <div>
-                <span className="text-white font-bold tracking-tight">Zuragchin</span>
-                <span className="text-amber-400 font-bold">.mn</span>
+                <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                <span className="font-brand text-amber-400 font-semibold">.mn</span>
               </div>
             </a>
           </div>

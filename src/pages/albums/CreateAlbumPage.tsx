@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandMark from '../../components/BrandMark';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type WatermarkType = 'text' | 'image' | 'tiled-text';
@@ -297,7 +298,7 @@ export default function CreateAlbumPage() {
           </button>
           <div className="h-5 w-px bg-white/10" />
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center"><Camera className="w-4 h-4 text-stone-950" /></div>
+            <BrandMark className="w-7 h-7 flex-shrink-0" />
             <span className="text-white font-semibold">Цомог үүсгэх</span>
           </div>
         </div>

@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, ChevronRight, Download, Printer, Receipt } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Download, Printer, Receipt } from 'lucide-react';
 import { listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
+import BrandMark from '../components/BrandMark';
 
 // Энэ төхөөрөмж дээр төлсөн бүх захиалгын жагсаалт. Зурагчнаас угаасан зургаа
 // авахдаа баримтаа нээж үзүүлэхэд зориулсан.
@@ -21,8 +22,8 @@ export default function MyPurchasesPage() {
           <button onClick={() => navigate(-1)} className="text-stone-400 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <a href="/" title="Нүүр хуудас" className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center hover:opacity-80">
-            <Camera className="w-5 h-5 text-stone-950" />
+          <a href="/" title="Нүүр хуудас" className="w-8 h-8 flex-shrink-0 hover:opacity-80">
+            <BrandMark className="w-8 h-8" />
           </a>
           <p className="text-white font-bold flex-1">{t('Миний худалдан авалт')}</p>
           <LanguageSwitcher />

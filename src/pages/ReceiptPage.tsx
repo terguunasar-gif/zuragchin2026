@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Camera, CheckCircle2, Download, Printer, ArrowLeft,
-  Loader2, AlertCircle, Phone, Mail, Facebook, Instagram,
-  Calendar, Hash, Clock, X, Share2,
+  CheckCircle2, Download, Printer, ArrowLeft, Loader2, AlertCircle, Phone, Mail, Facebook, Instagram, Calendar, Hash, Clock, X, Share2,
 } from 'lucide-react';
 import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
@@ -12,6 +10,7 @@ import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
+import BrandMark from '../components/BrandMark';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -294,12 +293,10 @@ export default function ReceiptPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <a href="/" title="Нүүр хуудас" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-5 h-5 text-stone-950" />
-              </div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <div>
-                <span className="text-white font-bold tracking-tight">Zuragchin</span>
-                <span className="text-amber-400 font-bold">.mn</span>
+                <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                <span className="font-brand text-amber-400 font-semibold">.mn</span>
               </div>
             </a>
           </div>
