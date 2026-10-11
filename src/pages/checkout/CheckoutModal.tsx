@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { AlbumData, CartItem } from '../PublicAlbumPage';
 import { useI18n } from '../../lib/i18n';
+import LicenseConsent from '../../components/LicenseConsent';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -65,6 +66,9 @@ export default function CheckoutModal({
   const [buyerPhone, setBuyerPhone] = useState('');
   const [nameError, setNameError] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const hasDownloads = cart.some(i => i.type === 'download');
+  const [licenseOk, setLicenseOk] = useState(false);
+  const [licenseError, setLicenseError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
@@ -86,6 +90,7 @@ export default function CheckoutModal({
     if (!buyerPhone.trim() || !/^\d{8,}$/.test(buyerPhone.trim())) {
       setPhoneError(t('Утасны дугаараа оруулна уу (8+ тоо)')); ok = false;
     } else setPhoneError('');
+    if (hasDownloads && !licenseOk) { setLicenseError(t('Нөхцөлийг зөвшөөрч тэмдэглэнэ үү')); ok = false; } else setLicenseError('');
     return ok;
   }
 
@@ -111,6 +116,7 @@ export default function CheckoutModal({
           buyerName: buyerName.trim(),
           buyerPhone: buyerPhone.trim(),
           albumId: album.id,
+          licenseAccepted: hasDownloads ? licenseOk : undefined,
         }),
       });
 
@@ -240,6 +246,10 @@ export default function CheckoutModal({
                   </div>
                 </div>
               </div>
+
+              {hasDownloads && (
+                <LicenseConsent checked={licenseOk} onChange={v => { setLicenseOk(v); if (v) setLicenseError(''); }} error={licenseError} />
+              )}
 
               {error && (
                 <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl p-3">

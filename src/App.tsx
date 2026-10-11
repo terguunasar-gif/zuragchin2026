@@ -30,6 +30,8 @@ import PrintRequestsPage from './pages/organizer/PrintRequestsPage';
 import AlbumListingPage from './pages/albums/AlbumListingPage';
 import ExploreAlbumsPage from './pages/ExploreAlbumsPage';
 import WalletPage from './pages/wallet/WalletPage';
+import OfferPage from './pages/OfferPage';
+import PriceOffersPage from './pages/photographer/PriceOffersPage';
 
 export default function App() {
   return (
@@ -49,6 +51,10 @@ export default function App() {
           <Route
             path="/dashboard/print-requests"
             element={<ProtectedRoute><PrintRequestsPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/offers"
+            element={<ProtectedRoute><PriceOffersPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/requests"
@@ -104,6 +110,7 @@ export default function App() {
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
+          <Route path="/offer/:token" element={<OfferPage />} />
           <Route path="/my-purchases" element={<MyPurchasesPage />} />
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />

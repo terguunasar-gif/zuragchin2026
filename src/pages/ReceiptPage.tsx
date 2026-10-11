@@ -54,6 +54,18 @@ interface SignedUrlItem {
   signedUrl: string;
   filename: string;
   type: string;
+  /** Татах хугацаа дуусах огноо (төлснөөс хойш 14 хоног) */
+  expiresAt?: string | null;
+  expired?: boolean;
+}
+
+/** Үлдсэн хугацааг «5 хоног 3 цаг» хэлбэрээр */
+function timeLeft(iso: string, t: (s: string, v?: Record<string, string | number>) => string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return t('0 цаг');
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  return d > 0 ? t('{d} хоног {h} цаг', { d, h }) : t('{h} цаг', { h: Math.max(1, h) });
 }
 
 interface PhotographerContact {
@@ -223,6 +235,10 @@ export default function ReceiptPage() {
   const totalPaid   = purchases.reduce((s, p) => s + Number(p.gross_amount), 0);
   const downloadPurchases = purchases.filter(p => p.type === 'download');
   const printPurchases    = purchases.filter(p => p.type === 'print');
+  // Татах эцсийн хугацаа: худалдан авалтын хугацаа (14 хоног), байхгүй бол цомгийн хугацаа
+  const dlDeadlines = signedUrls.filter(u => u.type === 'download' && u.expiresAt && !u.expired).map(u => u.expiresAt as string).sort();
+  const downloadDeadline = dlDeadlines[0] ?? null;
+  const allDlExpired = signedUrls.some(u => u.type === 'download') && signedUrls.filter(u => u.type === 'download').every(u => u.expired);
 
   const contactIcons: Record<string, React.ReactNode> = {
     phone:     <Phone className="w-4 h-4" />,
@@ -336,7 +352,30 @@ export default function ReceiptPage() {
         <AutoOpenInBrowser />
         <InAppBrowserBanner compact />
 
-        {isPaid && downloadPurchases.length > 0 && albumExpiresAt && (
+        {isPaid && downloadPurchases.length > 0 && downloadDeadline && (
+          <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-4 flex gap-3">
+            <Clock className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-red-200 text-sm font-semibold">
+                {t('{left}-ийн дараа зураг устгагдана', { left: timeLeft(downloadDeadline, t) })}
+              </p>
+              <p className="text-red-200/80 text-xs mt-1 leading-relaxed">
+                {t('Одоо «Татах» дарж утас эсвэл компьютертоо хадгалаарай. {date}-с хойш файлыг дахин авах боломжгүй.', { date: fmtDay(downloadDeadline) })}
+              </p>
+              <p className="text-red-200/60 text-xs mt-1 leading-relaxed">
+                {t('Хувийн хэрэглээнд зориулсан. Дахин худалдахыг хориглоно — файлд таны захиалгын дугаар суугдсан.')}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isPaid && allDlExpired && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-stone-400 text-sm">
+            {t('Татах хугацаа дууссан тул файлууд устгагдсан.')}
+          </div>
+        )}
+
+        {isPaid && downloadPurchases.length > 0 && !downloadDeadline && !allDlExpired && albumExpiresAt && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex gap-3">
             <Clock className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
@@ -413,7 +452,7 @@ export default function ReceiptPage() {
                       </button>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
-                        {isPaid ? t('Бэлдэж байна…') : t('Хүлээгдэж байна')}
+                        {urlItem?.expired ? t('Хугацаа дууссан') : isPaid ? t('Бэлдэж байна…') : t('Хүлээгдэж байна')}
                       </span>
                     )}
                   </div>
@@ -425,7 +464,7 @@ export default function ReceiptPage() {
               <p className="text-stone-500 text-xs">
                 {isPaid
                   ? t('Татсан зургууд усан тэмдэггүй бөгөөд өндөр нарийвчлалтай байна.')
-                  : t('Татах холбоосууд 24 цагийн дотор хүчинтэй.')}
+                  : t('Төлбөр баталгаажсаны дараа татах боломжтой болно.')}
               </p>
             </div>
           </div>

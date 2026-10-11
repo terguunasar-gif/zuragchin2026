@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Camera, Download, Printer, ShoppingCart, X,
   Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2,
+  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, withTimeout } from '../lib/supabase';
@@ -21,6 +21,7 @@ import { saveImageToDevice } from '../lib/browserEnv';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
+import PriceOfferModal from '../components/PriceOfferModal';
 
 export interface AlbumData {
   id: string;
@@ -39,6 +40,8 @@ export interface AlbumData {
   watermark_logo_url?: string;
   expires_at?: string | null;
   free_activated?: boolean;
+  /** Зурагчин үнийн санал хүлээн авах эсэх (update-40) */
+  accept_offers?: boolean;
 }
 
 export interface PhotoData {
@@ -49,6 +52,16 @@ export interface PhotoData {
   print_prices: Record<string, number>;
   folder_id?: string | null;
   source?: string | null;
+  /** Зураг тус бүрийн татах үнэ. null бол цомгийн үнэ */
+  download_price?: number | null;
+}
+
+/** Зургийн татах үнэ: AI бүүт → админы үнэ, зурагчны тавьсан үнэ → цомгийн анхдагч үнэ */
+export function photoDownloadPrice(photo: PhotoData, album: AlbumData, aiPrice: number): number {
+  if (photo.source === 'ai_booth') return aiPrice;
+  if (album.is_free) return 0;
+  if (photo.download_price !== null && photo.download_price !== undefined) return Number(photo.download_price);
+  return Number(album.download_price ?? 0);
 }
 
 interface AlbumFolder { id: string; name: string; }
@@ -166,6 +179,8 @@ export default function PublicAlbumPage() {
   const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
+  // Үнийн санал илгээх зураг
+  const [offerPhoto, setOfferPhoto] = useState<PhotoData | null>(null);
   const [paidCount] = useState(() => { try { return listPurchaseHistory().length; } catch { return 0; } });
 
   useEffect(() => { if (shareLink) loadAlbum(shareLink); }, [shareLink]);
@@ -175,13 +190,13 @@ export default function PublicAlbumPage() {
     if (album && cartReady) saveCart(album.id, cart);
   }, [album, cart, cartReady]);
 
-  async function restoreCart(albumId: string, current: PhotoData[], downloadPrice: number, aiPrice: number) {
+  async function restoreCart(albumId: string, current: PhotoData[], albumForPrice: AlbumData, aiPrice: number) {
     // Хадгалсан сагсны үнийг одоогийн үнээр шинэчилнэ (үнэ өөрчлөгдсөн байж болно)
     const byId = new Map(current.map(p => [p.id, p]));
     const saved = loadCart<CartItem>(albumId).flatMap(c => {
       const photo = byId.get(c.photoId);
       if (!photo) return [];
-      if (c.type === 'download') return [{ ...c, price: photo.source === 'ai_booth' ? aiPrice : downloadPrice }];
+      if (c.type === 'download') return [{ ...c, price: photoDownloadPrice(photo, albumForPrice, aiPrice) }];
       const price = Number(photo.print_prices?.[c.printSize ?? ''] ?? 0);
       return price > 0 ? [{ ...c, price }] : [];
     });
@@ -255,20 +270,33 @@ export default function PublicAlbumPage() {
       .from('profiles').select('*')
       .eq('id', albumData.owner_id).maybeSingle();
 
-    setAlbum({
+    // Үнийн санал хүлээн авах эсэх (update-40-ийн SQL ажиллаагүй бол асаалттай гэж үзэхгүй)
+    const { data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers').eq('id', albumData.id).maybeSingle();
+    const albumObj: AlbumData = {
       ...albumData,
       name: albumData.title || albumData.name,
       organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? '',
-    });
+      accept_offers: !offerCfgErr && (offerCfg as { accept_offers?: boolean } | null)?.accept_offers !== false,
+    };
+    setAlbum(albumObj);
 
     // Хавтасны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let photoData: any[] | null = null;
-    const first = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let first: { data: any[] | null; error: unknown } = await supabase
       .from('photo_uploads')
-      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source')
+      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price')
       .eq('album_id', albumData.id)
       .order('created_at', { ascending: true });
+    if (first.error) {
+      // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
+      first = await supabase
+        .from('photo_uploads')
+        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source')
+        .eq('album_id', albumData.id)
+        .order('created_at', { ascending: true });
+    }
     photoData = first.data;
     if (first.error) {
       ({ data: photoData } = await supabase
@@ -304,6 +332,7 @@ export default function PublicAlbumPage() {
         print_prices: Object.keys(own).length > 0 ? own : albumPrint,
         folder_id: p.folder_id ?? null,
         source: p.source ?? null,
+        download_price: p.download_price ?? null,
       };
     });
     setPhotos(mapped);
@@ -312,7 +341,7 @@ export default function PublicAlbumPage() {
     const aiVal = Number((aiSetting as { value?: unknown } | null)?.value);
     const aiP = Number.isFinite(aiVal) && aiVal >= 0 ? aiVal : AI_ALBUM_PRICE_DEFAULT;
     setAiPrice(aiP);
-    await restoreCart(albumData.id, mapped, albumData.is_free ? 0 : Number(albumData.download_price ?? 0), aiP);
+    await restoreCart(albumData.id, mapped, albumObj, aiP);
     setLoading(false);
   }
 
@@ -618,8 +647,10 @@ export default function PublicAlbumPage() {
                   previewUrl: photo.watermarked_url,
                   filename: photo.title || photo.id,
                   type: 'download',
-                  price: photo.source === 'ai_booth' ? aiPrice : (album.is_free ? 0 : album.download_price),
+                  price: photoDownloadPrice(photo, album, aiPrice),
                 })}
+                onOffer={!freeMode && album.accept_offers && photo.source !== 'ai_booth' && photoDownloadPrice(photo, album, aiPrice) > 0
+                  ? () => setOfferPhoto(photo) : undefined}
                 onAddPrint={(size, price) => {
                   addToCart({
                     photoId: photo.id,
@@ -667,6 +698,15 @@ export default function PublicAlbumPage() {
         />
       )}
 
+      {offerPhoto && album && (
+        <PriceOfferModal
+          photoId={offerPhoto.id}
+          previewUrl={offerPhoto.watermarked_url}
+          listPrice={photoDownloadPrice(offerPhoto, album, aiPrice)}
+          onClose={() => setOfferPhoto(null)}
+        />
+      )}
+
       {faceOpen && album && (
         <FaceSearchModal
           albumId={album.id}
@@ -693,7 +733,8 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick }: {
+function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer }: {
+  onOffer?: () => void;
   printPicked?: boolean;
   onTogglePrintPick?: () => void;
   freeDownload?: boolean;
@@ -713,7 +754,7 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
   const { t } = useI18n();
   const downloadInCart = inCart.some(c => c.type === 'download');
   const hasPrintPrices = photo.print_prices && Object.keys(photo.print_prices).length > 0;
-  const downloadPrice  = photo.source === 'ai_booth' ? aiPrice : (album.is_free ? 0 : album.download_price);
+  const downloadPrice  = photoDownloadPrice(photo, album, aiPrice);
 
   return (
     <div className="group bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden transition-all duration-200">
@@ -787,6 +828,12 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
             {downloadPrice === 0 ? t('Үнэгүй') : `₮${downloadPrice.toLocaleString()}`}
           </span>
         </button>
+        )}
+        {onOffer && !downloadInCart && (
+          <button onClick={onOffer}
+            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium text-stone-400 hover:text-amber-300 hover:bg-white/5 transition-colors">
+            <HandCoins className="w-3.5 h-3.5" /> {t('Үнийн санал илгээх')}
+          </button>
         )}
         {freeDownload && onTogglePrintPick && (
           <button onClick={onTogglePrintPick}
