@@ -8,7 +8,6 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 import AlbumPolicySetting from './AlbumPolicySetting';
-import SiteContactSetting from './SiteContactSetting';
 
 interface PlatformWallet {
   balance: number;
@@ -179,7 +178,6 @@ export default function AdminPlatformTab() {
     <div className="space-y-6">
       <AiAlbumPriceSetting />
       <AlbumPolicySetting />
-      <SiteContactSetting />
 
       {/* ── Platform wallet cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
