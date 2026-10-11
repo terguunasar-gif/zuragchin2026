@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Camera, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
+import { Search, Instagram, Facebook, Twitter, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import { listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
+import BrandMark from '../components/BrandMark';
 
 const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
 
@@ -84,12 +85,10 @@ export default function HomePage() {
       <header className="border-b border-white/10 sticky top-0 z-50 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-              <Camera className="w-5 h-5 text-stone-950" />
-            </div>
+            <BrandMark className="w-8 h-8 flex-shrink-0" />
             <div>
-              <span className="text-white font-bold tracking-tight">Zuragchin</span>
-              <span className="text-amber-400 font-bold">.mn</span>
+              <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+              <span className="font-brand text-amber-400 font-semibold">.mn</span>
             </div>
           </button>
           <div className="flex items-center gap-3">
@@ -323,12 +322,10 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
             <div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                  <Camera className="w-5 h-5 text-stone-950" />
-                </div>
+                <BrandMark className="w-8 h-8 flex-shrink-0" />
                 <div>
-                  <span className="text-white font-bold">Zuragchin</span>
-                  <span className="text-amber-400 font-bold">.mn</span>
+                  <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                  <span className="font-brand text-amber-400 font-semibold">.mn</span>
                 </div>
               </div>
               <p className="text-stone-500 text-sm leading-relaxed">Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.</p>

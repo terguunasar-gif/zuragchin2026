@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Camera, ChevronRight, Images, Loader2, LogIn, Search } from 'lucide-react';
+import { ChevronRight, Images, Loader2, LogIn, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchPublicAlbums, LISTING_CATEGORIES, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
+import BrandMark from '../components/BrandMark';
 
 const PAGE = 24;
 
@@ -46,8 +47,8 @@ export default function ExploreAlbumsPage() {
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center"><Camera className="w-5 h-5 text-stone-950" /></div>
-            <div><span className="text-white font-bold tracking-tight">Zuragchin</span><span className="text-amber-400 font-bold">.mn</span></div>
+            <BrandMark className="w-8 h-8 flex-shrink-0" />
+            <div><span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span><span className="font-brand text-amber-400 font-semibold">.mn</span></div>
           </button>
           {profile
             ? <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-stone-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-sm font-medium">Хяналтын самбар <ChevronRight className="w-4 h-4" /></button>

@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Camera, MapPin, Calendar, Users, Banknote,
-  Send, CheckCircle2, AlertCircle, X, ChevronRight,
-  Briefcase, LogIn,
+  MapPin, Calendar, Users, Banknote, Send, CheckCircle2, AlertCircle, X, ChevronRight, Briefcase, LogIn,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { hasRole } from '../lib/supabase';
+import BrandMark from '../components/BrandMark';
 
 interface Listing {
   id: string;
@@ -114,12 +113,10 @@ export default function EventListingsPage() {
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-              <Camera className="w-5 h-5 text-stone-950" />
-            </div>
+            <BrandMark className="w-8 h-8 flex-shrink-0" />
             <div>
-              <span className="text-white font-bold tracking-tight">Zuragchin</span>
-              <span className="text-amber-400 font-bold">.mn</span>
+              <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+              <span className="font-brand text-amber-400 font-semibold">.mn</span>
             </div>
           </button>
           <div className="flex items-center gap-3">

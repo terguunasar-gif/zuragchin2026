@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Camera, ArrowLeft, Upload, Trash2, LogOut, User,
-  Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle,
-  ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download,
+  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { makeSalePreview } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
+import BrandMark from '../../components/BrandMark';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -487,12 +486,10 @@ export default function AlbumPhotosPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <a href="/" title="Нүүр хуудас" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-5 h-5 text-stone-950" />
-              </div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <div>
-                <span className="text-white font-bold tracking-tight">Zuragchin</span>
-                <span className="text-amber-400 font-bold">.mn</span>
+                <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                <span className="font-brand text-amber-400 font-semibold">.mn</span>
               </div>
             </a>
           </div>

@@ -1,7 +1,8 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Eye, EyeOff, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import BrandMark from '../../components/BrandMark';
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -76,12 +77,10 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
-            <Camera className="w-6 h-6 text-stone-950" />
-          </div>
+          <BrandMark className="w-10 h-10 flex-shrink-0" />
           <div>
-            <span className="text-white font-bold text-xl tracking-tight">Zuragchin</span>
-            <span className="text-amber-400 font-bold text-xl">.mn</span>
+            <span className="font-brand text-white font-semibold tracking-tight text-xl">Zuragchin</span>
+            <span className="font-brand text-amber-400 font-semibold text-xl">.mn</span>
           </div>
         </div>
 

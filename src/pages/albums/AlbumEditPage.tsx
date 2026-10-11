@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Camera, ArrowLeft, Save, AlertCircle, CheckCircle2,
-  Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid,
-  Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2,
+  ArrowLeft, Save, AlertCircle, CheckCircle2, Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid, Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import BrandMark from '../../components/BrandMark';
 
 interface AlbumPhotographer {
   photographer_id: string;
@@ -403,7 +402,7 @@ export default function AlbumEditPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center"><Camera className="w-5 h-5 text-stone-950" /></div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <span className="text-white font-semibold">Цомог засах</span>
             </div>
           </div>

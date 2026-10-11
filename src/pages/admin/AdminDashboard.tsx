@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Camera, LogOut, LayoutDashboard, Users, FolderOpen,
-  ArrowUpCircle, Wallet, ChevronRight, Shield, Sparkles,
+  LogOut, LayoutDashboard, Users, FolderOpen, ArrowUpCircle, Wallet, ChevronRight, Shield, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminOverviewTab from './AdminOverviewTab';
@@ -11,6 +10,7 @@ import AdminAlbumsTab from './AdminAlbumsTab';
 import AdminPayoutsTab from './AdminPayoutsTab';
 import AdminWalletTab from './AdminWalletTab';
 import AdminAiTemplatesTab from './AdminAiTemplatesTab';
+import BrandMark from '../../components/BrandMark';
 
 type AdminTab = 'overview' | 'users' | 'albums' | 'payouts' | 'wallet' | 'ai';
 
@@ -35,12 +35,10 @@ export default function AdminDashboard() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate('/')} title="Нүүр хуудас" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                <Camera className="w-5 h-5 text-stone-950" />
-              </div>
+              <BrandMark className="w-8 h-8 flex-shrink-0" />
               <div>
-                <span className="text-white font-bold tracking-tight">Zuragchin</span>
-                <span className="text-amber-400 font-bold">.mn</span>
+                <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+                <span className="font-brand text-amber-400 font-semibold">.mn</span>
               </div>
             </button>
             <div className="hidden sm:flex items-center gap-1.5 text-stone-500">

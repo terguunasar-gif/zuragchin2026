@@ -1,9 +1,10 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useI18n } from '../../lib/i18n';
 import { LanguageSwitcher } from '../../components/LanguagePicker';
+import BrandMark from '../../components/BrandMark';
 
 export default function RegisterPage() {
   const { t } = useI18n();
@@ -85,12 +86,10 @@ export default function RegisterPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-stone-950/80 via-stone-950/40 to-transparent" />
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           <a href="/" title="Нүүр хуудас" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
-              <Camera className="w-6 h-6 text-stone-950" />
-            </div>
+            <BrandMark className="w-10 h-10 flex-shrink-0" />
             <div>
-              <span className="text-white font-bold text-xl tracking-tight">Zuragchin</span>
-              <span className="text-amber-400 font-bold text-xl">.mn</span>
+              <span className="font-brand text-white font-semibold tracking-tight text-xl">Zuragchin</span>
+              <span className="font-brand text-amber-400 font-semibold text-xl">.mn</span>
             </div>
           </a>
           <div>
@@ -109,12 +108,10 @@ export default function RegisterPage() {
         <div className="w-full max-w-md py-8">
           {/* Mobile logo */}
           <a href="/" title="Нүүр хуудас" className="flex items-center gap-3 mb-8 lg:hidden hover:opacity-80 transition-opacity">
-            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
-              <Camera className="w-6 h-6 text-stone-950" />
-            </div>
+            <BrandMark className="w-10 h-10 flex-shrink-0" />
             <div>
-              <span className="text-white font-bold text-xl tracking-tight">Zuragchin</span>
-              <span className="text-amber-400 font-bold text-xl">.mn</span>
+              <span className="font-brand text-white font-semibold tracking-tight text-xl">Zuragchin</span>
+              <span className="font-brand text-amber-400 font-semibold text-xl">.mn</span>
             </div>
           </a>
 

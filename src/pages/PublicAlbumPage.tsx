@@ -1,9 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Camera, Download, Printer, ShoppingCart, X,
-  Calendar, User, Image as ImageIcon, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, withTimeout } from '../lib/supabase';
@@ -23,6 +21,7 @@ import AlbumExpiredView from '../components/AlbumExpiredView';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 import PriceOfferModal from '../components/PriceOfferModal';
 import { rememberAlbum } from '../lib/visitedAlbums';
+import BrandMark from '../components/BrandMark';
 
 export interface AlbumData {
   id: string;
@@ -508,8 +507,8 @@ export default function PublicAlbumPage() {
             </button>
             {/* Лого → сайтын нүүр хуудас */}
             <a href="/" onClick={e => { e.preventDefault(); navigate('/'); }} title="Zuragchin.mn"
-              className="w-8 h-8 bg-amber-500 hover:bg-amber-400 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
-              <Camera className="w-5 h-5 text-stone-950" />
+              className="w-8 h-8 flex-shrink-0 hover:opacity-80 transition-opacity">
+              <BrandMark className="w-8 h-8" />
             </a>
             <div className="min-w-0">
               <p className="text-white font-bold truncate leading-tight">{album.name}</p>

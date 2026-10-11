@@ -14,6 +14,7 @@ import BuyerPurchases, { useBuyerPurchases } from '../components/BuyerPurchases'
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
+import BrandMark from '../components/BrandMark';
 
 interface Album {
   id: string;
@@ -210,12 +211,10 @@ export default function DashboardPage() {
       <header className="border-b border-white/10 sticky top-0 z-20 bg-stone-950/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-              <Camera className="w-5 h-5 text-stone-950" />
-            </div>
+            <BrandMark className="w-8 h-8 flex-shrink-0" />
             <div>
-              <span className="text-white font-bold tracking-tight">Zuragchin</span>
-              <span className="text-amber-400 font-bold">.mn</span>
+              <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
+              <span className="font-brand text-amber-400 font-semibold">.mn</span>
             </div>
           </button>
 
