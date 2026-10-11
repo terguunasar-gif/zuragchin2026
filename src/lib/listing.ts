@@ -43,3 +43,17 @@ export async function fetchPublicAlbums(opts: { category?: string; q?: string; p
 }
 
 export const albumHref = (shareLink: string) => `/album/${shareLink.replace(/^\/?album\//, '')}`;
+
+/** Зурагчны өгсөн нэрээр олдсон зарах зураг (update-50) */
+export interface PublicPhotoHit {
+  id: string; title: string; preview_url: string | null; album_id: string; album_name: string;
+  share_link: string; price: number; photographer: string;
+}
+
+export async function searchPublicPhotos(q: string, limit = 24): Promise<PublicPhotoHit[]> {
+  const term = q.trim();
+  if (term.length < 2) return [];
+  const { data, error } = await withTimeout(publicDb.rpc('search_public_photos', { p_q: term, p_limit: limit }), 12000);
+  if (error) return []; // SQL ажиллуулаагүй бол цомгийн хайлт л ажиллана
+  return ((data ?? []) as PublicPhotoHit[]).map(p => ({ ...p, price: Number(p.price ?? 0) }));
+}

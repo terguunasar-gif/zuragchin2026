@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
-import PublicAlbumCard from '../components/PublicAlbumCard';
+import HomeAlbumsSection from '../components/HomeAlbumsSection';
 import { listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
 import AiBoothShowcase from '../components/AiBoothShowcase';
@@ -38,7 +37,6 @@ export default function HomePage() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [realPhotographers, setRealPhotographers] = useState<any[]>([]);
   const [loadingPhotographers, setLoadingPhotographers] = useState(true);
-  const [publicAlbums, setPublicAlbums] = useState<PublicAlbum[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,7 +50,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { loadPhotographers(); }, []);
-  useEffect(() => { fetchPublicAlbums({ limit: 6 }).then(setPublicAlbums).catch(() => setPublicAlbums([])); }, []);
 
   async function loadPhotographers() {
     setLoadingPhotographers(true);
@@ -301,22 +298,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Цомгууд — зөвхөн төлбөртэй нийтлэгдсэн жинхэнэ цомгууд */}
-      {publicAlbums.length > 0 && (
-        <section className="py-16 px-6">
-          <div className="max-w-7xl mx-auto">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
-              <button onClick={() => navigate('/explore')} className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors">
-                Бүгдийг харах <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {publicAlbums.map(album => <PublicAlbumCard key={album.id} album={album} />)}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* Цомгууд — зөвхөн төлбөртэй нийтлэгдсэн жинхэнэ цомгууд, хайлттай */}
+      <HomeAlbumsSection />
 
       {/* AI зургийн бүүт — загварууд, захиалгат загвар */}
       <AiBoothShowcase />

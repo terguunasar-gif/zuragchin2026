@@ -54,6 +54,8 @@ export interface PhotoData {
   source?: string | null;
   /** Зураг тус бүрийн татах үнэ. null бол цомгийн үнэ */
   download_price?: number | null;
+  /** Зурагчны өгсөн нэр (update-50) */
+  name?: string | null;
 }
 
 /** Зургийн татах үнэ: AI бүүт → админы үнэ, зурагчны тавьсан үнэ → цомгийн анхдагч үнэ */
@@ -139,6 +141,7 @@ export default function PublicAlbumPage() {
   // Зурагчнаар шүүх (?ph=<photographer_id>)
   const [searchParams] = useSearchParams();
   const [phFilter, setPhFilter] = useState<string>(searchParams.get('ph') || '');
+  const [focusPhoto, setFocusPhoto] = useState<string | null>(null);
   const [albumPhotographers, setAlbumPhotographers] = useState<{ photographer_id: string; name: string; photo_count: number }[]>([]);
   // Царайгаар хайх
   const [faceEnabled, setFaceEnabled] = useState(false);
@@ -290,9 +293,17 @@ export default function PublicAlbumPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let first: { data: any[] | null; error: unknown } = await supabase
       .from('photo_uploads')
-      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price')
+      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price, title')
       .eq('album_id', albumData.id)
       .order('created_at', { ascending: true });
+    if (first.error) {
+      // Зургийн нэрийн багана байхгүй (update-50-ийн SQL ажиллаагүй)
+      first = await supabase
+        .from('photo_uploads')
+        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price')
+        .eq('album_id', albumData.id)
+        .order('created_at', { ascending: true });
+    }
     if (first.error) {
       // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
       first = await supabase
@@ -337,9 +348,17 @@ export default function PublicAlbumPage() {
         folder_id: p.folder_id ?? null,
         source: p.source ?? null,
         download_price: p.download_price ?? null,
+        name: typeof p.title === 'string' && p.title.trim() ? p.title.trim() : null,
       };
     });
     setPhotos(mapped);
+    // Нүүр хуудасны хайлтаас ирсэн бол тухайн зураг руу гүйлгэнэ
+    const focusId = searchParams.get('photo');
+    if (focusId && mapped.some(p => p.id === focusId)) {
+      setFocusPhoto(focusId);
+      setTimeout(() => document.getElementById(`photo-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+      setTimeout(() => setFocusPhoto(null), 6000);
+    }
     // Нүүр хуудсанд «Таны цомог» товчоор буцаж орох боломжтой болгоно
     rememberAlbum({
       id: albumObj.id,
@@ -643,6 +662,7 @@ export default function PublicAlbumPage() {
                 key={photo.id}
                 photo={photo}
                 album={album}
+                focused={focusPhoto === photo.id}
                 wmLayers={freeMode ? [] : wmLayers}
                 freeDownload={photo.source !== 'ai_booth' && (freeActive || photoDownloadPrice(photo, album, aiPrice) === 0)}
                 freeBusy={freeBusy === photo.id}
@@ -748,7 +768,8 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer }: {
+function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer }: {
+  focused?: boolean;
   onOffer?: () => void;
   printPicked?: boolean;
   onTogglePrintPick?: () => void;
@@ -772,11 +793,12 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
   const downloadPrice  = photoDownloadPrice(photo, album, aiPrice);
 
   return (
-    <div className="group bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden transition-all duration-200">
+    <div id={`photo-${photo.id}`} className={`group bg-white/5 border rounded-2xl overflow-hidden transition-all duration-200 ${
+      focused ? 'border-amber-400 ring-2 ring-amber-400/60 shadow-lg shadow-amber-500/20' : 'border-white/10 hover:border-white/20'}`}>
       <div className="relative aspect-square bg-stone-900 overflow-hidden select-none">
         <img
           src={photo.watermarked_url}
-          alt={photo.title}
+          alt={photo.name || photo.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
           draggable={false}
@@ -819,6 +841,7 @@ function PhotoCard({ photo, album, wmLayers, allowPrint, aiPrice, inCart, printS
       </div>
 
       <div className="p-3 space-y-2">
+        {photo.name && <p className="text-white text-sm font-medium truncate" title={photo.name}>{photo.name}</p>}
         {freeDownload ? (
           <button onClick={onFreeDownload} disabled={freeBusy}
             className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-stone-950 transition-colors">
