@@ -31,6 +31,7 @@ import AlbumListingPage from './pages/albums/AlbumListingPage';
 import ExploreAlbumsPage from './pages/ExploreAlbumsPage';
 import WalletPage from './pages/wallet/WalletPage';
 import OfferPage from './pages/OfferPage';
+import AiBoothGalleryPage from './pages/AiBoothGalleryPage';
 import PriceOffersPage from './pages/photographer/PriceOffersPage';
 
 export default function App() {
@@ -111,6 +112,7 @@ export default function App() {
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
           <Route path="/offer/:token" element={<OfferPage />} />
+          <Route path="/ai-booth" element={<AiBoothGalleryPage />} />
           <Route path="/my-purchases" element={<MyPurchasesPage />} />
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />
