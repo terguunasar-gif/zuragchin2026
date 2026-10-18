@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, withTimeout } from '../lib/supabase';
@@ -19,6 +19,7 @@ import { saveImageToDevice } from '../lib/browserEnv';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import AlbumPinGate from '../components/AlbumPinGate';
+import AiTemplateStrip from '../components/AiTemplateStrip';
 import { albumLockState } from '../lib/albumLock';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 import PriceOfferModal from '../components/PriceOfferModal';
@@ -145,6 +146,21 @@ export default function PublicAlbumPage() {
   const [searchParams] = useSearchParams();
   const [phFilter, setPhFilter] = useState<string>(searchParams.get('ph') || '');
   const [focusPhoto, setFocusPhoto] = useState<string | null>(null);
+  // Зураг харах хэмжээ: том (худалдан авах товчтой) / дунд / жижиг (олноор нь гүйлгэж хайх)
+  const [view, setViewState] = useState<'large' | 'medium' | 'small'>(() => {
+    try { const v = localStorage.getItem('zm_album_view'); return v === 'medium' || v === 'small' ? v : 'large'; } catch { return 'large'; }
+  });
+  const setView = (v: 'large' | 'medium' | 'small') => {
+    setViewState(v);
+    try { localStorage.setItem('zm_album_view', v); } catch { /* */ }
+  };
+  /** Жижиг харагдацаас зураг дээр дарахад том болгоод тэр зураг руу гүйлгэнэ */
+  const openLarge = (id: string) => {
+    setView('large');
+    setFocusPhoto(id);
+    setTimeout(() => document.getElementById(`photo-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+    setTimeout(() => setFocusPhoto(f => (f === id ? null : f)), 4000);
+  };
   const [albumPhotographers, setAlbumPhotographers] = useState<{ photographer_id: string; name: string; photo_count: number }[]>([]);
   // Царайгаар хайх
   const [faceEnabled, setFaceEnabled] = useState(false);
@@ -656,8 +672,10 @@ export default function PublicAlbumPage() {
             ))}
           </div>
         )}
+        <div className="flex items-start gap-3 mb-2">
+          <div className="flex-1 min-w-0">
         {(folderTabs.length > 1 || faceIds) && (
-          <div className="flex gap-2 overflow-x-auto pb-4 mb-2 -mx-1 px-1">
+          <div className="flex gap-2 overflow-x-auto pb-4 -mx-1 px-1">
             {folderTabs.map(f => (
               <button key={f.key} onClick={() => setFolderFilter(f.key)}
                 className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
@@ -671,6 +689,22 @@ export default function PublicAlbumPage() {
             ))}
           </div>
         )}
+          </div>
+          {photos.length > 0 && (
+            <div className="flex-shrink-0 flex rounded-xl overflow-hidden border border-white/10 bg-white/5" role="group" aria-label={t('Харагдац')}>
+              {([
+                ['large', t('Том'), <Square key="l" className="w-4 h-4" />],
+                ['medium', t('Дунд хэмжээ'), <Grid2x2 key="m" className="w-4 h-4" />],
+                ['small', t('Жижиг'), <Grid3x3 key="s" className="w-4 h-4" />],
+              ] as const).map(([k, label, icon]) => (
+                <button key={k} onClick={() => setView(k)} title={label} aria-pressed={view === k}
+                  className={`p-2.5 transition-colors ${view === k ? 'bg-amber-500 text-stone-950' : 'text-stone-300 hover:text-white hover:bg-white/10'}`}>
+                  {icon}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {photos.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -680,6 +714,26 @@ export default function PublicAlbumPage() {
             <p className="text-stone-500 text-sm">{t('Зурагчид одоогоор зураг байршуулаагүй байна.')}</p>
           </div>
         ) : (
+          view !== 'large' ? (
+          <div className={`grid ${view === 'medium' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5' : 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1.5'}`}>
+            {(folderFilter === 'mine' && faceIds
+              ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
+              : visiblePhotos).map(photo => (
+              <button key={photo.id} onClick={() => openLarge(photo.id)}
+                className={`relative aspect-square bg-stone-900 overflow-hidden group ${view === 'medium' ? 'rounded-xl' : 'rounded-md'}`}>
+                <img src={photo.watermarked_url} alt={photo.name || photo.title} loading="lazy" draggable={false}
+                  onContextMenu={e => e.preventDefault()}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                {cart.some(c => c.photoId === photo.id) && (
+                  <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-stone-950 text-[10px] font-bold">✓</span>
+                )}
+                {view === 'medium' && photo.name && (
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1.5 text-[11px] text-white truncate text-left">{photo.name}</span>
+                )}
+              </button>
+            ))}
+          </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
@@ -727,12 +781,15 @@ export default function PublicAlbumPage() {
               />
             ))}
           </div>
+          )
         )}
         {freeMode && (
           <p className="text-center text-stone-600 text-xs mt-10">
             {t('Энэ цомгийг')} <a href="/" className="text-amber-500 hover:underline">Zuragchin.mn</a>{t('-ээр бүтээв')}
           </p>
         )}
+        {/* AI бүүтийн загварууд — доод хэсэгт урсаж харагдана */}
+        {album && photos.length > 0 && !(freeActive && printPicks.length > 0) && <AiTemplateStrip albumId={album.id} />}
       </main>
 
       {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}

@@ -23,7 +23,13 @@ export default function AiBoothGalleryPage() {
   const [viewIdx, setViewIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchAiTemplates().then(t => { setTemplates(t); setLoading(false); });
+    fetchAiTemplates().then(t => {
+      setTemplates(t); setLoading(false);
+      // Цомгийн хуудаснаас сонгож ирсэн загварыг шууд томоор нээнэ
+      const want = new URLSearchParams(window.location.search).get('t');
+      const i = want ? t.findIndex(x => x.id === want || x.slug === want) : -1;
+      if (i >= 0) setViewIdx(i);
+    });
   }, []);
 
   useEffect(() => {

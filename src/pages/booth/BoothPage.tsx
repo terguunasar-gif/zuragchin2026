@@ -30,6 +30,8 @@ export default function BoothPage() {
   const { token = '' } = useParams<{ token: string }>();
   const [params] = useSearchParams();
   const kiosk = params.get('kiosk') === '1';
+  // Цомгийн хуудаснаас сонгож ирсэн загвар — эхэнд нь тодруулж харуулна
+  const preferId = params.get('t') || '';
 
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<BoothInfo | null>(null);
@@ -278,13 +280,17 @@ export default function BoothPage() {
               <p className="text-stone-400">Энэ бүүтэд темплет тохируулаагүй байна.</p>
             )}
             <div className={`grid gap-3 ${kiosk ? 'grid-cols-3 lg:grid-cols-4' : 'grid-cols-2'}`}>
-              {info.templates.map(t => (
+              {[...info.templates].sort((a, b) => Number(b.id === preferId) - Number(a.id === preferId)).map(t => (
                 <button
                   key={t.id}
                   disabled={busy}
                   onClick={() => chooseTemplate(t)}
-                  className="group text-left bg-white/5 border border-white/10 hover:border-amber-500/50 rounded-2xl overflow-hidden transition-all disabled:opacity-50"
+                  className={`group relative text-left bg-white/5 border rounded-2xl overflow-hidden transition-all disabled:opacity-50 ${
+                    t.id === preferId ? 'border-amber-400 ring-2 ring-amber-400/60' : 'border-white/10 hover:border-amber-500/50'}`}
                 >
+                  {t.id === preferId && (
+                    <span className="absolute top-2 left-2 z-10 bg-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">Таны сонгосон</span>
+                  )}
                   <TemplateThumb t={t} />
                   <div className="p-3">
                     <p className="font-semibold text-sm leading-tight">{t.name}</p>
