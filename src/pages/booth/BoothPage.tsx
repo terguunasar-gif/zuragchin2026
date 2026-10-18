@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   boothApi, BoothInfo, BoothKind, BoothTemplate, StartResult, MAX_PEOPLE,
-  composeFinal, canvasToDataUrl, canvasToBlob, scaleCanvas, makeAlbumPreview,
+  composeFinal, canvasToDataUrl, canvasToBlob, scaleCanvas, makeAlbumPreview, makeStrongPreview,
   saveImageToDevice, saveHint, rememberJob, recallJob, forgetJob,
 } from '../../lib/aiBooth';
 import { countFaces, loadFaceDetector } from '../../lib/faceCount';
@@ -228,7 +228,7 @@ export default function BoothPage() {
       const finalDataUrl = canvasToDataUrl(canvas, 0.92);
       // Видео: зургийг тамгатайгаар урьдчилан харуулж, худалдаж авахыг санал болгоно
       const preview = kind === 'video'
-        ? await makeAlbumPreview(canvas, { type: 'text', value: 'zuragchin.mn', position: 'center' }).catch(() => undefined)
+        ? await makeStrongPreview(canvas).catch(() => undefined)
         : boothInfo.booth.add_to_album
           ? await makeAlbumPreview(canvas, {
             type: boothInfo.album.watermark_type,
