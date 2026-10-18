@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Grid2x2, Loader2, Maximize, Minimize, Square } from 'lucide-react';
+import { ArrowLeft, Grid2x2, Loader2, Maximize, Minimize, Square, Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { albumLockState } from '../lib/albumLock';
 import AlbumPinGate from '../components/AlbumPinGate';
 import BrandMark from '../components/BrandMark';
+import { albumVideoApi, fetchAlbumVideos } from '../lib/albumVideo';
 
 /**
  * Дэлгэцийн горим — LED дэлгэц, хүлээлгийн танхимын ТВ-д цомгийн зургийг урсган харуулна.
  * Буланд цомгийн QR (үнэ харуулахгүй) — уншуулсан хүн цомог руу орж худалдаж авна.
  * Шинэ зураг 30 секунд тутам автоматаар нэмэгдэнэ.
+ * Цомгийн AI видео (эзэн «Дэлгэцэнд» гэж тэмдэглэсэн) зургийн дунд бүтнээрээ тоглогдоно.
  */
 
-interface ScreenPhoto { id: string; url: string; source: string | null; folder_id: string | null; created_at: string }
+interface ScreenPhoto { id: string; url: string; source: string | null; folder_id: string | null; created_at: string; video?: string }
 interface Folder { id: string; name: string }
 
 const POLL_MS = 30_000;
@@ -75,9 +77,16 @@ export default function AlbumScreenPage() {
             .eq('album_id', album.id).order('created_at', { ascending: false }).limit(1000)).data
         : res.data;
     }
-    const list: ScreenPhoto[] = (rows ?? []).filter(r => r.preview_url).map(r => ({
+    const photoList: ScreenPhoto[] = (rows ?? []).filter(r => r.preview_url).map(r => ({
       id: r.id, url: r.preview_url, source: r.source ?? null, folder_id: r.folder_id ?? null, created_at: r.created_at,
     }));
+    // AI видео — боловсруулж буйг ахиулаад бэлэн, дэлгэцэнд зөвшөөрсөнийг нэмнэ
+    if (initial) albumVideoApi.advance(album.id);
+    const vids = (await fetchAlbumVideos(album.id, tokenRef.current)).filter(v => v.show_on_screen && v.video_url);
+    const list: ScreenPhoto[] = [
+      ...vids.map(v => ({ id: `v-${v.id}`, url: v.poster_url, source: 'ai_video', folder_id: null, created_at: v.created_at, video: v.video_url })),
+      ...photoList,
+    ].sort((a, b) => b.created_at.localeCompare(a.created_at));
     if (initial) {
       knownRef.current = new Set(list.map(p => p.id));
       setPhotos(list);
@@ -100,6 +109,7 @@ export default function AlbumScreenPage() {
   const shown = useMemo(() => photos.filter(p =>
     folder === 'all' ? true
       : folder === 'ai' ? p.source === 'ai_booth'
+      : folder === 'videos' ? !!p.video
       : p.folder_id === folder), [photos, folder]);
 
   // ── Слайд солих ──
@@ -110,11 +120,8 @@ export default function AlbumScreenPage() {
   useEffect(() => { setOrder(shown.map(p => p.id)); setIdx(0); }, [shownKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const perSlide = mode === 'grid' ? 6 : 1;
-  useEffect(() => {
-    if (order.length === 0) return;
-    const t = setInterval(() => setIdx(i => (i + perSlide) % Math.max(order.length, 1)), speed * 1000);
-    return () => clearInterval(t);
-  }, [order, speed, perSlide]);
+  const next = useCallback(() => setIdx(i => (i + perSlide) % Math.max(order.length, 1)), [perSlide, order.length]);
+  const [muted, setMuted] = useState(true);
 
   const byId = useMemo(() => new Map(photos.map(p => [p.id, p])), [photos]);
   const current = useMemo(() => {
@@ -126,11 +133,19 @@ export default function AlbumScreenPage() {
     return out;
   }, [order, idx, perSlide, byId]);
 
+  // Слайд солих: зураг — тохируулсан хугацаагаар; нэг видео — дуустал тоглоно (дээд тал нь 30 сек)
+  const singleVideo = mode === 'single' && !!current[0]?.video;
+  useEffect(() => {
+    if (order.length === 0) return;
+    const t = setTimeout(next, singleVideo ? 30_000 : speed * 1000);
+    return () => clearTimeout(t);
+  }, [idx, order, speed, next, singleVideo]);
+
   // Дараагийн зургийг урьдчилан ачаална
   useEffect(() => {
     for (let k = perSlide; k < perSlide * 2 && order.length; k++) {
       const p = byId.get(order[(idx + k) % order.length]);
-      if (p) { const img = new Image(); img.src = p.url; }
+      if (p && p.url && !p.video) { const img = new Image(); img.src = p.url; }
     }
   }, [idx, order, perSlide, byId]);
 
@@ -178,6 +193,7 @@ export default function AlbumScreenPage() {
   }
 
   const hasAi = photos.some(p => p.source === 'ai_booth');
+  const hasVideo = photos.some(p => !!p.video);
 
   return (
     <div className={`fixed inset-0 bg-black overflow-hidden select-none ${controls ? '' : 'cursor-none'}`} onMouseMove={poke} onClick={poke}>
@@ -196,10 +212,15 @@ export default function AlbumScreenPage() {
       ) : mode === 'single' ? (
         // Нэг зураг — бүдэг арын дэвсгэр + аажим томрох эффект
         <div key={current[0].id} className="absolute inset-0" style={{ animation: 'zmFade 1.2s ease both' }}>
-          <img src={current[0].url} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40" />
-          <img src={current[0].url} alt="" draggable={false}
-            className="absolute inset-0 w-full h-full object-contain"
-            style={{ animation: `${idx % 2 ? 'zmKen2' : 'zmKen'} ${speed + 1.5}s ease-out both` }} />
+          {current[0].url && <img src={current[0].url} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40" />}
+          {current[0].video ? (
+            <video src={current[0].video} poster={current[0].url || undefined} autoPlay muted={muted} playsInline loop={order.length === 1}
+              onEnded={next} onError={next} className="absolute inset-0 w-full h-full object-contain" />
+          ) : (
+            <img src={current[0].url} alt="" draggable={false}
+              className="absolute inset-0 w-full h-full object-contain"
+              style={{ animation: `${idx % 2 ? 'zmKen2' : 'zmKen'} ${speed + 1.5}s ease-out both` }} />
+          )}
           {freshIds.has(current[0].id) && <NewBadge />}
         </div>
       ) : (
@@ -208,8 +229,10 @@ export default function AlbumScreenPage() {
           {current.map((p, k) => (
             <div key={p.id} className="relative overflow-hidden rounded-xl bg-stone-900"
               style={{ animation: `zmFade .9s ease ${k * 0.12}s both` }}>
-              <img src={p.url} alt="" draggable={false} className="w-full h-full object-cover"
-                style={{ animation: `${k % 2 ? 'zmKen2' : 'zmKen'} ${speed + 1.5}s ease-out both` }} />
+              {p.video
+                ? <video src={p.video} poster={p.url || undefined} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+                : <img src={p.url} alt="" draggable={false} className="w-full h-full object-cover"
+                    style={{ animation: `${k % 2 ? 'zmKen2' : 'zmKen'} ${speed + 1.5}s ease-out both` }} />}
               {freshIds.has(p.id) && <NewBadge small />}
             </div>
           ))}
@@ -242,6 +265,7 @@ export default function AlbumScreenPage() {
             className="bg-stone-900 border border-white/10 rounded-lg px-2 py-1.5 outline-none">
             <option value="all">Бүх зураг</option>
             {hasAi && <option value="ai">✨ Зөвхөн AI бүүт</option>}
+            {hasVideo && <option value="videos">🎬 Зөвхөн AI видео</option>}
             {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
           <div className="flex rounded-lg overflow-hidden border border-white/10">
@@ -254,10 +278,15 @@ export default function AlbumScreenPage() {
             <button onClick={() => set('m', 'single')} title="Нэг зураг" className={`p-2 ${mode === 'single' ? 'bg-amber-500 text-stone-950' : 'hover:bg-white/10'}`}><Square className="w-4 h-4" /></button>
             <button onClick={() => set('m', 'grid')} title="Тор (6 зураг)" className={`p-2 ${mode === 'grid' ? 'bg-amber-500 text-stone-950' : 'hover:bg-white/10'}`}><Grid2x2 className="w-4 h-4" /></button>
           </div>
+          {hasVideo && (
+            <button onClick={() => setMuted(m => !m)} title={muted ? 'Видеоны дууг асаах' : 'Дууг хаах'} className="p-2 rounded-lg hover:bg-white/10">
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          )}
           <button onClick={toggleFull} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 rounded-lg px-3 py-1.5">
             {isFull ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />} {isFull ? 'Гарах' : 'Бүтэн дэлгэц'}
           </button>
-          <span className="text-stone-400 px-1">{shown.length} зураг</span>
+          <span className="text-stone-400 px-1">{shown.length} {folder === 'videos' ? 'видео' : 'зураг'}</span>
         </div>
       </div>
     </div>
