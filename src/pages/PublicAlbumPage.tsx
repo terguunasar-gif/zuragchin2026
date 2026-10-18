@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
-import { publicDb as supabase, withTimeout } from '../lib/supabase';
+import { publicDb as supabase, withTimeout, hasRole } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
@@ -25,6 +25,9 @@ import { albumFaceSearchEnabled } from '../lib/faceSearch';
 import PriceOfferModal from '../components/PriceOfferModal';
 import { rememberAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
+import AlbumVideoCreator from '../components/AlbumVideoCreator';
+import AlbumVideosGrid from '../components/AlbumVideosGrid';
+import { albumVideoApi, AlbumVideo, fetchAlbumVideos, fetchOwnerVideos, OwnerVideo } from '../lib/albumVideo';
 
 export interface AlbumData {
   id: string;
@@ -200,6 +203,11 @@ export default function PublicAlbumPage() {
   }
   const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
   const [pinGate, setPinGate] = useState<{ id: string; name: string } | null>(null);
+  // AI видео (update-66)
+  const [videos, setVideos] = useState<AlbumVideo[]>([]);
+  const [ownerVideos, setOwnerVideos] = useState<OwnerVideo[] | null>(null);
+  const [videoPhoto, setVideoPhoto] = useState<{ id: string; url: string } | null>(null);
+  const [lockTokenState, setLockTokenState] = useState('');
 
   const [cartReady, setCartReady] = useState(false);
   // Үнийн санал илгээх зураг
@@ -302,6 +310,7 @@ export default function PublicAlbumPage() {
     }
     setPinGate(null);
     const lockToken = lock.state === 'ok' ? lock.token : '';
+    setLockTokenState(lockToken);
 
     const { data: ownerData } = await supabase
       .from('profiles').select('*')
@@ -406,7 +415,22 @@ export default function PublicAlbumPage() {
     setAiPrice(aiP);
     await restoreCart(albumData.id, mapped, albumObj, aiP);
     setLoading(false);
+    // AI видео — боловсруулж буйг ахиулаад жагсаалтыг уншина
+    fetchAlbumVideos(albumData.id, lockToken).then(setVideos);
+    albumVideoApi.advance(albumData.id).then(r => { if (r.done > 0) fetchAlbumVideos(albumData.id, lockToken).then(setVideos); });
   }
+
+  const refreshVideos = useCallback(() => {
+    if (!album) return;
+    fetchAlbumVideos(album.id, lockTokenState).then(setVideos);
+    if (profile && profile.id === album.owner_id) fetchOwnerVideos(album.id).then(setOwnerVideos);
+  }, [album, lockTokenState, profile]);
+
+  // Эзэн нэвтэрсэн бол боловсруулж буй / нуусан видеог ч харна
+  useEffect(() => {
+    if (album && profile && profile.id === album.owner_id) fetchOwnerVideos(album.id).then(setOwnerVideos);
+    else setOwnerVideos(null);
+  }, [album, profile]);
 
   const addToCart = useCallback((item: Omit<CartItem, 'id'>) => {
     if (item.type === 'download' && !(item.price > 0)) return; // үнэгүй зургийг сагсанд хийхгүй
@@ -434,6 +458,8 @@ export default function PublicAlbumPage() {
       .map(f => ({ key: f.id, label: f.name, count: photos.filter(p => !isAi(p) && p.folder_id === f.id).length }))
       .filter(f => f.count > 0),
     ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
+    ...((ownerVideos ?? videos).length > 0 || ownerVideos
+      ? [{ key: 'videos', label: '🎬 ' + t('AI видео'), count: (ownerVideos ?? videos).length }] : []),
     ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
   ];
   const visiblePhotos = photos.filter(p => !phFilter || p.photographer_id === phFilter).filter(p =>
@@ -706,7 +732,9 @@ export default function PublicAlbumPage() {
             </div>
           )}
         </div>
-        {photos.length === 0 ? (
+        {folderFilter === 'videos' ? (
+          <AlbumVideosGrid videos={videos} ownerVideos={ownerVideos} isOwner={isOwner} onRefresh={refreshVideos} />
+        ) : photos.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <ImageIcon className="w-8 h-8 text-stone-500" />
@@ -765,6 +793,7 @@ export default function PublicAlbumPage() {
                   type: 'download',
                   price: photoDownloadPrice(photo, album, aiPrice),
                 })}
+                onMakeVideo={isOwner ? () => setVideoPhoto({ id: photo.id, url: photo.watermarked_url }) : undefined}
                 onOffer={!freeMode && album.accept_offers && photo.source !== 'ai_booth' && photoDownloadPrice(photo, album, aiPrice) > 0
                   ? () => setOfferPhoto(photo) : undefined}
                 onAddPrint={(size, price) => {
@@ -792,6 +821,11 @@ export default function PublicAlbumPage() {
         {/* AI бүүтийн загварууд — доод хэсэгт урсаж харагдана */}
         {album && photos.length > 0 && !(freeActive && printPicks.length > 0) && <AiTemplateStrip albumId={album.id} />}
       </main>
+
+      {videoPhoto && album && (
+        <AlbumVideoCreator albumId={album.id} photo={videoPhoto} isAdmin={!!profile && hasRole(profile, 'admin')}
+          onClose={() => { setVideoPhoto(null); refreshVideos(); }} onChanged={refreshVideos} />
+      )}
 
       {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}
 
@@ -852,8 +886,10 @@ export default function PublicAlbumPage() {
   );
 }
 
-function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer }: {
+function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
   focused?: boolean;
+  /** Цомгийн эзэн: энэ зургаас AI видео үүсгэх */
+  onMakeVideo?: () => void;
   onOffer?: () => void;
   printPicked?: boolean;
   onTogglePrintPick?: () => void;
@@ -925,6 +961,12 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
       </div>
 
       <div className="p-3 space-y-2">
+        {onMakeVideo && (
+          <button onClick={onMakeVideo}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-fuchsia-500 to-amber-500 hover:brightness-110 text-stone-950">
+            <Clapperboard className="w-4 h-4" /> {t('Видео үүсгэх')}
+          </button>
+        )}
         {photo.name && <p className="text-white text-sm font-medium truncate" title={photo.name}>{photo.name}</p>}
         {freeDownload ? (
           <button onClick={onFreeDownload} disabled={freeBusy}
