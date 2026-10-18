@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins,
 } from 'lucide-react';
@@ -125,6 +125,7 @@ function getPosStyle(pos: string): React.CSSProperties {
 export default function PublicAlbumPage() {
   const { shareLink } = useParams<{ shareLink: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, lang, locale } = useI18n();
   // Гадаад хэлээр үзэж буй зочид зөвхөн татаж авна (угаалгах захиалга монгол хэрэглэгчдэд)
   const allowPrint = lang === 'mn';
@@ -543,7 +544,7 @@ export default function PublicAlbumPage() {
             {/* ── Буцах товч ── */}
             <button
               // Линкээр шууд орж ирсэн бол буцах түүх байхгүй — нүүр хуудас руу
-              onClick={() => (window.history.length > 1 && document.referrer.startsWith(window.location.origin) ? navigate(-1) : navigate('/'))}
+              onClick={() => (location.key !== 'default' ? navigate(-1) : navigate('/'))}
               className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-white transition-colors flex-shrink-0"
               title={t('Буцах')}
             >
