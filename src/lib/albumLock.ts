@@ -3,14 +3,24 @@ import { supabase } from './supabase';
 /** Цомгийн 4 оронтой код түгжээ (update-53) */
 export type AlbumLockState = 'open' | 'bypass' | 'ok' | 'locked';
 
-const keyOf = (albumId: string) => `zm_album_key_${albumId}`;
+// Түлхүүрийг зөвхөн санах ойд хадгална: сайтаас гарч дахин орох, хуудсыг шинэчлэх,
+// эсвэл линк дээр дахин дарах бүрт код дахин асууна. Сайт дотор шилжихэд л хадгалагдана.
+const keys = new Map<string, string>();
+
+// Өмнөх хувилбар (30 хоног) төхөөрөмж дээр хадгалсан түлхүүрийг арилгана
+try {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (k?.startsWith('zm_album_key_')) localStorage.removeItem(k);
+  }
+} catch { /* хувийн цонх */ }
 
 export function savedAlbumKey(albumId: string): string {
-  try { return localStorage.getItem(keyOf(albumId)) || ''; } catch { return ''; }
+  return keys.get(albumId) || '';
 }
 
 function saveAlbumKey(albumId: string, token: string) {
-  try { localStorage.setItem(keyOf(albumId), token); } catch { /* хувийн цонх */ }
+  keys.set(albumId, token);
 }
 
 /** SQL (update-53) ажиллуулаагүй бол 'open' гэж үзнэ */
