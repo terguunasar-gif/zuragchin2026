@@ -36,7 +36,8 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
 const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 8);
-const MAX_VIDEO_ATTEMPTS = 3;     // нэг төлбөрт Veo-г дээд тал нь хэдэн удаа дуудах
+const MAX_VIDEO_ATTEMPTS = 3;     // автоматаар дахин оролдох тоо
+const MAX_VIDEO_TOTAL = 9;        // зочин «Дахин оролдох» дарж болох нийт хязгаар
 
 // Туршилтын орчин: QPAY_BASE_URL=https://merchant-sandbox.qpay.mn/v2
 const QPAY_BASE = (Deno.env.get("QPAY_BASE_URL") || "https://merchant.qpay.mn/v2").replace(/\/+$/, "");
@@ -136,6 +137,9 @@ Deno.serve(async (req: Request) => {
     }
     if (req.method === "POST" && path === "/finalize") {
       return json(await finalize(await readJson(req)));
+    }
+    if (req.method === "POST" && path === "/retry-video") {
+      return json(await retryVideo(await readJson(req)));
     }
     if (req.method === "POST" && path === "/claim") {
       return json(await claimPhoto(await readJson(req)));
@@ -343,6 +347,7 @@ async function getStatus(jobId: string, key: string) {
     out.rawUrl = await signedUrl(job.raw_path, 3600);
   }
   if (job.status === "done" || job.status === "video_processing") out.resultToken = job.result_token;
+  if (job.kind === "video" && videoFailed(job)) out.videoFailed = true;
   return out;
 }
 
@@ -371,10 +376,16 @@ async function startVideoFor(job: Job): Promise<Job> {
   }
 }
 
-/** Видео дуусаагүй бол шалгана; бэлэн бол хадгалж done болгоно; олон удаа бүтэлгүйтвэл зургаар нь нөхнө. */
+/** Видео бүтэлгүйтсэн (автомат оролдлого дууссан) эсэх — зураг өгөхгүй, үнэнээр нь хэлнэ */
+function videoFailed(job: Job): boolean {
+  return job.status === "video_processing" && !job.video_op && (job.video_attempts ?? 0) >= MAX_VIDEO_ATTEMPTS
+    && (job.video_attempts ?? 0) % MAX_VIDEO_ATTEMPTS === 0;
+}
+
+/** Видео дуусаагүй бол шалгана; бэлэн бол хадгалж done болгоно. */
 async function advanceVideo(job: Job): Promise<Job> {
   if (!job.video_op) {
-    if ((job.video_attempts ?? 0) >= MAX_VIDEO_ATTEMPTS) return await giveUpVideo(job);
+    if (videoFailed(job)) return job;
     // Түр саатлын дараа дахин эхлүүлнэ (хэт ойр ойрхон биш)
     if (Date.now() - new Date(job.updated_at ?? 0).getTime() < 15000) return job;
     return await startVideoFor(job);
@@ -390,8 +401,9 @@ async function advanceVideo(job: Job): Promise<Job> {
   if ("error" in poll) {
     console.error("veo failed:", poll.error);
     await db.from("ai_jobs").update({ video_op: "", error: poll.error.slice(0, 1000), updated_at: now() }).eq("id", job.id);
-    if ((job.video_attempts ?? 0) >= MAX_VIDEO_ATTEMPTS) return await giveUpVideo({ ...job, video_op: "" });
-    return await startVideoFor({ ...job, video_op: "" });
+    const next = { ...job, video_op: "" };
+    if (videoFailed(next)) return next;
+    return await startVideoFor(next);
   }
   const bytes = await downloadVeo(GEMINI_API_KEY, poll.videoUri);
   const videoPath = `${job.album_id}/${job.id}/video.mp4`;
@@ -401,11 +413,19 @@ async function advanceVideo(job: Job): Promise<Job> {
   return { ...job, status: "done", video_path: videoPath, video_op: "" };
 }
 
-/** Видео бүтээж чадаагүй — зочин хоосон гар хоосон үлдэхгүйн тулд зургийг нь өгнө */
-async function giveUpVideo(job: Job): Promise<Job> {
-  await db.from("ai_jobs").update({ status: "done", video_path: "", video_op: "", updated_at: now() })
-    .eq("id", job.id).eq("status", "video_processing");
-  return { ...job, status: "done", video_path: "" };
+/** Зочин «Дахин оролдох» дарсан — видеог дахин эхлүүлнэ (нийт хязгаартай) */
+async function retryVideo(body: Record<string, unknown>) {
+  const token = str(body.resultToken);
+  if (!/^[a-f0-9]{16,64}$/i.test(token)) throw new HttpError(404, "Видео олдсонгүй");
+  const { data } = await db.from("ai_jobs").select("*").eq("result_token", token).maybeSingle<Job>();
+  if (!data || data.kind !== "video") throw new HttpError(404, "Видео олдсонгүй");
+  if (data.status === "done" && data.video_path) return { status: "done" };
+  if (!videoFailed(data)) return { status: data.status };
+  if ((data.video_attempts ?? 0) >= MAX_VIDEO_TOTAL) {
+    throw new HttpError(429, "Олон удаа оролдсон ч бүтсэнгүй. Zuragchin.mn-тэй холбогдож төлбөрөө буцаалгана уу.");
+  }
+  await startVideoFor(data);
+  return { status: "video_processing" };
 }
 
 // ── 4. QPay callback ─────────────────────────────────────────────────────────
@@ -640,6 +660,10 @@ async function getResult(resultToken: string) {
   const { data: album } = await db.from("albums").select("title, name").eq("id", job.album_id).maybeSingle();
   const { data: tpl } = await db.from("ai_templates").select("name").eq("id", job.template_id).maybeSingle();
 
+  // Видео бүтээгдэж чадсангүй — зураг өгөхгүй, үнэнээр нь хэлж дахин оролдуулна
+  if (job.kind === "video" && videoFailed(job)) {
+    return { kind: "video", failed: true, canRetry: (job.video_attempts ?? 0) < MAX_VIDEO_TOTAL, albumName: album?.title || album?.name || "", templateName: tpl?.name ?? "", createdAt: job.created_at, expiresAt: job.expires_at };
+  }
   // Видео бэлтгэгдэж байна
   if (job.kind === "video" && job.status === "video_processing") {
     return { kind: "video", processing: true, albumName: album?.title || album?.name || "", templateName: tpl?.name ?? "", createdAt: job.created_at, expiresAt: job.expires_at };

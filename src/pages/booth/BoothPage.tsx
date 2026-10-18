@@ -776,7 +776,9 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
 function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk: boolean; onDone: () => void }) {
   const resultUrl = `${window.location.origin}/booth/r/${resultToken}`;
   const [videoUrl, setVideoUrl] = useState('');
-  const [fallback, setFallback] = useState(false);
+  const [failed, setFailed] = useState<{ canRetry: boolean } | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [round, setRound] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<'shared' | 'downloaded' | null>(null);
 
@@ -787,13 +789,28 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
         const r = await boothApi.result(resultToken);
         if (stop) return;
         if (r.videoUrl) { setVideoUrl(r.videoUrl); return; }
-        if (r.imageUrl) { setFallback(true); return; }
+        if (r.failed) { setFailed({ canRetry: !!r.canRetry }); return; }
       } catch { /* дахин шалгана */ }
       if (!stop) setTimeout(tick, 6000);
     };
     tick();
     return () => { stop = true; };
-  }, [resultToken]);
+  }, [resultToken, round]);
+
+  async function retry() {
+    setRetrying(true);
+    try {
+      await boothApi.retryVideo(resultToken);
+      setFailed(null);
+      setRound(r => r + 1);
+    } catch (e) {
+      alertMsg(e);
+    } finally { setRetrying(false); }
+  }
+  function alertMsg(e: unknown) {
+    setFailed({ canRetry: false });
+    console.error(e);
+  }
 
   // Kiosk: дараагийн хүнээ хүлээлгэхгүй — QR өгөөд хэсэг хугацааны дараа эхлэл рүү
   useEffect(() => {
@@ -822,13 +839,23 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
     );
   }
 
-  if (fallback) {
+  if (failed) {
     return (
       <Center>
         <AlertCircle className="w-10 h-10 text-amber-400 mb-3" />
-        <p className="text-lg font-semibold mb-2 text-center">Видео бүтээж чадсангүй</p>
-        <p className="text-stone-400 text-center mb-5">Уучлаарай. Оронд нь AI зургаа үнэгүй аваарай.</p>
-        <a href={resultUrl} className="w-full text-center bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-4 font-bold">Зургаа авах</a>
+        <p className="text-lg font-semibold mb-2 text-center">Видео бүтээгдэж чадсангүй</p>
+        <p className="text-stone-400 text-center mb-5">
+          {failed.canRetry
+            ? 'Уучлаарай, AI видеог бүтээж чадсангүй. Нэмэлт төлбөргүйгээр дахин оролдоно уу.'
+            : 'Уучлаарай, олон удаа оролдсон ч бүтсэнгүй. Zuragchin.mn-тэй холбогдож төлбөрөө буцаалгана уу.'}
+        </p>
+        {failed.canRetry && (
+          <button onClick={retry} disabled={retrying}
+            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 rounded-xl py-4 font-bold">
+            {retrying ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />} Видеог дахин бүтээх (үнэгүй)
+          </button>
+        )}
+        <p className="text-stone-500 text-xs mt-4 break-all">Энэ линкээр дараа нь ч орж болно: <a href={resultUrl} className="text-amber-400 underline">{resultUrl}</a></p>
       </Center>
     );
   }

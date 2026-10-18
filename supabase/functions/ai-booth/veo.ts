@@ -34,10 +34,12 @@ export class VeoError extends Error {
 
 /** Видео үүсгэлтийг эхлүүлж operation name буцаана. Параметр татгалзвал хялбаршуулж дахин оролдоно. */
 export async function startVeo(o: VeoStartOptions): Promise<string> {
-  const instance = {
-    prompt: o.prompt ?? ORBIT_PROMPT,
-    image: { inlineData: { mimeType: o.image.mimeType, data: o.image.data } },
-  };
+  // Gemini API-ийн Veo predictLongRunning нь bytesBase64Encoded хэлбэрийг хүлээж авна
+  // (inlineData-г «isn't supported» гэж татгалздаг). Аль алиныг нь оролдоно.
+  const imageForms = [
+    { bytesBase64Encoded: o.image.data, mimeType: o.image.mimeType },
+    { inlineData: { mimeType: o.image.mimeType, data: o.image.data } },
+  ];
   const full = {
     aspectRatio: o.aspectRatio ?? "9:16",
     durationSeconds: o.durationSeconds ?? 8,
@@ -46,21 +48,26 @@ export async function startVeo(o: VeoStartOptions): Promise<string> {
   };
   const attempts: Record<string, unknown>[] = [full, { aspectRatio: full.aspectRatio, personGeneration: "allow_adult" }, { aspectRatio: full.aspectRatio }];
   let lastErr = "";
-  for (const parameters of attempts) {
-    const res = await fetch(`${API_BASE}/models/${o.model}:predictLongRunning`, {
-      method: "POST",
-      headers: { "x-goog-api-key": o.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ instances: [instance], parameters }),
-    });
-    const text = await res.text();
-    if (res.ok) {
-      const data = JSON.parse(text);
-      if (typeof data?.name === "string" && data.name) return data.name;
-      throw new VeoError(`Veo: operation name missing: ${text.slice(0, 300)}`);
+  for (const image of imageForms) {
+    for (const parameters of attempts) {
+      const instance = { prompt: o.prompt ?? ORBIT_PROMPT, image };
+      const res = await fetch(`${API_BASE}/models/${o.model}:predictLongRunning`, {
+        method: "POST",
+        headers: { "x-goog-api-key": o.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ instances: [instance], parameters }),
+      });
+      const text = await res.text();
+      if (res.ok) {
+        const data = JSON.parse(text);
+        if (typeof data?.name === "string" && data.name) return data.name;
+        throw new VeoError(`Veo: operation name missing: ${text.slice(0, 300)}`);
+      }
+      lastErr = `Veo start ${res.status}: ${text.slice(0, 500)}`;
+      // Зөвхөн хүсэлтийн хэлбэрийн алдаа (400) үед өөр хэлбэрээр дахин оролдоно
+      if (res.status !== 400) throw new VeoError(lastErr, res.status);
+      // Зургийн хэлбэр буруу бол параметр солих нь утгагүй — дараагийн хэлбэр рүү
+      if (/inlineData|bytesBase64Encoded|image/i.test(text) && /support|unknown|invalid/i.test(text)) break;
     }
-    lastErr = `Veo start ${res.status}: ${text.slice(0, 500)}`;
-    // Зөвхөн параметрийн алдаа (400) үед хялбаршуулж дахин оролдоно
-    if (res.status !== 400) throw new VeoError(lastErr, res.status);
   }
   throw new VeoError(lastErr, 400);
 }

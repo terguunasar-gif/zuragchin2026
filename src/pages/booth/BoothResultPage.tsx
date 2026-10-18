@@ -8,7 +8,9 @@ import { boothApi, BoothResult, saveImageToDevice, saveHint, StartResult } from 
 export default function BoothResultPage() {
   const { resultToken = '' } = useParams<{ resultToken: string }>();
   const [params] = useSearchParams();
-  const [state, setState] = useState<'loading' | 'processing' | 'ready' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'processing' | 'failed' | 'ready' | 'error'>('loading');
+  const [round, setRound] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const [res, setRes] = useState<BoothResult | null>(null);
   const [media, setMedia] = useState<{ blob: Blob; url: string } | null>(null);
@@ -24,6 +26,7 @@ export default function BoothResultPage() {
         const r = await boothApi.result(resultToken);
         if (stop) return;
         setRes(r);
+        if (r.failed) { setState('failed'); return; }
         if (r.processing) { setState('processing'); setTimeout(load, 6000); return; }
         const src = r.videoUrl || r.imageUrl;
         if (!src) throw new Error('Олдсонгүй');
@@ -38,7 +41,19 @@ export default function BoothResultPage() {
     };
     load();
     return () => { stop = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [resultToken]);
+  }, [resultToken, round]);
+
+  async function retry() {
+    setRetrying(true);
+    try {
+      await boothApi.retryVideo(resultToken);
+      setState('processing');
+      setRound(r => r + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Алдаа гарлаа');
+      setState('error');
+    } finally { setRetrying(false); }
+  }
 
   const isVideo = !!res?.videoUrl;
 
@@ -76,6 +91,23 @@ export default function BoothResultPage() {
             </div>
             <p className="text-xl font-semibold mb-1">360° видео бэлтгэж байна…</p>
             <p className="text-stone-400 text-sm">1–3 минут болно. Энэ хуудас бэлэн болмогц автоматаар харуулна.</p>
+          </div>
+        )}
+        {state === 'failed' && (
+          <div className="min-h-[60vh] flex flex-col items-center justify-center text-center">
+            <AlertCircle className="w-10 h-10 text-amber-400 mb-3" />
+            <p className="text-xl font-semibold mb-2">Видео бүтээгдэж чадсангүй</p>
+            <p className="text-stone-400 text-sm mb-5">
+              {res?.canRetry
+                ? 'Уучлаарай, AI видеог бүтээж чадсангүй. Нэмэлт төлбөргүйгээр дахин оролдоно уу.'
+                : 'Уучлаарай, олон удаа оролдсон ч бүтсэнгүй. Zuragchin.mn-тэй холбогдож төлбөрөө буцаалгана уу.'}
+            </p>
+            {res?.canRetry && (
+              <button onClick={retry} disabled={retrying}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 rounded-xl py-4 font-bold">
+                {retrying ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />} Видеог дахин бүтээх (үнэгүй)
+              </button>
+            )}
           </div>
         )}
         {state === 'error' && (
