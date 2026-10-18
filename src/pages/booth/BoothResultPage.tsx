@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Download, Image as ImageIcon, Loader2, RefreshCw, Sparkles, Video } from 'lucide-react';
 import { boothApi, BoothResult, saveImageToDevice, saveHint, StartResult } from '../../lib/aiBooth';
 
-// Kiosk дээрх QR-аар нээгдэх хуудас: зөвхөн тухайн нэг зураг эсвэл 360° видеог харуулна.
+// Kiosk дээрх QR-аар нээгдэх хуудас: зөвхөн тухайн нэг зураг эсвэл видеог харуулна.
 // Видео авсан зочин эндээс зургаа тусад нь худалдаж авч болно.
 export default function BoothResultPage() {
   const { resultToken = '' } = useParams<{ resultToken: string }>();
@@ -60,7 +60,7 @@ export default function BoothResultPage() {
   async function save() {
     if (!media) return;
     setSaving(true);
-    const r = await saveImageToDevice(media.blob, `zuragchin-${isVideo ? '360' : 'ai'}-${resultToken.slice(0, 6)}.${isVideo ? 'mp4' : 'jpg'}`);
+    const r = await saveImageToDevice(media.blob, `zuragchin-${isVideo ? 'video' : 'ai'}-${resultToken.slice(0, 6)}.${isVideo ? 'mp4' : 'jpg'}`);
     setSaving(false);
     setSaved(r);
   }
@@ -89,7 +89,7 @@ export default function BoothResultPage() {
               <div className="w-24 h-24 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin" />
               <Video className="w-8 h-8 text-amber-400 absolute inset-0 m-auto" />
             </div>
-            <p className="text-xl font-semibold mb-1">360° видео бэлтгэж байна…</p>
+            <p className="text-xl font-semibold mb-1">Видео бэлтгэж байна…</p>
             <p className="text-stone-400 text-sm">1–3 минут болно. Энэ хуудас бэлэн болмогц автоматаар харуулна.</p>
           </div>
         )}
@@ -120,7 +120,7 @@ export default function BoothResultPage() {
           <div className="space-y-4">
             {res?.videoFailed && (
               <p className="bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm rounded-xl p-3">
-                Уучлаарай, 360° видео бүтээж чадсангүй. Оронд нь AI зургаа үнэгүй аваарай.
+                Уучлаарай, видео бүтээж чадсангүй. Оронд нь AI зургаа үнэгүй аваарай.
               </p>
             )}
             {isVideo

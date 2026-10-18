@@ -137,7 +137,7 @@ export default function BoothPage() {
   async function chooseTemplate(tpl: BoothTemplate) {
     setTemplate(tpl);
     setErrorMsg('');
-    // «360° видео» нээлттэй бол эхлээд зураг уу, видео юу гэдгийг асууна
+    // «Хөдөлгөөнт видео» нээлттэй бол эхлээд зураг уу, видео юу гэдгийг асууна
     if (info?.video?.enabled) { setStep('kind'); return; }
     await startWith(tpl, 'photo');
   }
@@ -445,7 +445,7 @@ function PayStep({ start, template, kiosk, kind = 'photo' }: { start: StartResul
         <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Төлбөр хүлээж байна…
       </div>
       <h2 className={`${kiosk ? 'text-3xl' : 'text-xl'} font-bold mb-1`}>₮{start.amount.toLocaleString()}</h2>
-      <p className="text-stone-400 text-sm mb-5">{template.name} · {kind === 'video' ? '360° AI видео' : '1 AI зураг'}</p>
+      <p className="text-stone-400 text-sm mb-5">{template.name} · {kind === 'video' ? 'AI хөдөлгөөнт видео' : '1 AI зураг'}</p>
 
       {/* Утсан дээр банкны апп руу шууд */}
       {isMobile && start.urls && start.urls.length > 0 && (
@@ -727,7 +727,7 @@ function ResultStep({
   );
 }
 
-// ── Зураг уу, 360° видео юу ─────────────────────────────────────────────────
+// ── Зураг уу, видео юу ─────────────────────────────────────────────────
 function KindStep({ template, info, kiosk, busy, error, onPick }: {
   template: BoothTemplate; info: BoothInfo; kiosk: boolean; busy: boolean; error: string;
   onPick: (k: BoothKind) => void;
@@ -751,28 +751,31 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
           </div>
         </button>
         <button disabled={busy} onClick={() => onPick('video')} className={card}>
-          <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative" style={{ perspective: '600px' }}>
-            <style>{`@keyframes zmOrbit { 0% { transform: rotateY(-18deg) scale(1.08) } 50% { transform: rotateY(18deg) scale(1.08) } 100% { transform: rotateY(-18deg) scale(1.08) } }`}</style>
-            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover"
-              style={{ animation: 'zmOrbit 5s ease-in-out infinite' }} />}
-            <span className="absolute top-2 left-2 bg-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">360°</span>
+          <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative">
+            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover brightness-75" />}
+            {/* Жишээ зураг хөдлөхгүй — видео сэлфигийн дараа AI-аар бүтнэ */}
+            <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-black/55 border border-white/30 flex items-center justify-center">
+              <Video className="w-7 h-7 text-white" />
+            </span>
+            <span className="absolute top-2 left-2 bg-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">ВИДЕО</span>
           </div>
           <div className="p-3">
-            <p className="flex items-center gap-1.5 font-bold"><Video className="w-4 h-4 text-amber-400" /> 360° видео</p>
+            <p className="flex items-center gap-1.5 font-bold"><Video className="w-4 h-4 text-amber-400" /> Хөдөлгөөнт видео</p>
             <p className="text-amber-400 font-semibold mt-0.5">₮{(info.video?.price ?? 0).toLocaleString()}</p>
           </div>
         </button>
       </div>
       <p className="text-xs text-stone-500 leading-relaxed">
-        360° видео: цаг зогссон мэт хөдөлгөөнгүй таныг камер урдаас хажуу тийш тойрон эргэнэ (≈8 секунд, MP4). Видео 1–3 минутад бэлэн болно.
-        Видео авсан бол зургийг тусад нь авч болно.
+        Хөдөлгөөнт видео: сэлфигээр тань AI зураг бүтээгээд, тухайн зурагт тохирох хөдөлгөөнийг AI өөрөө сонгож
+        (бүжиглэх, оргилуун дарс оргилох, цас бууж эргэлдэх гэх мэт) ≈6 секундын видео (MP4) болгоно. 1–3 минутад бэлэн болно.
+        Дээрх зураг зөвхөн загварын жишээ. Видео авсан бол зургийг тусад нь авч болно.
       </p>
       {busy && <div className="flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-400" /></div>}
     </div>
   );
 }
 
-// ── 360° видео: бэлэн болохыг хүлээж харуулах ───────────────────────────────
+// ── Видео: бэлэн болохыг хүлээж харуулах ───────────────────────────────
 function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk: boolean; onDone: () => void }) {
   const resultUrl = `${window.location.origin}/booth/r/${resultToken}`;
   const [videoUrl, setVideoUrl] = useState('');
@@ -823,14 +826,14 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
     setSaving(true);
     try {
       const blob = await (await fetch(videoUrl)).blob();
-      setSaved(await saveImageToDevice(blob, `zuragchin-360-${resultToken.slice(0, 6)}.mp4`));
+      setSaved(await saveImageToDevice(blob, `zuragchin-video-${resultToken.slice(0, 6)}.mp4`));
     } finally { setSaving(false); }
   }
 
   if (kiosk) {
     return (
       <div className="text-center max-w-lg mx-auto">
-        <h2 className="text-3xl font-bold mb-2">{videoUrl ? 'Видео бэлэн боллоо!' : '360° видео бэлтгэж байна…'}</h2>
+        <h2 className="text-3xl font-bold mb-2">{videoUrl ? 'Видео бэлэн боллоо!' : 'Видео бэлтгэж байна…'}</h2>
         <p className="text-stone-300 text-lg mb-5">Утсаараа QR уншуулаад явж болно — видео бэлэн болмогц тэнд гарна.</p>
         <div className="bg-white rounded-2xl p-5 inline-block"><QRCodeSVG value={resultUrl} size={260} level="M" /></div>
         {videoUrl && <video src={videoUrl} autoPlay loop muted playsInline className="mt-5 w-full rounded-2xl border border-white/10" />}
@@ -867,7 +870,7 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
           <div className="w-24 h-24 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin" />
           <Video className="w-8 h-8 text-amber-400 absolute inset-0 m-auto" />
         </div>
-        <p className="text-xl font-semibold mb-1">360° видео бэлтгэж байна…</p>
+        <p className="text-xl font-semibold mb-1">Видео бэлтгэж байна…</p>
         <p className="text-stone-400 text-sm text-center mb-5">1–3 минут болно. Хуудсаа хааж болно — доорх линкээр дараа нь авна.</p>
         <button onClick={() => navigator.clipboard?.writeText(resultUrl)} className="text-amber-400 text-xs underline break-all">{resultUrl}</button>
       </Center>
@@ -877,7 +880,7 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-green-400">
-        <CheckCircle2 className="w-5 h-5" /> <span className="font-semibold">Таны 360° видео бэлэн боллоо!</span>
+        <CheckCircle2 className="w-5 h-5" /> <span className="font-semibold">Таны видео бэлэн боллоо!</span>
       </div>
       <video src={videoUrl} autoPlay loop muted playsInline controls className="w-full rounded-2xl border border-white/10" />
       <button onClick={save} disabled={saving}
