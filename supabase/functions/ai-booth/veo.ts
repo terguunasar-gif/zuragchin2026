@@ -3,13 +3,14 @@
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-/** Хүмүүс хөдөлгөөнгүй (bullet time), зөвхөн камер тойрно. */
+/** Хүмүүс хөдөлгөөнгүй (bullet time), зөвхөн камер бүтэн 360° тойрно. */
 export const ORBIT_PROMPT = [
   "Bullet-time freeze-frame shot.",
   "Everyone in the image is completely frozen and motionless, like statues: no blinking, no breathing,",
   "no facial expression change, no body movement; hair, clothes, confetti and liquids are frozen in mid-air.",
-  "Only the camera moves: a smooth, slow, steady cinematic orbit around the people,",
-  "circling from the front towards the side and around them at constant speed.",
+  "Only the camera moves: one smooth, steady, full 360-degree cinematic orbit around the people at constant speed,",
+  "starting in front of them, travelling around their sides and back, and returning to the front by the end of the clip.",
+  "The camera keeps the people centred and at the same distance the whole time.",
   "Keep every person's face, identity, skin tone, body shape, clothing and the whole scene exactly as in the image.",
   "Photorealistic, sharp, stable, no morphing, no warping faces, no extra people, no text, no captions.",
   "Soft elegant cinematic ambient music, no speech.",
@@ -39,7 +40,7 @@ export async function startVeo(o: VeoStartOptions): Promise<string> {
   };
   const full = {
     aspectRatio: o.aspectRatio ?? "9:16",
-    durationSeconds: o.durationSeconds ?? 6,
+    durationSeconds: o.durationSeconds ?? 8,
     resolution: o.resolution ?? "720p",
     personGeneration: "allow_adult",
   };

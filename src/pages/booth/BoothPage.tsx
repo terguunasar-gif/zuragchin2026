@@ -764,7 +764,7 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
         </button>
       </div>
       <p className="text-xs text-stone-500 leading-relaxed">
-        360° видео: таныг хөдөлгөөнгүй «зогссон мөч» болгоод камер тойрон эргэнэ (≈6 секунд, MP4). Видео 1–3 минутад бэлэн болно.
+        360° видео: таныг хөдөлгөөнгүй «зогссон мөч» болгоод камер таныг бүтэн 360° тойрон эргэнэ (≈8 секунд, MP4). Видео 1–3 минутад бэлэн болно.
         Видео авсан бол зургийг тусад нь авч болно.
       </p>
       {busy && <div className="flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-400" /></div>}

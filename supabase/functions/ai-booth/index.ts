@@ -13,7 +13,7 @@
 //
 // «360° видео» (update-59): finalize-ийн дараа AI зургийг Google Veo-д өгч камер тойрох видео
 // бүтээнэ. Видео бэлэн болохыг /status шалгах бүрт ахиулна (video_processing → done).
-// Secrets (заавал биш): GEMINI_VIDEO_MODEL (default: veo-3.1-fast-generate-preview), GEMINI_VIDEO_SECONDS (6)
+// Secrets (заавал биш): GEMINI_VIDEO_MODEL (default: veo-3.1-fast-generate-preview), GEMINI_VIDEO_SECONDS (8)
 //
 // Deploy:  supabase functions deploy ai-booth --no-verify-jwt
 // Secrets: GEMINI_API_KEY (заавал), GEMINI_IMAGE_MODEL (default: gemini-3.1-flash-image)
@@ -35,7 +35,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
-const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 6);
+const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 8);
 const MAX_VIDEO_ATTEMPTS = 3;     // нэг төлбөрт Veo-г дээд тал нь хэдэн удаа дуудах
 
 // Туршилтын орчин: QPAY_BASE_URL=https://merchant-sandbox.qpay.mn/v2
