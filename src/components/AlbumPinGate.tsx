@@ -68,7 +68,7 @@ export default function AlbumPinGate({ albumId, albumName, onUnlocked }: {
           <div className="h-6 mt-4 text-sm">
             {busy ? <Loader2 className="w-5 h-5 text-amber-400 animate-spin mx-auto" /> : error && <p className="text-red-400">{t(error)}</p>}
           </div>
-          <p className="text-stone-600 text-xs mt-6">{t('Нэг удаа зөв оруулсны дараа энэ төхөөрөмж дээр 30 хоног дахин асуухгүй.')}</p>
+          <p className="text-stone-600 text-xs mt-6">{t('Аюулгүй байдлын үүднээс цомог руу дахин орох бүрт код асууна.')}</p>
         </div>
       </main>
     </div>
