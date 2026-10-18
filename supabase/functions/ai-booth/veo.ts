@@ -1,31 +1,52 @@
-// Google Veo (Gemini API) — AI зургаас «камер тойрох» видео үүсгэх.
+// Google Veo (Gemini API) — AI зургаас тохирох хөдөлгөөнтэй богино видео үүсгэх.
 // predictLongRunning → operation name → GET operation (done) → video uri → татаж авах.
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-/**
- * «Bullet time» — цаг зогссон мөч. Эхний кадр = урдаас (AI зураг), сүүлийн кадр = хажуу-араас харсан ижил мөч.
- * Veo хоёр кадрын хооронд камерыг тойруулна — хүнийг давхардуулахгүй, шинэ хүн зохиохгүй.
- */
-export const ORBIT_PROMPT = [
-  "Bullet time arc shot. Time is completely frozen like a paused photograph:",
-  "the people do not move at all — no walking, no turning, no blinking, no talking, no gestures.",
-  "Champagne spray, liquid drops, confetti, hair and clothes hang frozen in mid-air.",
-  "Only the camera moves: a smooth, steady cinematic orbit around the frozen people,",
-  "travelling from the front view of the first frame around their side to the view of the last frame, always keeping them centred.",
-  "Each person exists exactly once — never duplicate a person, never add new people.",
-  "Keep faces, identity, clothing, lighting and the scene exactly the same. Photorealistic, sharp, no morphing.",
-  "Soft cinematic whoosh and ambient music, no speech.",
+/** AI-аас зурагт тохирох хөдөлгөөн асуух заавар */
+const MOTION_INSTRUCTION = [
+  "You are directing a 6-second photorealistic video made from this still photo.",
+  "Choose ONE short, natural, fun motion that fits this exact scene and makes it come alive. Examples:",
+  "elves or costumed people dancing happily and kicking their feet; champagne bursting and foam spraying out of the bottle while people cheer;",
+  "snow swirling and the people smiling and waving; confetti falling while the couple laughs and hugs; sparklers glittering.",
+  "Keep the motion gentle enough that faces stay recognisable. The camera stays mostly steady (a slow push-in is fine).",
+  "Do not change, add or remove people. Reply with ONLY the motion description as one or two English sentences (max 45 words).",
 ].join(" ");
 
-/** Хажуу-арын кадрыг Gemini зургийн загвараар гаргах заавар */
-export const SIDE_VIEW_PROMPT = [
-  "Recreate this exact photo at the very same frozen instant, but seen from a different camera position:",
-  "the camera has orbited about 120 degrees around the main people to their right side, showing them in a three-quarter rear / side profile view.",
-  "Same people (each exactly once), same faces, hairstyles, clothing, pose, same frozen champagne spray and confetti, same venue and lighting,",
-  "now seen from the new angle with the background correctly changing for that viewpoint.",
-  "Photorealistic, same camera lens and colour grade. Do not add or duplicate people. No text.",
-].join(" ");
+/** Хөдөлгөөний тайлбарт царай, хүн хадгалах нөхцөл нэмж Veo-гийн эцсийн заавар болгоно */
+export function motionVideoPrompt(motion: string): string {
+  return [
+    motion.trim(),
+    "Everyone keeps exactly the same face, identity, hairstyle and clothing as in the image; each person appears exactly once; no new people.",
+    "Realistic natural movement, photorealistic, sharp, stable, no morphing faces, no text or captions.",
+    "Lively ambient sound matching the scene, no speech.",
+  ].join(" ");
+}
+
+export const FALLBACK_MOTION =
+  "The people smile, laugh and move joyfully in place; lights twinkle and sparkles drift through the air; slow gentle camera push-in.";
+
+/** Gemini (текст) — зургийг хараад тохирох хөдөлгөөнийг санал болгоно. Алдаа гарвал ерөнхий хөдөлгөөн. */
+export async function suggestMotion(apiKey: string, model: string, image: { mimeType: string; data: string }): Promise<string> {
+  try {
+    const res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType: image.mimeType, data: image.data } }, { text: MOTION_INSTRUCTION }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
+      }),
+    });
+    if (!res.ok) throw new Error(`motion ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    const text = (data?.candidates?.[0]?.content?.parts ?? [])
+      .map((p: { text?: string }) => p.text ?? "").join(" ").replace(/\s+/g, " ").trim();
+    return text && text.length > 10 ? text.slice(0, 400) : FALLBACK_MOTION;
+  } catch (e) {
+    console.error("suggestMotion failed:", e instanceof Error ? e.message : e);
+    return FALLBACK_MOTION;
+  }
+}
 
 export interface VeoStartOptions {
   apiKey: string;
@@ -54,7 +75,7 @@ export async function startVeo(o: VeoStartOptions): Promise<string> {
   const imageForms = [asBytes, asInline];
   const full = {
     aspectRatio: o.aspectRatio ?? "9:16",
-    durationSeconds: o.durationSeconds ?? 8,
+    durationSeconds: o.durationSeconds ?? 6,
     resolution: o.resolution ?? "720p",
     personGeneration: "allow_adult",
   };
@@ -64,7 +85,7 @@ export async function startVeo(o: VeoStartOptions): Promise<string> {
   const frameSets = o.lastFrame ? [true, false] : [false];
   for (const withLast of frameSets) for (const form of imageForms) {
     for (const parameters of attempts) {
-      const instance: Record<string, unknown> = { prompt: o.prompt ?? ORBIT_PROMPT, image: form(o.image) };
+      const instance: Record<string, unknown> = { prompt: o.prompt ?? motionVideoPrompt(FALLBACK_MOTION), image: form(o.image) };
       if (withLast && o.lastFrame) instance.lastFrame = form(o.lastFrame);
       const res = await fetch(`${API_BASE}/models/${o.model}:predictLongRunning`, {
         method: "POST",

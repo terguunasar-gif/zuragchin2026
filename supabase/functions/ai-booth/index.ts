@@ -11,9 +11,9 @@
 //   GET  /result/:resultToken        үр дүнгийн линк (зөвхөн тэр нэг зураг/видео)
 //   POST /claim                      видеоны зургийг төлбөрийн дараа авах
 //
-// «360° видео» (update-59): finalize-ийн дараа AI зургийг Google Veo-д өгч камер тойрох видео
-// бүтээнэ. Видео бэлэн болохыг /status шалгах бүрт ахиулна (video_processing → done).
-// Secrets (заавал биш): GEMINI_VIDEO_MODEL (default: veo-3.1-fast-generate-preview), GEMINI_VIDEO_SECONDS (8)
+// «Хөдөлгөөнт видео» (update-63): finalize-ийн дараа AI зурагт тохирох хөдөлгөөнийг Gemini сонгож,
+// Google Veo Lite-аар богино видео бүтээнэ. Видео бэлэн болохыг /status шалгах бүрт ахиулна (video_processing → done).
+// Secrets (заавал биш): GEMINI_VIDEO_MODEL (default: veo-3.1-lite-generate-preview), GEMINI_VIDEO_SECONDS (6), GEMINI_TEXT_MODEL (gemini-2.5-flash)
 //
 // Deploy:  supabase functions deploy ai-booth --no-verify-jwt
 // Secrets: GEMINI_API_KEY (заавал), GEMINI_IMAGE_MODEL (default: gemini-3.1-flash-image)
@@ -22,7 +22,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
-import { downloadVeo, pollVeo, SIDE_VIEW_PROMPT, startVeo } from "./veo.ts";
+import { downloadVeo, motionVideoPrompt, pollVeo, startVeo, suggestMotion } from "./veo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,8 +34,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
-const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
-const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 8);
+const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-lite-generate-preview";
+const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") || "gemini-2.5-flash";
+const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 6);
 const MAX_VIDEO_ATTEMPTS = 3;     // автоматаар дахин оролдох тоо
 const MAX_VIDEO_TOTAL = 9;        // зочин «Дахин оролдох» дарж болох нийт хязгаар
 
@@ -209,7 +210,7 @@ async function getBooth(boothToken: string) {
   };
 }
 
-/** «360° видео» — админы тохиргоо (platform_settings) */
+/** «Хөдөлгөөнт видео» — админы тохиргоо (platform_settings) */
 async function videoSettings(): Promise<{ enabled: boolean; price: number }> {
   const { data } = await db.from("platform_settings").select("key, value").in("key", ["ai_video_enabled", "ai_video_price"]);
   const m = new Map((data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]));
@@ -242,7 +243,7 @@ async function startJob(body: Record<string, unknown>) {
   let price = booth.price_mnt;
   if (kind === "video") {
     const v = await videoSettings();
-    if (!v.enabled) throw new HttpError(400, "360° видео одоогоор ажиллахгүй байна");
+    if (!v.enabled) throw new HttpError(400, "Хөдөлгөөнт видео одоогоор ажиллахгүй байна");
     price = v.price;
   }
 
@@ -258,7 +259,7 @@ async function startJob(body: Record<string, unknown>) {
   }).select("*").single<Job>();
   if (error || !job) throw new Error(`job insert failed: ${error?.message}`);
 
-  return await invoiceForJob(job, price, `Zuragchin.mn AI ${kind === "video" ? "360° видео" : "зураг"} — ${String(album.title || album.name).slice(0, 40)}`);
+  return await invoiceForJob(job, price, `Zuragchin.mn AI ${kind === "video" ? "видео" : "зураг"} — ${String(album.title || album.name).slice(0, 40)}`);
 }
 
 /** Видео авсан зочин тэр видеоны зургийг авах — шинэ төлбөр (зураг дахин үүсгэхгүй) */
@@ -361,28 +362,14 @@ async function startVideoFor(job: Job): Promise<Job> {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const mimeType = job.raw_path.endsWith(".png") ? "image/png" : job.raw_path.endsWith(".webp") ? "image/webp" : "image/jpeg";
     const first = { mimeType, data: bytesToBase64(bytes) };
-    // Bullet time: ижил мөчийг хажуу-араас харсан сүүлийн кадрыг эхлээд бүтээнэ (амжилтгүй бол сүүлийн кадргүй)
-    let lastFrame: InlineImage | null = null;
-    try {
-      const side = await generateImage({
-        apiKey: GEMINI_API_KEY,
-        model: GEMINI_MODEL,
-        prompt: SIDE_VIEW_PROMPT,
-        images: [first],
-        aspectRatio: "9:16",
-        imageSize: "1K",
-      });
-      lastFrame = side.image;
-      await upload(`${job.album_id}/${job.id}/side.${extFor(side.image.mimeType)}`, base64ToBytes(side.image.data), side.image.mimeType)
-        .catch(() => undefined);
-    } catch (e) {
-      console.error("side view failed:", e instanceof Error ? e.message : e);
-    }
+    // Зурагт тохирох хөдөлгөөнийг AI сонгоно (бүжиглэх, хөөс оргилох, цас бууж эргэлдэх…)
+    const motion = await suggestMotion(GEMINI_API_KEY, TEXT_MODEL, first);
+    console.log("video motion:", motion);
     const op = await startVeo({
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
       image: first,
-      lastFrame,
+      prompt: motionVideoPrompt(motion),
       durationSeconds: VIDEO_SECONDS,
     });
     await db.from("ai_jobs").update({ video_op: op, video_attempts: attempts, error: "", updated_at: now() }).eq("id", job.id);
@@ -634,7 +621,7 @@ async function finalize(body: Record<string, unknown>) {
   const finalPath = `${job.album_id}/${job.id}/final.jpg`;
   await upload(finalPath, finalImg.bytes, "image/jpeg");
 
-  // «360° видео» — зургийг хадгалаад (дараа нь худалдаж авч болно) видеог эхлүүлнэ. Цомогт орохгүй.
+  // «Хөдөлгөөнт видео» — зургийг хадгалаад (дараа нь худалдаж авч болно) видеог эхлүүлнэ. Цомогт орохгүй.
   if (job.kind === "video") {
     const { data: moved } = await db.from("ai_jobs")
       .update({ status: "video_processing", final_path: finalPath, updated_at: now() })

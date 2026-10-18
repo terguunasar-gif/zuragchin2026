@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, Video } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
-/** AI бүүтийн «360° видео» — асаах/унтраах ба үнэ (зөвхөн сайтын админ) */
+/** AI бүүтийн «Хөдөлгөөнт видео» — асаах/унтраах ба үнэ (зөвхөн сайтын админ) */
 export default function AiVideoSetting() {
   const [enabled, setEnabled] = useState(true);
   const [price, setPrice] = useState('5000');
@@ -45,9 +45,9 @@ export default function AiVideoSetting() {
           <Video className="w-5 h-5 text-fuchsia-300" />
         </div>
         <div>
-          <p className="text-white font-semibold">AI бүүт — 360° видео</p>
+          <p className="text-white font-semibold">AI бүүт — Хөдөлгөөнт видео</p>
           <p className="text-stone-500 text-xs mt-0.5">
-            Загвар сонгосны дараа зочин «AI зураг» эсвэл «360° видео»-г сонгоно. Видео: хүмүүс хөдөлгөөнгүй, камер тойрно (Google Veo).
+            Загвар сонгосны дараа зочин «AI зураг» эсвэл «Хөдөлгөөнт видео»-г сонгоно. Видео: зурагт тохирох хөдөлгөөнийг AI сонгож 6 секундын видео хийнэ (Google Veo Lite, ≈1,300₮ өртөгтэй).
             Видео цомогт орохгүй. Видео авсан хүн зургаа тусад нь (бүүтийн үнээр) авна. Орлого бүүтийн хуваарийн дагуу.
           </p>
         </div>
