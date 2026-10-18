@@ -22,7 +22,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
-import { downloadVeo, pollVeo, startVeo } from "./veo.ts";
+import { downloadVeo, pollVeo, SIDE_VIEW_PROMPT, startVeo } from "./veo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -360,10 +360,29 @@ async function startVideoFor(job: Job): Promise<Job> {
     if (error || !blob) throw new Error(`raw download failed: ${error?.message}`);
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const mimeType = job.raw_path.endsWith(".png") ? "image/png" : job.raw_path.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    const first = { mimeType, data: bytesToBase64(bytes) };
+    // Bullet time: ижил мөчийг хажуу-араас харсан сүүлийн кадрыг эхлээд бүтээнэ (амжилтгүй бол сүүлийн кадргүй)
+    let lastFrame: InlineImage | null = null;
+    try {
+      const side = await generateImage({
+        apiKey: GEMINI_API_KEY,
+        model: GEMINI_MODEL,
+        prompt: SIDE_VIEW_PROMPT,
+        images: [first],
+        aspectRatio: "9:16",
+        imageSize: "1K",
+      });
+      lastFrame = side.image;
+      await upload(`${job.album_id}/${job.id}/side.${extFor(side.image.mimeType)}`, base64ToBytes(side.image.data), side.image.mimeType)
+        .catch(() => undefined);
+    } catch (e) {
+      console.error("side view failed:", e instanceof Error ? e.message : e);
+    }
     const op = await startVeo({
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
-      image: { mimeType, data: bytesToBase64(bytes) },
+      image: first,
+      lastFrame,
       durationSeconds: VIDEO_SECONDS,
     });
     await db.from("ai_jobs").update({ video_op: op, video_attempts: attempts, error: "", updated_at: now() }).eq("id", job.id);
@@ -388,6 +407,7 @@ async function advanceVideo(job: Job): Promise<Job> {
     if (videoFailed(job)) return job;
     // Түр саатлын дараа дахин эхлүүлнэ (хэт ойр ойрхон биш)
     if (Date.now() - new Date(job.updated_at ?? 0).getTime() < 15000) return job;
+    if (!(await claimVideoStart(job))) return job;
     return await startVideoFor(job);
   }
   let poll;
@@ -403,6 +423,7 @@ async function advanceVideo(job: Job): Promise<Job> {
     await db.from("ai_jobs").update({ video_op: "", error: poll.error.slice(0, 1000), updated_at: now() }).eq("id", job.id);
     const next = { ...job, video_op: "" };
     if (videoFailed(next)) return next;
+    if (!(await claimVideoStart(next))) return next;
     return await startVideoFor(next);
   }
   const videoPath = `${job.album_id}/${job.id}/video.mp4`;
@@ -421,6 +442,17 @@ async function advanceVideo(job: Job): Promise<Job> {
   return { ...job, status: "done", video_path: videoPath, video_op: "" };
 }
 
+/** Зэрэг ирсэн хэд хэдэн шалгалт видеог давхар эхлүүлэхээс сэргийлнэ (хамгийн түрүүнийх нь л эхлүүлнэ) */
+async function claimVideoStart(job: Job, force = false): Promise<boolean> {
+  const cutoff = new Date(Date.now() - 15000).toISOString();
+  let q = db.from("ai_jobs").update({ updated_at: new Date(Date.now() + 90000).toISOString() })
+    .eq("id", job.id).eq("status", "video_processing").eq("video_op", "")
+    .eq("video_attempts", job.video_attempts ?? 0);
+  if (!force) q = q.lt("updated_at", cutoff);
+  const { data } = await q.select("id");
+  return !!data && data.length > 0;
+}
+
 /** Зочин «Дахин оролдох» дарсан — видеог дахин эхлүүлнэ (нийт хязгаартай) */
 async function retryVideo(body: Record<string, unknown>) {
   const token = str(body.resultToken);
@@ -432,7 +464,7 @@ async function retryVideo(body: Record<string, unknown>) {
   if ((data.video_attempts ?? 0) >= MAX_VIDEO_TOTAL) {
     throw new HttpError(429, "Олон удаа оролдсон ч бүтсэнгүй. Zuragchin.mn-тэй холбогдож төлбөрөө буцаалгана уу.");
   }
-  await startVideoFor(data);
+  if (await claimVideoStart(data, true)) await startVideoFor(data);
   return { status: "video_processing" };
 }
 
@@ -541,6 +573,8 @@ async function generate(body: Record<string, unknown>) {
       allowText: tpl.allow_text === true,
     });
 
+    // Видео нь 9:16 тул зургийг шууд 9:16 харьцаагаар бүтээнэ (хар зурвас гарахгүй)
+    const imageAspect = job.kind === "video" ? "9:16" : (tpl.aspect_ratio || "3:4");
     // Түр зуурын алдаанд нэг удаа дахин оролдоно
     let result;
     try {
@@ -549,7 +583,7 @@ async function generate(body: Record<string, unknown>) {
         model: GEMINI_MODEL,
         prompt,
         images,
-        aspectRatio: tpl.aspect_ratio || "3:4",
+        aspectRatio: imageAspect,
         imageSize: imageSizeFor(people),
       });
     } catch (e) {
@@ -559,7 +593,7 @@ async function generate(body: Record<string, unknown>) {
         model: GEMINI_MODEL,
         prompt,
         images,
-        aspectRatio: tpl.aspect_ratio || "3:4",
+        aspectRatio: imageAspect,
         imageSize: imageSizeFor(people),
       });
     }

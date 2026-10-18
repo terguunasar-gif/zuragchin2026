@@ -3,23 +3,36 @@
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-/** Хүмүүс хөдөлгөөнгүй (bullet time), зөвхөн камер бүтэн 360° тойрно. */
+/**
+ * «Bullet time» — цаг зогссон мөч. Эхний кадр = урдаас (AI зураг), сүүлийн кадр = хажуу-араас харсан ижил мөч.
+ * Veo хоёр кадрын хооронд камерыг тойруулна — хүнийг давхардуулахгүй, шинэ хүн зохиохгүй.
+ */
 export const ORBIT_PROMPT = [
-  "Bullet-time freeze-frame shot.",
-  "Everyone in the image is completely frozen and motionless, like statues: no blinking, no breathing,",
-  "no facial expression change, no body movement; hair, clothes, confetti and liquids are frozen in mid-air.",
-  "Only the camera moves: one smooth, steady, full 360-degree cinematic orbit around the people at constant speed,",
-  "starting in front of them, travelling around their sides and back, and returning to the front by the end of the clip.",
-  "The camera keeps the people centred and at the same distance the whole time.",
-  "Keep every person's face, identity, skin tone, body shape, clothing and the whole scene exactly as in the image.",
-  "Photorealistic, sharp, stable, no morphing, no warping faces, no extra people, no text, no captions.",
-  "Soft elegant cinematic ambient music, no speech.",
+  "Bullet time arc shot. Time is completely frozen like a paused photograph:",
+  "the people do not move at all — no walking, no turning, no blinking, no talking, no gestures.",
+  "Champagne spray, liquid drops, confetti, hair and clothes hang frozen in mid-air.",
+  "Only the camera moves: a smooth, steady cinematic orbit around the frozen people,",
+  "travelling from the front view of the first frame around their side to the view of the last frame, always keeping them centred.",
+  "Each person exists exactly once — never duplicate a person, never add new people.",
+  "Keep faces, identity, clothing, lighting and the scene exactly the same. Photorealistic, sharp, no morphing.",
+  "Soft cinematic whoosh and ambient music, no speech.",
+].join(" ");
+
+/** Хажуу-арын кадрыг Gemini зургийн загвараар гаргах заавар */
+export const SIDE_VIEW_PROMPT = [
+  "Recreate this exact photo at the very same frozen instant, but seen from a different camera position:",
+  "the camera has orbited about 120 degrees around the main people to their right side, showing them in a three-quarter rear / side profile view.",
+  "Same people (each exactly once), same faces, hairstyles, clothing, pose, same frozen champagne spray and confetti, same venue and lighting,",
+  "now seen from the new angle with the background correctly changing for that viewpoint.",
+  "Photorealistic, same camera lens and colour grade. Do not add or duplicate people. No text.",
 ].join(" ");
 
 export interface VeoStartOptions {
   apiKey: string;
   model: string;
   image: { mimeType: string; data: string };
+  /** Сүүлийн кадр (заавал биш) — байвал камер эхнээс сүүлийн кадр руу тойрно */
+  lastFrame?: { mimeType: string; data: string } | null;
   prompt?: string;
   durationSeconds?: number;
   aspectRatio?: "9:16" | "16:9";
@@ -36,10 +49,9 @@ export class VeoError extends Error {
 export async function startVeo(o: VeoStartOptions): Promise<string> {
   // Gemini API-ийн Veo predictLongRunning нь bytesBase64Encoded хэлбэрийг хүлээж авна
   // (inlineData-г «isn't supported» гэж татгалздаг). Аль алиныг нь оролдоно.
-  const imageForms = [
-    { bytesBase64Encoded: o.image.data, mimeType: o.image.mimeType },
-    { inlineData: { mimeType: o.image.mimeType, data: o.image.data } },
-  ];
+  const asBytes = (i: { mimeType: string; data: string }) => ({ bytesBase64Encoded: i.data, mimeType: i.mimeType });
+  const asInline = (i: { mimeType: string; data: string }) => ({ inlineData: { mimeType: i.mimeType, data: i.data } });
+  const imageForms = [asBytes, asInline];
   const full = {
     aspectRatio: o.aspectRatio ?? "9:16",
     durationSeconds: o.durationSeconds ?? 8,
@@ -48,9 +60,12 @@ export async function startVeo(o: VeoStartOptions): Promise<string> {
   };
   const attempts: Record<string, unknown>[] = [full, { aspectRatio: full.aspectRatio, personGeneration: "allow_adult" }, { aspectRatio: full.aspectRatio }];
   let lastErr = "";
-  for (const image of imageForms) {
+  // Сүүлийн кадртай → (татгалзвал) сүүлийн кадргүй
+  const frameSets = o.lastFrame ? [true, false] : [false];
+  for (const withLast of frameSets) for (const form of imageForms) {
     for (const parameters of attempts) {
-      const instance = { prompt: o.prompt ?? ORBIT_PROMPT, image };
+      const instance: Record<string, unknown> = { prompt: o.prompt ?? ORBIT_PROMPT, image: form(o.image) };
+      if (withLast && o.lastFrame) instance.lastFrame = form(o.lastFrame);
       const res = await fetch(`${API_BASE}/models/${o.model}:predictLongRunning`, {
         method: "POST",
         headers: { "x-goog-api-key": o.apiKey, "Content-Type": "application/json" },
