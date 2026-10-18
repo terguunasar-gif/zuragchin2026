@@ -100,6 +100,8 @@ export const boothApi = {
   /** Видеоны зургийг худалдаж авах нэхэмжлэх */
   startPhotoFromVideo: (resultToken: string) =>
     call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ fromResult: resultToken }) }),
+  retryVideo: (resultToken: string) =>
+    call<{ status: string }>('/retry-video', { method: 'POST', body: JSON.stringify({ resultToken }) }),
   claim: (jobId: string, key: string) =>
     call<{ status: string; resultToken: string }>('/claim', { method: 'POST', body: JSON.stringify({ jobId, key }) }),
   status: (jobId: string, key: string) =>
@@ -120,8 +122,11 @@ export interface BoothResult {
   videoUrl?: string;
   /** Видео бэлтгэгдэж байна */
   processing?: boolean;
-  /** Видео бүтээж чадаагүй — оронд нь зураг */
+  /** (Хуучин) видео бүтээж чадаагүй — оронд нь зураг */
   videoFailed?: boolean;
+  /** Видео бүтээгдэж чадсангүй — дахин оролдох боломжтой эсэх */
+  failed?: boolean;
+  canRetry?: boolean;
   photoPrice?: number;
   albumName: string;
   templateName: string;
