@@ -751,10 +751,20 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
           </div>
         </button>
         <button disabled={busy} onClick={() => onPick('video')} className={card}>
-          <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative" style={{ perspective: '600px' }}>
-            <style>{`@keyframes zmOrbit { 0% { transform: rotateY(-18deg) scale(1.08) } 50% { transform: rotateY(18deg) scale(1.08) } 100% { transform: rotateY(-18deg) scale(1.08) } }`}</style>
-            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover"
-              style={{ animation: 'zmOrbit 5s ease-in-out infinite' }} />}
+          <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative">
+            <style>{`@keyframes zmSpin { to { transform: rotate(360deg) } }`}</style>
+            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover brightness-75" />}
+            {/* Жишээ зураг хөдлөхгүй — «камер тойрно» гэдгийг тэмдгээр харуулна */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative w-20 h-20">
+                <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ animation: 'zmSpin 3s linear infinite' }} aria-hidden>
+                  <ellipse cx="50" cy="50" rx="44" ry="44" fill="none" stroke="rgba(245,158,11,.35)" strokeWidth="4" />
+                  <path d="M50 6 A44 44 0 0 1 94 50" fill="none" stroke="#f59e0b" strokeWidth="6" strokeLinecap="round" />
+                  <circle cx="94" cy="50" r="6" fill="#f59e0b" />
+                </svg>
+                <Video className="absolute inset-0 m-auto w-7 h-7 text-white drop-shadow" />
+              </div>
+            </div>
             <span className="absolute top-2 left-2 bg-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">360°</span>
           </div>
           <div className="p-3">
@@ -764,7 +774,7 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
         </button>
       </div>
       <p className="text-xs text-stone-500 leading-relaxed">
-        360° видео: таныг хөдөлгөөнгүй «зогссон мөч» болгоод камер таныг бүтэн 360° тойрон эргэнэ (≈8 секунд, MP4). Видео 1–3 минутад бэлэн болно.
+        360° видео: сэлфигээр тань AI зураг бүтээгээд, таныг хөдөлгөөнгүй «зогссон мөч» болгож камер тойрон эргэх ≈8 секундын видео (MP4) хийнэ. Видео 1–3 минутад бэлэн болно. Дээрх зураг зөвхөн загварын жишээ.
         Видео авсан бол зургийг тусад нь авч болно.
       </p>
       {busy && <div className="flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-400" /></div>}
