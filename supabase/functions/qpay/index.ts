@@ -181,6 +181,7 @@ Deno.serve(async (req: Request) => {
         await processPackage(db, invoiceId, paid.paymentId, paid.paidAmount);
         await processListing(db, invoiceId, paid.paymentId, paid.paidAmount);
         await processQuota(db, invoiceId, paid.paymentId, paid.paidAmount);
+        await processAlbumLock(db, invoiceId, paid.paymentId, paid.paidAmount);
       }
       return json({ ok: true });
     }
@@ -621,6 +622,45 @@ Deno.serve(async (req: Request) => {
       const paid = await verifyPaid(invoiceId);
       let ok = false;
       if (paid.isPaid) ok = await processQuota(db, invoiceId, paid.paymentId, paid.paidAmount);
+      return json({ isPaid: ok });
+    }
+
+    // ── ЦОМОГ КОДООР ТҮГЖИХ: үйлчилгээний нэхэмжлэх (зөвхөн цомгийн эзэн) ──
+    if (req.method === "POST" && path === "/lock-invoice") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { albumId } = await req.json() as { albumId: string };
+      const { data: album } = await db.from("albums").select("id, name, title, owner_id, status").eq("id", albumId).maybeSingle();
+      if (!album) return json({ error: "Цомог олдсонгүй" }, 404);
+      if (album.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Зөвхөн цомгийн эзэн түгжээ авна" }, 403);
+      const { data: lock } = await db.from("album_locks").select("paid_at").eq("album_id", albumId).maybeSingle();
+      if (lock?.paid_at) return json({ error: "Энэ цомгийн түгжээ аль хэдийн идэвхжсэн" }, 400);
+      const price = await settingNumber(db, "album_lock_price", 10000);
+      if (!(price > 0)) return json({ error: "Түгжээний үнэ тохируулаагүй байна" }, 500);
+      const token = await qpayToken();
+      const invoice = await qpayCreateInvoice(token, {
+        invoiceCode: QPAY_INVOICE_CODE,
+        senderName: "Zuragchin.mn",
+        senderPhone: "",
+        description: `Zuragchin.mn - цомгийн код түгжээ: ${album.title || album.name}`.slice(0, 250),
+        amount: price,
+        callbackUrl: `${SUPABASE_URL}/functions/v1/qpay/callback`,
+      });
+      const { error: insErr } = await db.from("album_lock_orders").insert({
+        album_id: albumId, user_id: uid, amount: price, qpay_invoice_id: invoice.invoice_id,
+      });
+      if (insErr) throw new Error(`DB insert failed: ${insErr.message}`);
+      return json({ invoiceId: invoice.invoice_id, qrImage: invoice.qr_image, qrText: invoice.qr_text, urls: invoice.urls ?? [], amount: price });
+    }
+
+    // ── ЦОМОГ КОДООР ТҮГЖИХ: төлбөр шалгах ──
+    if (req.method === "GET" && path.startsWith("/check-lock/")) {
+      const invoiceId = path.replace("/check-lock/", "").split("?")[0];
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const paid = await verifyPaid(invoiceId);
+      let ok = false;
+      if (paid.isPaid) ok = await processAlbumLock(db, invoiceId, paid.paymentId, paid.paidAmount);
       return json({ isPaid: ok });
     }
 
@@ -1123,6 +1163,24 @@ async function processQuota(db: any, invoiceId: string, paymentId: string, paidA
   }
   const { data: res, error } = await db.rpc("apply_photo_quota_order", { p_invoice_id: invoiceId, p_payment_id: paymentId });
   if (error) { console.log("QUOTA APPLY ERROR:", error.message); return false; }
+  if (res === "applied") {
+    const net = Math.round(Number(order.amount) * (1 - QPAY_FEE_RATE) * 100) / 100;
+    await db.rpc("increment_platform_wallet", { p_amount: net });
+  }
+  return res === "applied" || res === "paid";
+}
+
+/** Цомгийн код түгжээ — түгжээг идэвхжүүлж, платформын орлогыг нэг л удаа бүртгэнэ */
+// deno-lint-ignore no-explicit-any
+async function processAlbumLock(db: any, invoiceId: string, paymentId: string, paidAmount: number | null): Promise<boolean> {
+  const { data: order } = await db.from("album_lock_orders").select("amount, status").eq("qpay_invoice_id", invoiceId).maybeSingle();
+  if (!order) return false;
+  if (order.status !== "paid" && paidAmount !== null && paidAmount + 0.5 < Number(order.amount)) {
+    console.log("LOCK AMOUNT MISMATCH:", invoiceId, paidAmount, order.amount);
+    return false;
+  }
+  const { data: res, error } = await db.rpc("apply_album_lock_order", { p_invoice_id: invoiceId, p_payment_id: paymentId });
+  if (error) { console.log("LOCK APPLY ERROR:", error.message); return false; }
   if (res === "applied") {
     const net = Math.round(Number(order.amount) * (1 - QPAY_FEE_RATE) * 100) / 100;
     await db.rpc("increment_platform_wallet", { p_amount: net });

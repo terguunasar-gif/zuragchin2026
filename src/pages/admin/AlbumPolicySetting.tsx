@@ -9,6 +9,7 @@ const FIELDS = [
   { key: 'album_extend_price', label: 'Сунгах төлбөр', unit: '₮', def: 10000 },
   { key: 'album_extend_days', label: 'Нэг сунгалтын хугацаа', unit: 'хоног', def: 30 },
   { key: 'album_purge_after_days', label: 'Хаагдсанаас хойш файл устгах', unit: 'хоног', def: 60 },
+  { key: 'album_lock_price', label: 'Цомгийг 4 оронтой кодоор түгжих үнэ (нэг цомогт нэг удаа)', unit: '₮', def: 10000 },
 ] as const;
 
 interface CleanupReport { dryRun: boolean; purgeAfterDays: number; albums: { albumId: string; name: string; files: number }[] }

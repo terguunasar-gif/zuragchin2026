@@ -15,6 +15,7 @@ import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
 import BrandMark from '../components/BrandMark';
+import AlbumLockPanel from '../components/AlbumLockPanel';
 
 interface Album {
   id: string;
@@ -518,7 +519,7 @@ export default function DashboardPage() {
       {qrModal && (
         <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={() => setQrModal(null)}>
-          <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl"
+          <div className="bg-stone-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl max-h-[92vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-bold text-lg truncate pr-4">{qrModal.name}</h3>
@@ -560,6 +561,9 @@ export default function DashboardPage() {
               className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold py-3 rounded-xl text-sm transition-colors">
               <QrCode className="w-4 h-4" />QR код татаж авах
             </a>
+
+            {/* 4 оронтой кодоор түгжих (төлбөртэй) */}
+            <AlbumLockPanel albumId={qrModal.id} albumUrl={`${window.location.origin}/album/${qrModal.id}`} />
           </div>
         </div>
       )}

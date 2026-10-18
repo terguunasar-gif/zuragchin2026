@@ -18,6 +18,8 @@ import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
 import { saveImageToDevice } from '../lib/browserEnv';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
+import AlbumPinGate from '../components/AlbumPinGate';
+import { albumLockState } from '../lib/albumLock';
 import { albumFaceSearchEnabled } from '../lib/faceSearch';
 import PriceOfferModal from '../components/PriceOfferModal';
 import { rememberAlbum } from '../lib/visitedAlbums';
@@ -180,6 +182,7 @@ export default function PublicAlbumPage() {
     }
   }
   const [expired, setExpired] = useState<{ id: string; name: string; expiresAt: string; purged: boolean } | null>(null);
+  const [pinGate, setPinGate] = useState<{ id: string; name: string } | null>(null);
 
   const [cartReady, setCartReady] = useState(false);
   // Үнийн санал илгээх зураг
@@ -273,6 +276,16 @@ export default function PublicAlbumPage() {
     }
     setExpired(null);
 
+    // Кодоор түгжээтэй цомог — код оруулаагүй бол зургийг ачаалахгүй
+    const lock = await albumLockState(albumData.id);
+    if (lock.state === 'locked') {
+      setPinGate({ id: albumData.id, name: albumData.title || albumData.name });
+      setLoading(false);
+      return;
+    }
+    setPinGate(null);
+    const lockToken = lock.state === 'ok' ? lock.token : '';
+
     const { data: ownerData } = await supabase
       .from('profiles').select('*')
       .eq('id', albumData.owner_id).maybeSingle();
@@ -291,11 +304,14 @@ export default function PublicAlbumPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let photoData: any[] | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let first: { data: any[] | null; error: unknown } = await supabase
-      .from('photo_uploads')
-      .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price, title')
-      .eq('album_id', albumData.id)
-      .order('created_at', { ascending: true });
+    let first: { data: any[] | null; error: unknown } = lockToken
+      // Түгжээтэй цомгийг кодоор нээсэн зочин — зургийг түлхүүрээр уншина
+      ? await supabase.rpc('locked_album_photos', { p_album_id: albumData.id, p_token: lockToken })
+      : await supabase
+        .from('photo_uploads')
+        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price, title')
+        .eq('album_id', albumData.id)
+        .order('created_at', { ascending: true });
     if (first.error) {
       // Зургийн нэрийн багана байхгүй (update-50-ийн SQL ажиллаагүй)
       first = await supabase
@@ -415,6 +431,15 @@ export default function PublicAlbumPage() {
       <div className="min-h-screen bg-stone-950 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
       </div>
+    );
+  }
+
+  if (pinGate) {
+    return (
+      <>
+        <LanguagePickerModal />
+        <AlbumPinGate albumId={pinGate.id} albumName={pinGate.name} onUnlocked={() => shareLink && loadAlbum(shareLink)} />
+      </>
     );
   }
 
