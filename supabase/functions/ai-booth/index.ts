@@ -8,7 +8,12 @@
 //   POST /qpay-callback?job=…        QPay-ийн callback
 //   POST /generate                   зураг илгээж AI-аар үүсгэх
 //   POST /finalize                   лого давхарласан эцсийн зургийг хадгалах
-//   GET  /result/:resultToken        үр дүнгийн линк (зөвхөн тэр нэг зураг)
+//   GET  /result/:resultToken        үр дүнгийн линк (зөвхөн тэр нэг зураг/видео)
+//   POST /claim                      видеоны зургийг төлбөрийн дараа авах
+//
+// «360° видео» (update-59): finalize-ийн дараа AI зургийг Google Veo-д өгч камер тойрох видео
+// бүтээнэ. Видео бэлэн болохыг /status шалгах бүрт ахиулна (video_processing → done).
+// Secrets (заавал биш): GEMINI_VIDEO_MODEL (default: veo-3.1-fast-generate-preview), GEMINI_VIDEO_SECONDS (6)
 //
 // Deploy:  supabase functions deploy ai-booth --no-verify-jwt
 // Secrets: GEMINI_API_KEY (заавал), GEMINI_IMAGE_MODEL (default: gemini-3.1-flash-image)
@@ -17,6 +22,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
+import { downloadVeo, pollVeo, startVeo } from "./veo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +34,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
+const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
+const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 6);
+const MAX_VIDEO_ATTEMPTS = 3;     // нэг төлбөрт Veo-г дээд тал нь хэдэн удаа дуудах
 
 // Туршилтын орчин: QPAY_BASE_URL=https://merchant-sandbox.qpay.mn/v2
 const QPAY_BASE = (Deno.env.get("QPAY_BASE_URL") || "https://merchant.qpay.mn/v2").replace(/\/+$/, "");
@@ -83,6 +92,12 @@ interface Job {
   is_kiosk: boolean;
   created_at: string;
   expires_at: string;
+  kind: "photo" | "video";
+  video_op: string;
+  video_path: string;
+  video_attempts: number;
+  source_job_id: string | null;
+  updated_at: string;
 }
 
 class HttpError extends Error {
@@ -121,6 +136,9 @@ Deno.serve(async (req: Request) => {
     }
     if (req.method === "POST" && path === "/finalize") {
       return json(await finalize(await readJson(req)));
+    }
+    if (req.method === "POST" && path === "/claim") {
+      return json(await claimPhoto(await readJson(req)));
     }
     if (req.method === "GET" && path.startsWith("/result/")) {
       return json(await getResult(decodeURIComponent(path.slice("/result/".length))));
@@ -182,15 +200,27 @@ async function getBooth(boothToken: string) {
       add_to_album: booth.add_to_album,
       max_people: MAX_PEOPLE,
     },
+    video: await videoSettings(),
     templates: templates ?? [],
   };
 }
 
+/** «360° видео» — админы тохиргоо (platform_settings) */
+async function videoSettings(): Promise<{ enabled: boolean; price: number }> {
+  const { data } = await db.from("platform_settings").select("key, value").in("key", ["ai_video_enabled", "ai_video_price"]);
+  const m = new Map((data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]));
+  const enabled = m.has("ai_video_enabled") ? m.get("ai_video_enabled") === true || m.get("ai_video_enabled") === "true" : false;
+  const price = Number(m.get("ai_video_price") ?? 5000);
+  return { enabled: enabled && !!GEMINI_API_KEY, price: Number.isFinite(price) && price >= 0 ? Math.round(price) : 5000 };
+}
+
 // ── 2. Start: job + QPay invoice ─────────────────────────────────────────────
 async function startJob(body: Record<string, unknown>) {
+  if (str(body.fromResult)) return await startPhotoFromVideo(str(body.fromResult));
   const boothToken = str(body.boothToken);
   const templateId = str(body.templateId);
   const isKiosk = body.kiosk === true;
+  const kind: "photo" | "video" = body.kind === "video" ? "video" : "photo";
 
   const { booth, album, closed } = await loadOpenBooth(boothToken);
   if (closed) throw new HttpError(403, "Энэ бүүт одоогоор хаалттай байна");
@@ -205,27 +235,63 @@ async function startJob(body: Record<string, unknown>) {
   // Хугацаа нь дууссан селфи/зургуудыг устгана (хариуг удаашруулахгүй)
   cleanupExpired().catch((e) => console.error("cleanup failed:", e));
 
+  let price = booth.price_mnt;
+  if (kind === "video") {
+    const v = await videoSettings();
+    if (!v.enabled) throw new HttpError(400, "360° видео одоогоор ажиллахгүй байна");
+    price = v.price;
+  }
+
   const { data: job, error } = await db.from("ai_jobs").insert({
     album_id: album.id,
     template_id: tpl.id,
-    status: booth.price_mnt > 0 ? "pending_payment" : "paid",
-    amount_mnt: booth.price_mnt,
+    kind,
+    status: price > 0 ? "pending_payment" : "paid",
+    amount_mnt: price,
     owner_share: booth.owner_share,
     is_kiosk: isKiosk,
-    paid_at: booth.price_mnt > 0 ? null : new Date().toISOString(),
+    paid_at: price > 0 ? null : new Date().toISOString(),
   }).select("*").single<Job>();
   if (error || !job) throw new Error(`job insert failed: ${error?.message}`);
 
-  if (booth.price_mnt === 0) {
-    return { jobId: job.id, key: job.access_key, status: job.status, amount: 0 };
-  }
+  return await invoiceForJob(job, price, `Zuragchin.mn AI ${kind === "video" ? "360° видео" : "зураг"} — ${String(album.title || album.name).slice(0, 40)}`);
+}
 
+/** Видео авсан зочин тэр видеоны зургийг авах — шинэ төлбөр (зураг дахин үүсгэхгүй) */
+async function startPhotoFromVideo(resultToken: string) {
+  if (!/^[a-f0-9]{16,64}$/i.test(resultToken)) throw new HttpError(404, "Видео олдсонгүй");
+  const { data: src } = await db.from("ai_jobs").select("*").eq("result_token", resultToken).maybeSingle<Job>();
+  if (!src || src.kind !== "video" || src.status !== "done" || !src.final_path) throw new HttpError(404, "Видео олдсонгүй");
+  if (new Date(src.expires_at).getTime() < Date.now()) throw new HttpError(410, "Хугацаа дууссан");
+  const { data: booth } = await db.from("album_ai_booths").select("*").eq("album_id", src.album_id).maybeSingle<Booth>();
+  const { data: album } = await db.from("albums").select("title, name").eq("id", src.album_id).maybeSingle();
+  const price = booth?.price_mnt ?? 5000;
+
+  const { data: job, error } = await db.from("ai_jobs").insert({
+    album_id: src.album_id,
+    template_id: src.template_id,
+    kind: "photo",
+    source_job_id: src.id,
+    status: price > 0 ? "pending_payment" : "paid",
+    amount_mnt: price,
+    owner_share: booth?.owner_share ?? 0,
+    is_kiosk: false,
+    paid_at: price > 0 ? null : new Date().toISOString(),
+  }).select("*").single<Job>();
+  if (error || !job) throw new Error(`job insert failed: ${error?.message}`);
+  return await invoiceForJob(job, price, `Zuragchin.mn AI зураг — ${String(album?.title || album?.name || "").slice(0, 40)}`);
+}
+
+async function invoiceForJob(job: Job, price: number, description: string) {
+  if (price === 0) {
+    return { jobId: job.id, key: job.access_key, status: job.status, amount: 0, kind: job.kind };
+  }
   let invoice;
   try {
     const token = await qpayToken();
     invoice = await qpayCreateInvoice(token, {
-      amount: booth.price_mnt,
-      description: `Zuragchin.mn AI зураг — ${String(album.title || album.name).slice(0, 40)}`,
+      amount: price,
+      description,
       callbackUrl: `${SUPABASE_URL}/functions/v1/ai-booth/qpay-callback?job=${job.id}`,
     });
   } catch (e) {
@@ -243,7 +309,8 @@ async function startJob(body: Record<string, unknown>) {
     jobId: job.id,
     key: job.access_key,
     status: job.status,
-    amount: booth.price_mnt,
+    amount: price,
+    kind: job.kind,
     qrImage: invoice.qr_image ?? "",
     qrText: invoice.qr_text ?? "",
     urls: invoice.urls ?? [],
@@ -262,8 +329,11 @@ async function getStatus(jobId: string, key: string) {
     }
   }
 
+  if (job.status === "video_processing") job = await advanceVideo(job);
+
   const out: Record<string, unknown> = {
     status: job.status,
+    kind: job.kind,
     amount: job.amount_mnt,
     attemptsLeft: Math.max(0, MAX_ATTEMPTS - job.attempts),
     error: job.status === "failed" ? friendlyError(job.error) : "",
@@ -272,8 +342,70 @@ async function getStatus(jobId: string, key: string) {
   if (job.status === "generated" && job.raw_path) {
     out.rawUrl = await signedUrl(job.raw_path, 3600);
   }
-  if (job.status === "done") out.resultToken = job.result_token;
+  if (job.status === "done" || job.status === "video_processing") out.resultToken = job.result_token;
   return out;
+}
+
+// ── 3b. Видео: Veo-г эхлүүлэх / шалгах / хадгалах ───────────────────────────
+async function startVideoFor(job: Job): Promise<Job> {
+  const attempts = (job.video_attempts ?? 0) + 1;
+  try {
+    if (!job.raw_path) throw new Error("raw image missing");
+    const { data: blob, error } = await db.storage.from(BUCKET).download(job.raw_path);
+    if (error || !blob) throw new Error(`raw download failed: ${error?.message}`);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const mimeType = job.raw_path.endsWith(".png") ? "image/png" : job.raw_path.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    const op = await startVeo({
+      apiKey: GEMINI_API_KEY,
+      model: VIDEO_MODEL,
+      image: { mimeType, data: bytesToBase64(bytes) },
+      durationSeconds: VIDEO_SECONDS,
+    });
+    await db.from("ai_jobs").update({ video_op: op, video_attempts: attempts, error: "", updated_at: now() }).eq("id", job.id);
+    return { ...job, video_op: op, video_attempts: attempts };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("veo start failed:", msg);
+    await db.from("ai_jobs").update({ video_op: "", video_attempts: attempts, error: msg.slice(0, 1000), updated_at: now() }).eq("id", job.id);
+    return { ...job, video_op: "", video_attempts: attempts, error: msg };
+  }
+}
+
+/** Видео дуусаагүй бол шалгана; бэлэн бол хадгалж done болгоно; олон удаа бүтэлгүйтвэл зургаар нь нөхнө. */
+async function advanceVideo(job: Job): Promise<Job> {
+  if (!job.video_op) {
+    if ((job.video_attempts ?? 0) >= MAX_VIDEO_ATTEMPTS) return await giveUpVideo(job);
+    // Түр саатлын дараа дахин эхлүүлнэ (хэт ойр ойрхон биш)
+    if (Date.now() - new Date(job.updated_at ?? 0).getTime() < 15000) return job;
+    return await startVideoFor(job);
+  }
+  let poll;
+  try {
+    poll = await pollVeo(GEMINI_API_KEY, job.video_op);
+  } catch (e) {
+    console.error("veo poll failed:", e instanceof Error ? e.message : e);
+    return job; // дараагийн шалгалтаар дахин
+  }
+  if (!poll.done) return job;
+  if ("error" in poll) {
+    console.error("veo failed:", poll.error);
+    await db.from("ai_jobs").update({ video_op: "", error: poll.error.slice(0, 1000), updated_at: now() }).eq("id", job.id);
+    if ((job.video_attempts ?? 0) >= MAX_VIDEO_ATTEMPTS) return await giveUpVideo({ ...job, video_op: "" });
+    return await startVideoFor({ ...job, video_op: "" });
+  }
+  const bytes = await downloadVeo(GEMINI_API_KEY, poll.videoUri);
+  const videoPath = `${job.album_id}/${job.id}/video.mp4`;
+  await upload(videoPath, bytes, "video/mp4");
+  await db.from("ai_jobs").update({ status: "done", video_path: videoPath, video_op: "", updated_at: now() })
+    .eq("id", job.id).eq("status", "video_processing");
+  return { ...job, status: "done", video_path: videoPath, video_op: "" };
+}
+
+/** Видео бүтээж чадаагүй — зочин хоосон гар хоосон үлдэхгүйн тулд зургийг нь өгнө */
+async function giveUpVideo(job: Job): Promise<Job> {
+  await db.from("ai_jobs").update({ status: "done", video_path: "", video_op: "", updated_at: now() })
+    .eq("id", job.id).eq("status", "video_processing");
+  return { ...job, status: "done", video_path: "" };
 }
 
 // ── 4. QPay callback ─────────────────────────────────────────────────────────
@@ -329,7 +461,7 @@ async function generate(body: Record<string, unknown>) {
 
   if (job.status === "pending_payment") throw new HttpError(402, "Төлбөр хараахан төлөгдөөгүй байна");
   if (job.status === "processing") throw new HttpError(409, "Зураг үүсч байна, түр хүлээнэ үү");
-  if (job.status === "generated" || job.status === "done") {
+  if (job.status === "generated" || job.status === "done" || job.status === "video_processing") {
     throw new HttpError(409, "Энэ төлбөрөөр зураг аль хэдийн үүссэн");
   }
   if (job.attempts >= MAX_ATTEMPTS) throw new HttpError(429, "Оролдлогын тоо дууссан. Ажилтанд хандана уу.");
@@ -433,11 +565,21 @@ async function generate(body: Record<string, unknown>) {
 async function finalize(body: Record<string, unknown>) {
   const job = await loadJob(str(body.jobId), str(body.key));
   if (job.status === "done") return { status: "done", resultToken: job.result_token };
+  if (job.status === "video_processing") return { status: "video_processing", resultToken: job.result_token, addedToAlbum: false };
   if (job.status !== "generated") throw new HttpError(409, "Зураг хараахан бэлэн болоогүй байна");
 
   const finalImg = decodeImage(body.final, MAX_FINAL_BYTES, "Эцсийн зураг");
   const finalPath = `${job.album_id}/${job.id}/final.jpg`;
   await upload(finalPath, finalImg.bytes, "image/jpeg");
+
+  // «360° видео» — зургийг хадгалаад (дараа нь худалдаж авч болно) видеог эхлүүлнэ. Цомогт орохгүй.
+  if (job.kind === "video") {
+    const { data: moved } = await db.from("ai_jobs")
+      .update({ status: "video_processing", final_path: finalPath, updated_at: now() })
+      .eq("id", job.id).eq("status", "generated").select("id");
+    if (moved && moved.length) await startVideoFor({ ...job, final_path: finalPath });
+    return { status: "video_processing", resultToken: job.result_token, addedToAlbum: false };
+  }
 
   let photoUploadId: string | null = null;
   const { data: booth } = await db.from("album_ai_booths").select("add_to_album").eq("album_id", job.album_id)
@@ -487,16 +629,40 @@ async function finalize(body: Record<string, unknown>) {
 // ── 7. Result ────────────────────────────────────────────────────────────────
 async function getResult(resultToken: string) {
   if (!/^[a-f0-9]{16,64}$/i.test(resultToken)) throw new HttpError(404, "Зураг олдсонгүй");
-  const { data: job } = await db.from("ai_jobs")
-    .select("id, album_id, template_id, status, final_path, expires_at, created_at")
+  const { data: found } = await db.from("ai_jobs")
+    .select("id, album_id, template_id, status, final_path, expires_at, created_at, kind, video_path, video_op, video_attempts, raw_path, result_token, updated_at")
     .eq("result_token", resultToken).maybeSingle();
-  if (!job || job.status !== "done" || !job.final_path) throw new HttpError(404, "Зураг олдсонгүй");
+  let job = found as unknown as Job | null;
+  if (job?.status === "video_processing") job = await advanceVideo(job);
+  if (!job) throw new HttpError(404, "Зураг олдсонгүй");
   if (new Date(job.expires_at).getTime() < Date.now()) throw new HttpError(410, "Зургийн хугацаа дууссан");
 
   const { data: album } = await db.from("albums").select("title, name").eq("id", job.album_id).maybeSingle();
   const { data: tpl } = await db.from("ai_templates").select("name").eq("id", job.template_id).maybeSingle();
 
+  // Видео бэлтгэгдэж байна
+  if (job.kind === "video" && job.status === "video_processing") {
+    return { kind: "video", processing: true, albumName: album?.title || album?.name || "", templateName: tpl?.name ?? "", createdAt: job.created_at, expiresAt: job.expires_at };
+  }
+  if (job.status !== "done" || !job.final_path) throw new HttpError(404, "Зураг олдсонгүй");
+
+  // Видео — зургийг үнэгүй өгөхгүй (тусад нь худалдаж авна)
+  if (job.kind === "video" && job.video_path) {
+    const { data: booth } = await db.from("album_ai_booths").select("price_mnt").eq("album_id", job.album_id).maybeSingle();
+    return {
+      kind: "video",
+      videoUrl: await signedUrl(job.video_path, 24 * 3600),
+      photoPrice: booth?.price_mnt ?? 5000,
+      albumName: album?.title || album?.name || "",
+      templateName: tpl?.name ?? "",
+      createdAt: job.created_at,
+      expiresAt: job.expires_at,
+    };
+  }
+
   return {
+    kind: "photo",
+    videoFailed: job.kind === "video",
     imageUrl: await signedUrl(job.final_path, 24 * 3600),
     albumName: album?.title || album?.name || "",
     templateName: tpl?.name ?? "",
@@ -508,21 +674,37 @@ async function getResult(resultToken: string) {
 // ── 8. Cleanup: 30 хоногийн дараа зочны зургийг устгах ───────────────────────
 async function cleanupExpired() {
   const { data: jobs } = await db.from("ai_jobs")
-    .select("id, album_id, input_path, raw_path, final_path, status")
+    .select("id, album_id, input_path, raw_path, final_path, video_path, status")
     .lt("expires_at", now())
     .neq("status", "expired")
     .limit(25);
   for (const j of jobs ?? []) {
-    const paths = [j.input_path, j.raw_path, j.final_path].filter((p: string) => !!p);
+    const paths = [j.input_path, j.raw_path, j.final_path, j.video_path].filter((p: string) => !!p);
     if (paths.length > 0) await db.storage.from(BUCKET).remove(paths);
     await db.from("ai_jobs").update({
       status: "expired",
       input_path: "",
       raw_path: "",
       final_path: "",
+      video_path: "",
       updated_at: now(),
     }).eq("id", j.id);
   }
+}
+
+// ── 7b. Видеоны зургийг авах (төлбөр төлөгдсөний дараа) ─────────────────────
+async function claimPhoto(body: Record<string, unknown>) {
+  const job = await loadJob(str(body.jobId), str(body.key));
+  if (job.status === "done") return { status: "done", resultToken: job.result_token };
+  if (job.status !== "paid" || !job.source_job_id) throw new HttpError(409, "Төлбөр хараахан төлөгдөөгүй байна");
+  const { data: src } = await db.from("ai_jobs").select("final_path").eq("id", job.source_job_id).maybeSingle();
+  if (!src?.final_path) throw new HttpError(404, "Зураг олдсонгүй");
+  const finalPath = `${job.album_id}/${job.id}/final.jpg`;
+  const { error } = await db.storage.from(BUCKET).copy(src.final_path, finalPath);
+  if (error && !/exists/i.test(error.message)) throw new Error(`copy failed: ${error.message}`);
+  await db.from("ai_jobs").update({ status: "done", final_path: finalPath, updated_at: now() })
+    .eq("id", job.id).eq("status", "paid");
+  return { status: "done", resultToken: job.result_token };
 }
 
 // ── 9. Admin: темплетийн жишээ зургийг AI-аар үүсгэх ─────────────────────────

@@ -3,18 +3,18 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Camera, Loader2, AlertCircle, CheckCircle2, ChevronLeft, Sparkles,
-  Users, RotateCcw, Download, RefreshCw, Share2,
+  Users, RotateCcw, Download, RefreshCw, Share2, Video, ImageIcon, Lock,
 } from 'lucide-react';
 import {
-  boothApi, BoothInfo, BoothTemplate, StartResult, MAX_PEOPLE,
+  boothApi, BoothInfo, BoothKind, BoothTemplate, StartResult, MAX_PEOPLE,
   composeFinal, canvasToDataUrl, canvasToBlob, scaleCanvas, makeAlbumPreview,
   saveImageToDevice, saveHint, rememberJob, recallJob, forgetJob,
 } from '../../lib/aiBooth';
 import { countFaces, loadFaceDetector } from '../../lib/faceCount';
 
 type Step =
-  | 'loading' | 'error' | 'closed' | 'templates' | 'pay' | 'camera' | 'review'
-  | 'generating' | 'failed' | 'composing' | 'result';
+  | 'loading' | 'error' | 'closed' | 'templates' | 'kind' | 'pay' | 'camera' | 'review'
+  | 'generating' | 'failed' | 'composing' | 'result' | 'video';
 
 interface Captured { dataUrl: string; people: number | null }
 
@@ -41,7 +41,10 @@ export default function BoothPage() {
   const [busy, setBusy] = useState(false);
   const [captured, setCaptured] = useState<Captured | null>(null);
   const [retakesLeft, setRetakesLeft] = useState(MAX_RETAKES);
-  const [addToAlbum, setAddToAlbum] = useState(true);
+  // Цомогт оруулах эсэхийг зочин өөрөө сонгоно (null = сонгоогүй)
+  const [addToAlbum, setAddToAlbum] = useState<boolean | null>(null);
+  const [kind, setKind] = useState<BoothKind>('photo');
+  const [videoToken, setVideoToken] = useState('');
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const [final, setFinal] = useState<{ url: string; blob: Blob; resultToken: string } | null>(null);
 
@@ -59,6 +62,9 @@ export default function BoothPage() {
     try { sessionStorage.removeItem(SESSION_START); } catch { /* ignore */ }
     setTemplate(null);
     setStart(null);
+    setKind('photo');
+    setVideoToken('');
+    setAddToAlbum(null);
     setCaptured(null);
     setRetakesLeft(MAX_RETAKES);
     setAttemptsLeft(null);
@@ -75,7 +81,6 @@ export default function BoothPage() {
         const data = await boothApi.info(token);
         if (cancelled) return;
         setInfo(data);
-        setAddToAlbum(data.booth.add_to_album);
         if (data.closed) { setStep('closed'); return; }
 
         const saved = recallJob(token);
@@ -88,15 +93,20 @@ export default function BoothPage() {
             try { savedStart = JSON.parse(sessionStorage.getItem(SESSION_START) ?? 'null'); } catch { /* ignore */ }
             setStart(savedStart ?? { jobId: saved.jobId, key: saved.key, status: st.status, amount: st.amount ?? 0 });
             if (st.status === 'pending_payment' && savedStart) { setStep('pay'); return; }
+            if (st.kind) setKind(st.kind);
             if (st.status === 'paid') { setStep('camera'); return; }
+            if (st.status === 'video_processing' && st.resultToken) { setVideoToken(st.resultToken); setStep('video'); return; }
             if (st.status === 'failed') { setAttemptsLeft(st.attemptsLeft ?? 0); setErrorMsg(st.error ?? ''); setStep('camera'); return; }
             if (st.status === 'generated' && st.rawUrl) {
               await finishComposition(data, { jobId: saved.jobId, key: saved.key }, st.rawUrl);
               return;
             }
+            if (st.status === 'done' && st.resultToken && st.kind === 'video') {
+              setVideoToken(st.resultToken); setStep('video'); return;
+            }
             if (st.status === 'done' && st.resultToken) {
               const r = await boothApi.result(st.resultToken);
-              const blob = await (await fetch(r.imageUrl)).blob();
+              const blob = await (await fetch(r.imageUrl ?? '')).blob();
               setFinal({ url: URL.createObjectURL(blob), blob, resultToken: st.resultToken });
               setStep('result');
               return;
@@ -126,10 +136,18 @@ export default function BoothPage() {
   // ── 1. Темплет сонгох → нэхэмжлэх ────────────────────────────────────────
   async function chooseTemplate(tpl: BoothTemplate) {
     setTemplate(tpl);
+    setErrorMsg('');
+    // «360° видео» нээлттэй бол эхлээд зураг уу, видео юу гэдгийг асууна
+    if (info?.video?.enabled) { setStep('kind'); return; }
+    await startWith(tpl, 'photo');
+  }
+
+  async function startWith(tpl: BoothTemplate, k: BoothKind) {
+    setKind(k);
     setBusy(true);
     setErrorMsg('');
     try {
-      const res = await boothApi.start(token, tpl.id, kiosk);
+      const res = await boothApi.start(token, tpl.id, kiosk, k);
       setStart(res);
       rememberJob({ boothToken: token, jobId: res.jobId, key: res.key, templateId: tpl.id });
       try { sessionStorage.setItem(SESSION_START, JSON.stringify(res)); } catch { /* ignore */ }
@@ -176,7 +194,7 @@ export default function BoothPage() {
         key: start.key,
         image: shot.dataUrl,
         peopleCount: shot.people,
-        addToAlbum: info.booth.add_to_album && addToAlbum,
+        addToAlbum: info.booth.add_to_album && kind === 'photo' && addToAlbum === true,
       });
       if (res.status === 'generated' && res.rawUrl) {
         await finishComposition(info, start, res.rawUrl);
@@ -216,6 +234,11 @@ export default function BoothPage() {
         }).catch(() => undefined)
         : undefined;
       const done = await boothApi.finalize({ jobId: job.jobId, key: job.key, final: finalDataUrl, preview });
+      if (done.status === 'video_processing') {
+        setVideoToken(done.resultToken);
+        setStep('video');
+        return;
+      }
       const blob = await canvasToBlob(canvas, 0.92);
       setFinal({ url: URL.createObjectURL(blob), blob, resultToken: done.resultToken });
       setStep('result');
@@ -233,7 +256,7 @@ export default function BoothPage() {
   return (
     <div className="min-h-screen bg-stone-950 text-white flex flex-col">
       <header className="px-4 sm:px-6 py-4 flex items-center gap-3 border-b border-white/10">
-        {step !== 'templates' && step !== 'loading' && step !== 'result' && step !== 'closed' && step !== 'error' &&
+        {step !== 'templates' && step !== 'loading' && step !== 'result' && step !== 'video' && step !== 'closed' && step !== 'error' &&
           step !== 'generating' && step !== 'composing' && (
           <button onClick={reset} className="text-stone-400 hover:text-white" aria-label="Эхлэл рүү">
             <ChevronLeft className="w-6 h-6" />
@@ -308,14 +331,20 @@ export default function BoothPage() {
           </>
         )}
 
+        {step === 'kind' && template && info && (
+          <KindStep template={template} info={info} kiosk={kiosk} busy={busy} error={errorMsg}
+            onPick={k => startWith(template, k)} />
+        )}
+
         {step === 'pay' && start && template && (
-          <PayStep start={start} template={template} kiosk={kiosk} />
+          <PayStep start={start} template={template} kiosk={kiosk} kind={kind} />
         )}
 
         {step === 'camera' && info && (
           <CameraStep
             kiosk={kiosk}
-            showAlbumConsent={info.booth.add_to_album}
+            showAlbumConsent={info.booth.add_to_album && kind === 'photo'}
+            isVideo={kind === 'video'}
             addToAlbum={addToAlbum}
             setAddToAlbum={setAddToAlbum}
             notice={errorMsg}
@@ -398,13 +427,17 @@ export default function BoothPage() {
         {step === 'result' && final && (
           <ResultStep final={final} kiosk={kiosk} onDone={reset} />
         )}
+
+        {step === 'video' && videoToken && (
+          <VideoStep resultToken={videoToken} kiosk={kiosk} onDone={reset} />
+        )}
       </main>
     </div>
   );
 }
 
 // ── Төлбөрийн алхам ──────────────────────────────────────────────────────────
-function PayStep({ start, template, kiosk }: { start: StartResult; template: BoothTemplate; kiosk: boolean }) {
+function PayStep({ start, template, kiosk, kind = 'photo' }: { start: StartResult; template: BoothTemplate; kiosk: boolean; kind?: BoothKind }) {
   const isMobile = !kiosk && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   return (
     <div className="text-center">
@@ -412,7 +445,7 @@ function PayStep({ start, template, kiosk }: { start: StartResult; template: Boo
         <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Төлбөр хүлээж байна…
       </div>
       <h2 className={`${kiosk ? 'text-3xl' : 'text-xl'} font-bold mb-1`}>₮{start.amount.toLocaleString()}</h2>
-      <p className="text-stone-400 text-sm mb-5">{template.name} · 1 AI зураг</p>
+      <p className="text-stone-400 text-sm mb-5">{template.name} · {kind === 'video' ? '360° AI видео' : '1 AI зураг'}</p>
 
       {/* Утсан дээр банкны апп руу шууд */}
       {isMobile && start.urls && start.urls.length > 0 && (
@@ -450,11 +483,12 @@ function PayStep({ start, template, kiosk }: { start: StartResult; template: Boo
 
 // ── Камерын алхам ────────────────────────────────────────────────────────────
 function CameraStep({
-  kiosk, showAlbumConsent, addToAlbum, setAddToAlbum, notice, onCaptured,
+  kiosk, showAlbumConsent, isVideo, addToAlbum, setAddToAlbum, notice, onCaptured,
 }: {
   kiosk: boolean;
   showAlbumConsent: boolean;
-  addToAlbum: boolean;
+  isVideo?: boolean;
+  addToAlbum: boolean | null;
   setAddToAlbum: (v: boolean) => void;
   notice: string;
   onCaptured: (c: Captured) => void;
@@ -584,20 +618,31 @@ function CameraStep({
       {(warn || tooMany) && <ErrorBox msg={warn || `Дээд тал нь ${MAX_PEOPLE} хүн байна.`} />}
 
       {showAlbumConsent && (
-        <label className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-stone-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={addToAlbum}
-            onChange={e => setAddToAlbum(e.target.checked)}
-            className="mt-0.5 w-4 h-4 accent-amber-500"
-          />
-          <span>Энэ зургийг арга хэмжээний хаалттай цомогт нэмэхийг зөвшөөрч байна (зөвхөн урилгатай хүмүүс харна).</span>
-        </label>
+        <div className="space-y-2">
+          <p className="text-sm text-stone-300 font-medium">Зургаа арга хэмжээний цомогт оруулах уу?</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setAddToAlbum(true)}
+              className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-sm transition-colors ${addToAlbum === true ? 'border-amber-500 bg-amber-500/15 text-white' : 'border-white/10 bg-white/5 text-stone-300'}`}>
+              <Users className="w-5 h-5" /> <span className="font-semibold">Цомогт оруулах</span>
+              <span className="text-[11px] text-stone-400 leading-tight">Урилгатай хүмүүс харна</span>
+            </button>
+            <button type="button" onClick={() => setAddToAlbum(false)}
+              className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-sm transition-colors ${addToAlbum === false ? 'border-amber-500 bg-amber-500/15 text-white' : 'border-white/10 bg-white/5 text-stone-300'}`}>
+              <Lock className="w-5 h-5" /> <span className="font-semibold">Зөвхөн надад</span>
+              <span className="text-[11px] text-stone-400 leading-tight">Өөр хэн ч харахгүй</span>
+            </button>
+          </div>
+        </div>
+      )}
+      {isVideo && (
+        <p className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-stone-400">
+          <Lock className="w-4 h-4 flex-shrink-0" /> Видео цомогт орохгүй — зөвхөн таны утсанд татагдана.
+        </p>
       )}
 
       <button
         onClick={snap}
-        disabled={!ready || count !== null || tooMany}
+        disabled={!ready || count !== null || tooMany || (showAlbumConsent && addToAlbum === null)}
         className={`w-full flex items-center justify-center gap-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 rounded-2xl font-bold ${kiosk ? 'py-7 text-2xl' : 'py-5 text-lg'}`}
       >
         <Camera className={kiosk ? 'w-8 h-8' : 'w-6 h-6'} /> Зураг дарах
@@ -677,6 +722,150 @@ function ResultStep({
       <button onClick={onDone}
         className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm">
         <Camera className="w-4 h-4" /> Дахин зураг авахуулах
+      </button>
+    </div>
+  );
+}
+
+// ── Зураг уу, 360° видео юу ─────────────────────────────────────────────────
+function KindStep({ template, info, kiosk, busy, error, onPick }: {
+  template: BoothTemplate; info: BoothInfo; kiosk: boolean; busy: boolean; error: string;
+  onPick: (k: BoothKind) => void;
+}) {
+  const card = `group relative text-left rounded-2xl overflow-hidden border border-white/10 hover:border-amber-500/60 bg-white/5 transition-all disabled:opacity-50`;
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className={`${kiosk ? 'text-2xl' : 'text-xl'} font-bold`}>Юу авах вэ?</h2>
+        <p className="text-stone-400 text-sm">{template.name}</p>
+      </div>
+      {error && <ErrorBox msg={error} />}
+      <div className="grid grid-cols-2 gap-3">
+        <button disabled={busy} onClick={() => onPick('photo')} className={card}>
+          <div className="aspect-[3/4] bg-stone-900 overflow-hidden">
+            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover" />}
+          </div>
+          <div className="p-3">
+            <p className="flex items-center gap-1.5 font-bold"><ImageIcon className="w-4 h-4 text-amber-400" /> AI зураг</p>
+            <p className="text-amber-400 font-semibold mt-0.5">₮{info.booth.price_mnt.toLocaleString()}</p>
+          </div>
+        </button>
+        <button disabled={busy} onClick={() => onPick('video')} className={card}>
+          <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative" style={{ perspective: '600px' }}>
+            <style>{`@keyframes zmOrbit { 0% { transform: rotateY(-18deg) scale(1.08) } 50% { transform: rotateY(18deg) scale(1.08) } 100% { transform: rotateY(-18deg) scale(1.08) } }`}</style>
+            {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover"
+              style={{ animation: 'zmOrbit 5s ease-in-out infinite' }} />}
+            <span className="absolute top-2 left-2 bg-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">360°</span>
+          </div>
+          <div className="p-3">
+            <p className="flex items-center gap-1.5 font-bold"><Video className="w-4 h-4 text-amber-400" /> 360° видео</p>
+            <p className="text-amber-400 font-semibold mt-0.5">₮{(info.video?.price ?? 0).toLocaleString()}</p>
+          </div>
+        </button>
+      </div>
+      <p className="text-xs text-stone-500 leading-relaxed">
+        360° видео: таныг хөдөлгөөнгүй «зогссон мөч» болгоод камер тойрон эргэнэ (≈6 секунд, MP4). Видео 1–3 минутад бэлэн болно.
+        Видео авсан бол зургийг тусад нь авч болно.
+      </p>
+      {busy && <div className="flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-400" /></div>}
+    </div>
+  );
+}
+
+// ── 360° видео: бэлэн болохыг хүлээж харуулах ───────────────────────────────
+function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk: boolean; onDone: () => void }) {
+  const resultUrl = `${window.location.origin}/booth/r/${resultToken}`;
+  const [videoUrl, setVideoUrl] = useState('');
+  const [fallback, setFallback] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<'shared' | 'downloaded' | null>(null);
+
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      try {
+        const r = await boothApi.result(resultToken);
+        if (stop) return;
+        if (r.videoUrl) { setVideoUrl(r.videoUrl); return; }
+        if (r.imageUrl) { setFallback(true); return; }
+      } catch { /* дахин шалгана */ }
+      if (!stop) setTimeout(tick, 6000);
+    };
+    tick();
+    return () => { stop = true; };
+  }, [resultToken]);
+
+  // Kiosk: дараагийн хүнээ хүлээлгэхгүй — QR өгөөд хэсэг хугацааны дараа эхлэл рүү
+  useEffect(() => {
+    if (!kiosk) return;
+    const t = setTimeout(onDone, KIOSK_RESET_MS);
+    return () => clearTimeout(t);
+  }, [kiosk, onDone]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const blob = await (await fetch(videoUrl)).blob();
+      setSaved(await saveImageToDevice(blob, `zuragchin-360-${resultToken.slice(0, 6)}.mp4`));
+    } finally { setSaving(false); }
+  }
+
+  if (kiosk) {
+    return (
+      <div className="text-center max-w-lg mx-auto">
+        <h2 className="text-3xl font-bold mb-2">{videoUrl ? 'Видео бэлэн боллоо!' : '360° видео бэлтгэж байна…'}</h2>
+        <p className="text-stone-300 text-lg mb-5">Утсаараа QR уншуулаад явж болно — видео бэлэн болмогц тэнд гарна.</p>
+        <div className="bg-white rounded-2xl p-5 inline-block"><QRCodeSVG value={resultUrl} size={260} level="M" /></div>
+        {videoUrl && <video src={videoUrl} autoPlay loop muted playsInline className="mt-5 w-full rounded-2xl border border-white/10" />}
+        <button onClick={onDone} className="mt-6 w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl py-5 text-xl font-semibold">Дуусгах</button>
+      </div>
+    );
+  }
+
+  if (fallback) {
+    return (
+      <Center>
+        <AlertCircle className="w-10 h-10 text-amber-400 mb-3" />
+        <p className="text-lg font-semibold mb-2 text-center">Видео бүтээж чадсангүй</p>
+        <p className="text-stone-400 text-center mb-5">Уучлаарай. Оронд нь AI зургаа үнэгүй аваарай.</p>
+        <a href={resultUrl} className="w-full text-center bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-4 font-bold">Зургаа авах</a>
+      </Center>
+    );
+  }
+
+  if (!videoUrl) {
+    return (
+      <Center>
+        <div className="relative mb-6">
+          <div className="w-24 h-24 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin" />
+          <Video className="w-8 h-8 text-amber-400 absolute inset-0 m-auto" />
+        </div>
+        <p className="text-xl font-semibold mb-1">360° видео бэлтгэж байна…</p>
+        <p className="text-stone-400 text-sm text-center mb-5">1–3 минут болно. Хуудсаа хааж болно — доорх линкээр дараа нь авна.</p>
+        <button onClick={() => navigator.clipboard?.writeText(resultUrl)} className="text-amber-400 text-xs underline break-all">{resultUrl}</button>
+      </Center>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-green-400">
+        <CheckCircle2 className="w-5 h-5" /> <span className="font-semibold">Таны 360° видео бэлэн боллоо!</span>
+      </div>
+      <video src={videoUrl} autoPlay loop muted playsInline controls className="w-full rounded-2xl border border-white/10" />
+      <button onClick={save} disabled={saving}
+        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 rounded-xl py-4 font-bold text-lg">
+        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />} Видеог утсандаа хадгалах
+      </button>
+      {saved && <p className="text-stone-400 text-xs text-center">{saved === 'shared' ? 'Нээгдсэн цонхноос "Save Video"-г сонгоно уу.' : 'Видео татагдлаа. Галерей → "Download" хавтсанд харагдана.'}</p>}
+      <a href={`${resultUrl}?buy=1`}
+        className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl py-3.5 font-semibold">
+        <ImageIcon className="w-5 h-5" /> Энэ зургийг бас авах
+      </a>
+      <p className="text-stone-500 text-xs text-center break-all">Дараа дахин татах линк: <a href={resultUrl} className="text-amber-400 underline">{resultUrl}</a></p>
+      <button onClick={onDone}
+        className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm">
+        <Camera className="w-4 h-4" /> Дахин авахуулах
       </button>
     </div>
   );
