@@ -405,9 +405,17 @@ async function advanceVideo(job: Job): Promise<Job> {
     if (videoFailed(next)) return next;
     return await startVideoFor(next);
   }
-  const bytes = await downloadVeo(GEMINI_API_KEY, poll.videoUri);
   const videoPath = `${job.album_id}/${job.id}/video.mp4`;
-  await upload(videoPath, bytes, "video/mp4");
+  try {
+    const bytes = await downloadVeo(GEMINI_API_KEY, poll.videoUri);
+    await upload(videoPath, bytes, "video/mp4");
+  } catch (e) {
+    // Видео бэлэн ч хадгалж чадсангүй — operation-ийг хадгалаад дараагийн шалгалтаар дахин татна (Google 2 хоног хадгалдаг)
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("video save failed:", msg);
+    await db.from("ai_jobs").update({ error: msg.slice(0, 1000), updated_at: now() }).eq("id", job.id);
+    return job;
+  }
   await db.from("ai_jobs").update({ status: "done", video_path: videoPath, video_op: "", updated_at: now() })
     .eq("id", job.id).eq("status", "video_processing");
   return { ...job, status: "done", video_path: videoPath, video_op: "" };
