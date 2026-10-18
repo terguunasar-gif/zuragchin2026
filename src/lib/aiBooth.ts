@@ -251,6 +251,59 @@ export async function composeFinal(rawUrl: string, overlay: BoothOverlay): Promi
 }
 
 /** Цомгийн preview-д зориулсан жижиг, усан тэмдэгтэй хувилбар. */
+/**
+ * Видеоны доорх «худалдаж авах» зургийн хүчтэй тамга: том, тод давтагдах бичиг + голд нь зурвас.
+ * Тамгагүй зургийг зөвхөн төлбөр төлсний дараа өгнө.
+ */
+export async function makeStrongPreview(finalCanvas: HTMLCanvasElement): Promise<string> {
+  const c = scaleCanvas(finalCanvas, 1000);
+  const ctx = c.getContext('2d')!;
+  const w = c.width, h = c.height;
+  const diag = Math.hypot(w, h);
+  const fs = Math.round(w / 7.5);
+
+  // Давтагдах бичиг — ташуу, тод
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 6);
+  ctx.font = `800 ${fs}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  const tw = ctx.measureText('zuragchin.mn').width;
+  const stepX = tw + fs * 1.4, stepY = fs * 2.1;
+  for (let y = -diag; y < diag; y += stepY) {
+    const shift = (Math.round(y / stepY) % 2) * stepX / 2;
+    for (let x = -diag; x < diag; x += stepX) {
+      ctx.lineWidth = Math.max(2, fs / 10);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.strokeText('zuragchin.mn', x + shift, y);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText('zuragchin.mn', x + shift, y);
+    }
+  }
+  ctx.restore();
+
+  // Доод гуравны нэгт зурвас (царайг халхлахгүй)
+  const bandH = Math.round(Math.min(h * 0.11, w * 0.2));
+  const by = Math.round(h * 0.68 - bandH / 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, by, w, bandH);
+  ctx.font = `900 ${Math.round(bandH * 0.42)}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillText('ZURAGCHIN.MN', w / 2, by + bandH * 0.4);
+  const sub = 'ЖИШЭЭ · ТӨЛБӨРИЙН ДАРАА ТАМГАГҮЙ';
+  let sf = Math.round(bandH * 0.2);
+  ctx.font = `700 ${sf}px Arial, sans-serif`;
+  while (ctx.measureText(sub).width > w * 0.92 && sf > 8) { sf -= 1; ctx.font = `700 ${sf}px Arial, sans-serif`; }
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText(sub, w / 2, by + bandH * 0.76);
+
+  return canvasToDataUrl(c, 0.82);
+}
+
 export async function makeAlbumPreview(
   finalCanvas: HTMLCanvasElement,
   watermark: { type: string; value: string; position: string },
