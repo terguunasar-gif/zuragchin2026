@@ -672,10 +672,11 @@ export default function PublicAlbumPage() {
             ))}
           </div>
         )}
-        <div className="flex items-start gap-3 mb-2">
+        {/* Хавтас ба харагдацын сонголт — гүйлгэхэд толгойн доор наалдаж үлдэнэ */}
+        <div className="sticky top-[65px] z-20 -mx-6 px-6 py-3 mb-3 flex items-center gap-3 bg-stone-950/95 backdrop-blur-sm border-b border-white/5">
           <div className="flex-1 min-w-0">
         {(folderTabs.length > 1 || faceIds) && (
-          <div className="flex gap-2 overflow-x-auto pb-4 -mx-1 px-1">
+          <div className="flex gap-2 overflow-x-auto -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {folderTabs.map(f => (
               <button key={f.key} onClick={() => setFolderFilter(f.key)}
                 className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
