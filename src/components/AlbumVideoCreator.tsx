@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clapperboard, Download, Loader2, Play, RefreshCw, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, Clapperboard, Download, Loader2, Play, RefreshCw, X } from 'lucide-react';
 import BankLinks, { canOpenBankApps } from './BankLinks';
 import {
   albumVideoApi, aspectForImage, VideoInvoice, VideoState, VideoTemplate, VideoTemplatesInfo,
 } from '../lib/albumVideo';
 import { saveImageToDevice } from '../lib/browserEnv';
 
-type Step = 'pick' | 'pay' | 'processing' | 'done' | 'failed';
+type Step = 'pick' | 'confirm' | 'pay' | 'processing' | 'done' | 'failed';
 
 /**
  * Цомгийн эзэн: сонгосон зургаас AI видео бүтээх.
@@ -28,6 +28,8 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
   const [step, setStep] = useState<Step>('pick');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [pollErr, setPollErr] = useState('');
   const [invoice, setInvoice] = useState<VideoInvoice | null>(null);
   const [state, setState] = useState<VideoState | null>(null);
   const [videoId, setVideoId] = useState('');
@@ -45,16 +47,21 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
   useEffect(() => {
     if (!videoId || (step !== 'pay' && step !== 'processing')) return;
     let stop = false;
+    let fails = 0;
     const tick = async () => {
       try {
         const s = await albumVideoApi.status(videoId);
         if (stop) return;
+        fails = 0; setPollErr('');
         setState(s);
         if (s.status === 'done') { setStep('done'); onChanged(); return; }
         if (s.status === 'failed') { setStep('failed'); onChanged(); return; }
         if (s.status === 'expired') { setError('Нэхэмжлэхийн хугацаа дууссан. Дахин оролдоно уу.'); setStep('pick'); return; }
         if (s.status !== 'pending_payment' && step === 'pay') { setStep('processing'); onChanged(); }
-      } catch { /* дахин */ }
+      } catch (e) {
+        // Төлөв шалгаж чадахгүй байвал эргэлдээд байлгахгүй — шалтгааныг харуулна
+        if (++fails >= 3 && !stop) setPollErr(e instanceof Error ? e.message : 'Сервертэй холбогдож чадсангүй');
+      }
       if (!stop) timer.current = setTimeout(tick, step === 'pay' ? 3000 : 7000);
     };
     timer.current = setTimeout(tick, step === 'pay' ? 3000 : 5000);
@@ -133,6 +140,22 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
             )
           )}
 
+          {step === 'confirm' && picked && (
+            <div className="max-w-md mx-auto space-y-4">
+              <p className="text-white font-semibold text-center">{picked.emoji} {picked.name}</p>
+              <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-4">
+                <p className="flex items-center gap-2 text-red-300 font-bold mb-2"><AlertTriangle className="w-5 h-5 flex-shrink-0" /> Анхааруулга</p>
+                <ul className="text-stone-200 text-sm leading-relaxed space-y-2 list-disc pl-5">
+                  <li><b>Хүүхэд (18-аас доош насны) орсон зурагнаас видео үүсэхгүй.</b> Google-ийн AI ийм зургийг хориглодог.</li>
+                  <li>Хүүхэдтэй зураг сонгосны улмаас видео үүсээгүй тохиолдолд <b>төлбөр буцаагдахгүй.</b></li>
+                  <li>Зурган дээрх хүмүүс видеонд орохыг зөвшөөрсөн байх ёстой. AI царайг бага зэрэг өөрчилж болзошгүй.</li>
+                </ul>
+              </div>
+              <img src={photo.url} alt="" className="w-full max-h-64 object-contain rounded-xl bg-black" draggable={false} />
+              <p className="text-stone-500 text-xs text-center">Сонгосон зурагаа дахин шалгаарай.</p>
+            </div>
+          )}
+
           {step === 'pay' && invoice && (
             <div className="text-center max-w-sm mx-auto">
               <p className="text-white font-semibold">{picked?.emoji} {picked?.name}</p>
@@ -182,31 +205,50 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
               <AlertCircle className="w-10 h-10 text-amber-400 mb-3" />
               <p className="text-white text-lg font-semibold mb-2">Видео бүтээгдэж чадсангүй</p>
               <p className="text-stone-400 text-sm max-w-sm">
-                {state?.canRetry ? `${state.error} Нэмэлт төлбөргүйгээр дахин оролдох эсвэл өөр зураг сонгоно уу.`
+                {state?.canRetry ? `${state.error} Зурган дээр хүүхэд байвал Google видео үүсгэхгүй.`
                   : 'Олон удаа оролдсон ч бүтсэнгүй. Zuragchin.mn-тэй холбогдож төлбөрөө буцаалгана уу.'}
               </p>
             </div>
           )}
 
           {error && <p className="mt-4 text-red-400 text-sm text-center">{error}</p>}
+          {pollErr && (step === 'pay' || step === 'processing') && (
+            <p className="mt-4 text-amber-300 text-xs text-center">Төлөв шалгахад алдаа гарлаа: {pollErr}. Хуудсаа дахин ачаалаад «🎬 AI видео» хавтсаас шалгана уу.</p>
+          )}
         </div>
 
         {step === 'pick' && info?.enabled && (
           <div className="border-t border-white/10 p-4 space-y-3">
-            <p className="text-stone-500 text-[11px] leading-snug">
-              Зурган дээрх хүмүүс видеонд орохыг зөвшөөрсөн байх ёстой. AI царайг бага зэрэг өөрчилж болзошгүй.
-            </p>
+            <p className="text-red-300/90 text-[11px] leading-snug">⚠️ Хүүхэд орсон зурагнаас видео үүсэхгүй.</p>
             {isAdmin && (
               <label className="flex items-center gap-2 text-xs text-stone-300">
                 <input type="checkbox" checked={free} onChange={e => setFree(e.target.checked)} className="accent-amber-500" />
                 Админ: төлбөргүй (туршилт / жишээ видео)
               </label>
             )}
-            <button onClick={begin} disabled={!picked || busy}
+            <button onClick={() => { setAgreed(false); setError(''); setStep('confirm'); }} disabled={!picked}
               className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-fuchsia-500 to-amber-500 hover:brightness-110 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
-              {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Clapperboard className="w-5 h-5" />}
+              <Clapperboard className="w-5 h-5" />
               {picked ? `«${picked.name}» видео үүсгэх · ${isAdmin && free ? 'үнэгүй' : `₮${price.toLocaleString()}`}` : 'Загвар сонгоно уу'}
             </button>
+          </div>
+        )}
+        {step === 'confirm' && (
+          <div className="border-t border-white/10 p-4 space-y-3">
+            <label className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-3 cursor-pointer">
+              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="w-5 h-5 mt-0.5 accent-amber-500 flex-shrink-0" />
+              <span className="text-white text-sm font-semibold">Ойлголоо. Зурган дээр хүүхэд байхгүй, хүүхэдтэй зурагт төлбөр буцаагдахгүйг зөвшөөрч байна.</span>
+            </label>
+            <div className="flex gap-3">
+              <button onClick={() => setStep('pick')} className="flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/15 text-white font-semibold rounded-xl px-4 py-3.5">
+                <ArrowLeft className="w-4 h-4" /> Буцах
+              </button>
+              <button onClick={begin} disabled={!agreed || busy}
+                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-fuchsia-500 to-amber-500 hover:brightness-110 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
+                {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Clapperboard className="w-5 h-5" />}
+                {isAdmin && free ? 'Үнэгүй үүсгэх' : `Төлбөр төлөх · ₮${price.toLocaleString()}`}
+              </button>
+            </div>
           </div>
         )}
         {step === 'done' && (
