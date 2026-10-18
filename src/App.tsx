@@ -14,6 +14,7 @@ import AlbumsPage from './pages/albums/AlbumsPage';
 import PhotoUploadPage from './pages/photographer/PhotoUploadPage';
 import AlbumPhotosPage from './pages/photographer/AlbumPhotosPage';
 import PublicAlbumPage from './pages/PublicAlbumPage';
+import AlbumScreenPage from './pages/AlbumScreenPage';
 import ReceiptPage from './pages/ReceiptPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import EventListingsPage from './pages/EventListingsPage';
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/photographers" element={<PhotographersPage />} />
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
+          <Route path="/album/:shareLink/screen" element={<AlbumScreenPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
           <Route path="/offer/:token" element={<OfferPage />} />
           <Route path="/ai-booth" element={<AiBoothGalleryPage />} />

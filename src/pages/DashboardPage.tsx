@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins, MonitorPlay,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -560,6 +560,12 @@ export default function DashboardPage() {
               rel="noreferrer"
               className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold py-3 rounded-xl text-sm transition-colors">
               <QrCode className="w-4 h-4" />QR код татаж авах
+            </a>
+
+            {/* LED / ТВ дэлгэцэнд урсгаж харуулах */}
+            <a href={`/album/${qrModal.id}/screen`} target="_blank" rel="noreferrer"
+              className="mt-2 w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold py-3 rounded-xl text-sm transition-colors">
+              <MonitorPlay className="w-4 h-4 text-amber-400" />Дэлгэцэнд харуулах (LED, ТВ)
             </a>
 
             {/* 4 оронтой кодоор түгжих (төлбөртэй) */}
