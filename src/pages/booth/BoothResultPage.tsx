@@ -143,14 +143,23 @@ export default function BoothResultPage() {
             )}
 
             {isVideo && (
-              buyOpen
-                ? <BuyPhoto resultToken={resultToken} price={res?.photoPrice ?? 0} />
-                : (
-                  <button onClick={() => setBuyOpen(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl py-3.5 font-semibold">
-                    <ImageIcon className="w-5 h-5" /> Энэ зургийг бас авах · ₮{(res?.photoPrice ?? 0).toLocaleString()}
-                  </button>
-                )
+              <div className="border border-white/10 rounded-2xl p-3 space-y-3">
+                {res?.photoPreviewUrl && (
+                  <>
+                    <p className="text-sm font-semibold">Таны AI зураг</p>
+                    <img src={res.photoPreviewUrl} alt="AI зураг (тамгатай)" className="w-full rounded-xl"
+                      onContextMenu={e => e.preventDefault()} draggable={false} />
+                  </>
+                )}
+                {buyOpen
+                  ? <BuyPhoto resultToken={resultToken} price={res?.photoPrice ?? 0} />
+                  : (
+                    <button onClick={() => setBuyOpen(true)}
+                      className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-3.5 font-bold">
+                      <ImageIcon className="w-5 h-5" /> Энэ зургийг тамгагүй авах · ₮{(res?.photoPrice ?? 0).toLocaleString()}
+                    </button>
+                  )}
+              </div>
             )}
 
             <p className="text-stone-600 text-xs text-center">

@@ -623,6 +623,15 @@ async function finalize(body: Record<string, unknown>) {
 
   // «Хөдөлгөөнт видео» — зургийг хадгалаад (дараа нь худалдаж авч болно) видеог эхлүүлнэ. Цомогт орохгүй.
   if (job.kind === "video") {
+    // Тамгатай урьдчилсан зураг — видеоны доор харуулж худалдаж авахыг санал болгоно
+    if (body.preview) {
+      try {
+        const pv = decodeImage(body.preview, MAX_PREVIEW_BYTES, "Preview");
+        await upload(`${job.album_id}/${job.id}/preview.jpg`, pv.bytes, "image/jpeg");
+      } catch (e) {
+        console.error("video preview save failed:", e instanceof Error ? e.message : e);
+      }
+    }
     const { data: moved } = await db.from("ai_jobs")
       .update({ status: "video_processing", final_path: finalPath, updated_at: now() })
       .eq("id", job.id).eq("status", "generated").select("id");
@@ -702,9 +711,11 @@ async function getResult(resultToken: string) {
   // Видео — зургийг үнэгүй өгөхгүй (тусад нь худалдаж авна)
   if (job.kind === "video" && job.video_path) {
     const { data: booth } = await db.from("album_ai_booths").select("price_mnt").eq("album_id", job.album_id).maybeSingle();
+    const photoPreviewUrl = await signedUrl(`${job.album_id}/${job.id}/preview.jpg`, 24 * 3600).catch(() => "");
     return {
       kind: "video",
       videoUrl: await signedUrl(job.video_path, 24 * 3600),
+      photoPreviewUrl: photoPreviewUrl || undefined,
       photoPrice: booth?.price_mnt ?? 5000,
       albumName: album?.title || album?.name || "",
       templateName: tpl?.name ?? "",
@@ -733,6 +744,7 @@ async function cleanupExpired() {
     .limit(25);
   for (const j of jobs ?? []) {
     const paths = [j.input_path, j.raw_path, j.final_path, j.video_path].filter((p: string) => !!p);
+    if (j.video_path) paths.push(`${j.album_id}/${j.id}/preview.jpg`, `${j.album_id}/${j.id}/side.jpg`, `${j.album_id}/${j.id}/side.png`);
     if (paths.length > 0) await db.storage.from(BUCKET).remove(paths);
     await db.from("ai_jobs").update({
       status: "expired",

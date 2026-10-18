@@ -128,6 +128,8 @@ export interface BoothResult {
   failed?: boolean;
   canRetry?: boolean;
   photoPrice?: number;
+  /** Видеоны зургийн тамгатай урьдчилсан харагдац */
+  photoPreviewUrl?: string;
   albumName: string;
   templateName: string;
   createdAt: string;

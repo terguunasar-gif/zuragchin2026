@@ -226,13 +226,16 @@ export default function BoothPage() {
     try {
       const canvas = await composeFinal(rawUrl, boothInfo.booth);
       const finalDataUrl = canvasToDataUrl(canvas, 0.92);
-      const preview = boothInfo.booth.add_to_album
-        ? await makeAlbumPreview(canvas, {
-          type: boothInfo.album.watermark_type,
-          value: boothInfo.album.watermark_value,
-          position: boothInfo.album.watermark_position,
-        }).catch(() => undefined)
-        : undefined;
+      // Видео: зургийг тамгатайгаар урьдчилан харуулж, худалдаж авахыг санал болгоно
+      const preview = kind === 'video'
+        ? await makeAlbumPreview(canvas, { type: 'text', value: 'zuragchin.mn', position: 'center' }).catch(() => undefined)
+        : boothInfo.booth.add_to_album
+          ? await makeAlbumPreview(canvas, {
+            type: boothInfo.album.watermark_type,
+            value: boothInfo.album.watermark_value,
+            position: boothInfo.album.watermark_position,
+          }).catch(() => undefined)
+          : undefined;
       const done = await boothApi.finalize({ jobId: job.jobId, key: job.key, final: finalDataUrl, preview });
       if (done.status === 'video_processing') {
         setVideoToken(done.resultToken);
@@ -779,6 +782,7 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
 function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk: boolean; onDone: () => void }) {
   const resultUrl = `${window.location.origin}/booth/r/${resultToken}`;
   const [videoUrl, setVideoUrl] = useState('');
+  const [photo, setPhoto] = useState<{ url: string; price: number } | null>(null);
   const [failed, setFailed] = useState<{ canRetry: boolean } | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [round, setRound] = useState(0);
@@ -791,7 +795,11 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
       try {
         const r = await boothApi.result(resultToken);
         if (stop) return;
-        if (r.videoUrl) { setVideoUrl(r.videoUrl); return; }
+        if (r.videoUrl) {
+          setVideoUrl(r.videoUrl);
+          if (r.photoPreviewUrl) setPhoto({ url: r.photoPreviewUrl, price: r.photoPrice ?? 0 });
+          return;
+        }
         if (r.failed) { setFailed({ canRetry: !!r.canRetry }); return; }
       } catch { /* дахин шалгана */ }
       if (!stop) setTimeout(tick, 6000);
@@ -888,10 +896,22 @@ function VideoStep({ resultToken, kiosk, onDone }: { resultToken: string; kiosk:
         {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />} Видеог утсандаа хадгалах
       </button>
       {saved && <p className="text-stone-400 text-xs text-center">{saved === 'shared' ? 'Нээгдсэн цонхноос "Save Video"-г сонгоно уу.' : 'Видео татагдлаа. Галерей → "Download" хавтсанд харагдана.'}</p>}
-      <a href={`${resultUrl}?buy=1`}
-        className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl py-3.5 font-semibold">
-        <ImageIcon className="w-5 h-5" /> Энэ зургийг бас авах
-      </a>
+      {photo && (
+        <div className="border border-white/10 rounded-2xl p-3 space-y-3">
+          <p className="text-sm font-semibold">Таны AI зураг</p>
+          <img src={photo.url} alt="AI зураг (тамгатай)" className="w-full rounded-xl" onContextMenu={e => e.preventDefault()} draggable={false} />
+          <a href={`${resultUrl}?buy=1`}
+            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl py-3.5 font-bold">
+            <ImageIcon className="w-5 h-5" /> Энэ зургийг тамгагүй авах{photo.price ? ` · ₮${photo.price.toLocaleString()}` : ''}
+          </a>
+        </div>
+      )}
+      {!photo && (
+        <a href={`${resultUrl}?buy=1`}
+          className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl py-3.5 font-semibold">
+          <ImageIcon className="w-5 h-5" /> Энэ зургийг бас авах
+        </a>
+      )}
       <p className="text-stone-500 text-xs text-center break-all">Дараа дахин татах линк: <a href={resultUrl} className="text-amber-400 underline">{resultUrl}</a></p>
       <button onClick={onDone}
         className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm">
