@@ -56,21 +56,27 @@ export interface BoothInfo {
     watermark_position: string;
   };
   booth: BoothOverlay & { price_mnt: number; add_to_album: boolean; max_people: number };
+  /** «360° видео» сонголт (update-59) — байхгүй бол зөвхөн зураг */
+  video?: { enabled: boolean; price: number };
   templates: BoothTemplate[];
 }
+
+export type BoothKind = 'photo' | 'video';
 
 export interface StartResult {
   jobId: string;
   key: string;
   status: string;
   amount: number;
+  kind?: BoothKind;
   qrImage?: string;
   qrText?: string;
   urls?: { name: string; description: string; link: string; logo?: string }[];
 }
 
 export interface JobStatus {
-  status: 'pending_payment' | 'paid' | 'processing' | 'generated' | 'done' | 'failed' | 'expired';
+  status: 'pending_payment' | 'paid' | 'processing' | 'generated' | 'video_processing' | 'done' | 'failed' | 'expired';
+  kind?: BoothKind;
   amount?: number;
   attemptsLeft?: number;
   error?: string;
@@ -89,8 +95,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const boothApi = {
   info: (boothToken: string) => call<BoothInfo>(`/booth/${encodeURIComponent(boothToken)}`),
-  start: (boothToken: string, templateId: string, kiosk: boolean) =>
-    call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ boothToken, templateId, kiosk }) }),
+  start: (boothToken: string, templateId: string, kiosk: boolean, kind: BoothKind = 'photo') =>
+    call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ boothToken, templateId, kiosk, kind }) }),
+  /** Видеоны зургийг худалдаж авах нэхэмжлэх */
+  startPhotoFromVideo: (resultToken: string) =>
+    call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ fromResult: resultToken }) }),
+  claim: (jobId: string, key: string) =>
+    call<{ status: string; resultToken: string }>('/claim', { method: 'POST', body: JSON.stringify({ jobId, key }) }),
   status: (jobId: string, key: string) =>
     call<JobStatus>(`/status/${jobId}?key=${encodeURIComponent(key)}`),
   generate: (p: { jobId: string; key: string; image: string; peopleCount: number | null; addToAlbum: boolean }) =>
@@ -100,10 +111,23 @@ export const boothApi = {
       method: 'POST', body: JSON.stringify(p),
     }),
   result: (resultToken: string) =>
-    call<{ imageUrl: string; albumName: string; templateName: string; createdAt: string; expiresAt: string }>(
-      `/result/${encodeURIComponent(resultToken)}`,
-    ),
+    call<BoothResult>(`/result/${encodeURIComponent(resultToken)}`),
 };
+
+export interface BoothResult {
+  kind?: BoothKind;
+  imageUrl?: string;
+  videoUrl?: string;
+  /** Видео бэлтгэгдэж байна */
+  processing?: boolean;
+  /** Видео бүтээж чадаагүй — оронд нь зураг */
+  videoFailed?: boolean;
+  photoPrice?: number;
+  albumName: string;
+  templateName: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 // ── Зураг боловсруулалт ─────────────────────────────────────────────────────
 
@@ -259,7 +283,7 @@ export function isIOS(): boolean {
  */
 export async function saveImageToDevice(blob: Blob, filename: string): Promise<'shared' | 'downloaded'> {
   if (isIOS()) {
-    const file = new File([blob], filename, { type: 'image/jpeg' });
+    const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (nav.canShare && nav.canShare({ files: [file] })) {
       try {
