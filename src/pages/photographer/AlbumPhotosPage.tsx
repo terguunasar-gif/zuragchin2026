@@ -113,7 +113,7 @@ export default function AlbumPhotosPage() {
       const { data: cfg, error: cfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumId!).maybeSingle();
       if (!cfgErr && cfg) {
         const r = Number((cfg as { offer_auto_accept_ratio: number | null }).offer_auto_accept_ratio ?? 0);
-        setOfferCfg({ accept: (cfg as { accept_offers: boolean }).accept_offers !== false, autoPct: r > 0 ? String(Math.round(r * 100)) : '', loaded: true, saving: false });
+        setOfferCfg({ accept: (cfg as { accept_offers: boolean }).accept_offers === true, autoPct: r > 0 ? String(Math.round(r * 100)) : '', loaded: true, saving: false });
       }
     }
     await Promise.all([loadPhotos(isManager), loadFolders(), albumFaceSearchEnabled(albumId!).then(setFaceEnabled)]);
