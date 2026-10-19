@@ -208,6 +208,18 @@ export default function PublicAlbumPage() {
   const [ownerVideos, setOwnerVideos] = useState<OwnerVideo[] | null>(null);
   const [videoPhoto, setVideoPhoto] = useState<{ id: string; url: string } | null>(null);
   const [lockTokenState, setLockTokenState] = useState('');
+  // Үнийн санал хүлээн авах эсэх (эзэн асааж/унтраана)
+  const [offerRatio, setOfferRatio] = useState<number | null>(null);
+  const [offerSaving, setOfferSaving] = useState(false);
+  async function toggleOffers() {
+    if (!album) return;
+    const next = !album.accept_offers;
+    setOfferSaving(true);
+    const { error } = await authDb.rpc('set_album_offer_settings', { p_album_id: album.id, p_accept: next, p_auto_ratio: offerRatio });
+    setOfferSaving(false);
+    if (error) { window.alert(error.message); return; }
+    setAlbum({ ...album, accept_offers: next });
+  }
   // Цомгийн эзэн: зураг сонгож устгах
   const [delMode, setDelMode] = useState(false);
   const [delPicks, setDelPicks] = useState<Set<string>>(new Set());
@@ -359,12 +371,14 @@ export default function PublicAlbumPage() {
       .eq('id', albumData.owner_id).maybeSingle();
 
     // Үнийн санал хүлээн авах эсэх (update-40-ийн SQL ажиллаагүй бол асаалттай гэж үзэхгүй)
-    const { data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers').eq('id', albumData.id).maybeSingle();
+    let { data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumData.id).maybeSingle();
+    if (offerCfgErr) ({ data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers').eq('id', albumData.id).maybeSingle());
+    setOfferRatio(Number((offerCfg as { offer_auto_accept_ratio?: number | null } | null)?.offer_auto_accept_ratio) || null);
     const albumObj: AlbumData = {
       ...albumData,
       name: albumData.title || albumData.name,
       organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? '',
-      accept_offers: !offerCfgErr && (offerCfg as { accept_offers?: boolean } | null)?.accept_offers !== false,
+      accept_offers: !offerCfgErr && (offerCfg as { accept_offers?: boolean } | null)?.accept_offers === true,
     };
     setAlbum(albumObj);
 
@@ -696,6 +710,21 @@ export default function PublicAlbumPage() {
             </p>
           ) : null;
         })()}
+        {canManage && !freeMode && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+            <button onClick={toggleOffers} disabled={offerSaving}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border font-semibold transition-colors ${
+                album.accept_offers ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/15 text-stone-400 hover:text-white'}`}>
+              {offerSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <HandCoins className="w-3.5 h-3.5" />}
+              {album.accept_offers ? t('Үнийн санал: Нээлттэй') : t('Үнийн санал: Хаалттай')}
+            </button>
+            <span className="text-stone-500">
+              {album.accept_offers
+                ? t('Худалдан авагчид зураг бүрт үнэ санал болгож болно.')
+                : t('Уран сайхны зураг зардаг бол асаана. Арга хэмжээний цомогт шаардлагагүй.')}
+            </span>
+          </div>
+        )}
         {album.description && (
           <p className="text-stone-400 text-sm max-w-2xl leading-relaxed">{album.description}</p>
         )}
