@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
-import { publicDb as supabase, withTimeout, hasRole } from '../lib/supabase';
+import { publicDb as supabase, supabase as authDb, withTimeout, hasRole } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
@@ -208,6 +208,48 @@ export default function PublicAlbumPage() {
   const [ownerVideos, setOwnerVideos] = useState<OwnerVideo[] | null>(null);
   const [videoPhoto, setVideoPhoto] = useState<{ id: string; url: string } | null>(null);
   const [lockTokenState, setLockTokenState] = useState('');
+  // Цомгийн эзэн: зураг сонгож устгах
+  const [delMode, setDelMode] = useState(false);
+  const [delPicks, setDelPicks] = useState<Set<string>>(new Set());
+  const [delBusy, setDelBusy] = useState(false);
+  const toggleDelPick = (id: string) => setDelPicks(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  async function deletePicked() {
+    const ids = [...delPicks];
+    if (!ids.length) return;
+    if (!window.confirm(t('Сонгосон {n} зургийг цомгоос устгах уу? Буцаах боломжгүй.', { n: ids.length }))) return;
+    setDelBusy(true);
+    // Файлыг цэвэрлэхэд эх файлын замыг урьдчилан авна (эрх хүрэхгүй бол бичлэг л устгагдана)
+    const { data: paths } = await authDb.from('photo_uploads').select('id, original_url, preview_url').in('id', ids);
+    const pathById = new Map((paths ?? []).map((r: { id: string; original_url: string | null; preview_url: string | null }) => [r.id, r]));
+    const done: string[] = [];
+    let hidden = 0, failed = 0;
+    for (const id of ids) {
+      const { data: res, error } = await authDb.rpc('delete_album_photo', { p_photo_id: id });
+      if (error) { failed++; continue; }
+      done.push(id);
+      if (res === 'hidden') { hidden++; continue; }
+      const r = pathById.get(id);
+      if (r) {
+        const orig = String(r.original_url ?? '').replace(/^photos-original\//, '');
+        const prev = String(r.preview_url ?? '').includes('/photos-preview/') ? String(r.preview_url).split('/photos-preview/')[1]?.split('?')[0] : '';
+        await Promise.all([
+          orig ? authDb.storage.from('photos-original').remove([orig]).catch(() => null) : null,
+          prev ? authDb.storage.from('photos-preview').remove([prev]).catch(() => null) : null,
+        ]);
+      }
+    }
+    setPhotos(prev => prev.filter(p => !done.includes(p.id)));
+    setCart(prev => prev.filter(c => !done.includes(c.photoId)));
+    setDelPicks(new Set());
+    setDelBusy(false);
+    setDelMode(false);
+    const parts = [t('{n} зураг устгагдлаа.', { n: done.length - hidden })];
+    if (hidden) parts.push(t('{n} зураг худалдагдсан тул нуугдлаа (худалдан авагч татах боломжтой хэвээр).', { n: hidden }));
+    if (failed) parts.push(t('{n} зургийг устгаж чадсангүй.', { n: failed }));
+    window.alert(parts.join(' '));
+  }
 
   const [cartReady, setCartReady] = useState(false);
   // Үнийн санал илгээх зураг
@@ -513,6 +555,7 @@ export default function PublicAlbumPage() {
 
   // Үнэгүй хуваалцах цомог идэвхжээгүй — зочдод харуулахгүй, эзэнд идэвхжүүлэх товч
   const isOwner = !!profile && profile.id === album.owner_id;
+  const canManage = isOwner || (!!profile && hasRole(profile, 'admin'));
   const freeMode = album.is_free && album.free_activated !== undefined;
   if (freeMode && !album.free_activated && !isOwner) {
     return (
@@ -717,6 +760,13 @@ export default function PublicAlbumPage() {
           </div>
         )}
           </div>
+          {canManage && photos.length > 0 && folderFilter !== 'videos' && (
+            <button onClick={() => { setDelMode(m => !m); setDelPicks(new Set()); }} title={t('Зураг устгах')}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                delMode ? 'bg-red-500 border-red-500 text-white' : 'bg-white/5 border-white/10 text-stone-300 hover:text-red-300 hover:border-red-500/40'}`}>
+              <Trash2 className="w-4 h-4" /><span className="hidden sm:inline">{delMode ? t('Болих') : t('Устгах')}</span>
+            </button>
+          )}
           {photos.length > 0 && (
             <div className="flex-shrink-0 flex rounded-xl overflow-hidden border border-white/10 bg-white/5" role="group" aria-label={t('Харагдац')}>
               {([
@@ -743,18 +793,26 @@ export default function PublicAlbumPage() {
             <p className="text-stone-500 text-sm">{t('Зурагчид одоогоор зураг байршуулаагүй байна.')}</p>
           </div>
         ) : (
-          view !== 'large' ? (
-          <div className={`grid ${view === 'medium' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5' : 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1.5'}`}>
+          view !== 'large' || delMode ? (
+          <div className={`grid ${view !== 'small' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5' : 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1.5'}`}>
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
               : visiblePhotos).map(photo => (
-              <button key={photo.id} onClick={() => openLarge(photo.id)}
-                className={`relative aspect-square bg-stone-900 overflow-hidden group ${view === 'medium' ? 'rounded-xl' : 'rounded-md'}`}>
+              <button key={photo.id} onClick={() => (delMode ? toggleDelPick(photo.id) : openLarge(photo.id))}
+                className={`relative aspect-square bg-stone-900 overflow-hidden group ${view !== 'small' ? 'rounded-xl' : 'rounded-md'} ${
+                  delMode && delPicks.has(photo.id) ? 'ring-4 ring-red-500' : ''}`}>
                 <img src={photo.watermarked_url} alt={photo.name || photo.title} loading="lazy" draggable={false}
                   onContextMenu={e => e.preventDefault()}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 {cart.some(c => c.photoId === photo.id) && (
                   <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-stone-950 text-[10px] font-bold">✓</span>
+                )}
+                {delMode && (
+                  <span className={`absolute inset-0 flex items-start justify-end p-1.5 ${delPicks.has(photo.id) ? 'bg-red-500/30' : 'bg-black/10'}`}>
+                    {delPicks.has(photo.id)
+                      ? <CheckCircle2 className="w-6 h-6 text-white fill-red-500" />
+                      : <span className="w-6 h-6 rounded-full border-2 border-white/80 bg-black/30" />}
+                  </span>
                 )}
                 {view === 'medium' && photo.name && (
                   <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1.5 text-[11px] text-white truncate text-left">{photo.name}</span>
@@ -793,7 +851,7 @@ export default function PublicAlbumPage() {
                   type: 'download',
                   price: photoDownloadPrice(photo, album, aiPrice),
                 })}
-                onMakeVideo={isOwner ? () => setVideoPhoto({ id: photo.id, url: photo.watermarked_url }) : undefined}
+                onMakeVideo={canManage ? () => setVideoPhoto({ id: photo.id, url: photo.watermarked_url }) : undefined}
                 onOffer={!freeMode && album.accept_offers && photo.source !== 'ai_booth' && photoDownloadPrice(photo, album, aiPrice) > 0
                   ? () => setOfferPhoto(photo) : undefined}
                 onAddPrint={(size, price) => {
@@ -819,8 +877,26 @@ export default function PublicAlbumPage() {
           </p>
         )}
         {/* AI бүүтийн загварууд — доод хэсэгт урсаж харагдана */}
-        {album && photos.length > 0 && !(freeActive && printPicks.length > 0) && <AiTemplateStrip albumId={album.id} />}
+        {album && photos.length > 0 && !delMode && !(freeActive && printPicks.length > 0) && <AiTemplateStrip albumId={album.id} />}
       </main>
+
+      {delMode && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-stone-950/95 backdrop-blur border-t border-red-500/30 p-3">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <p className="text-white text-sm flex-1 min-w-0 whitespace-nowrap truncate">
+              {delPicks.size > 0 ? t('{n} зураг сонгосон', { n: delPicks.size }) : t('Устгах зургаа дарж сонгоно уу')}
+            </p>
+            <button onClick={() => setDelPicks(new Set(visiblePhotos.map(p => p.id)))}
+              className="text-stone-300 hover:text-white text-xs sm:text-sm px-1 whitespace-nowrap">{t('Бүгдийг сонгох')}</button>
+            <button onClick={() => { setDelMode(false); setDelPicks(new Set()); }}
+              className="bg-white/10 hover:bg-white/15 text-white text-sm font-semibold rounded-xl px-4 py-2.5">{t('Болих')}</button>
+            <button onClick={deletePicked} disabled={!delPicks.size || delBusy}
+              className="flex items-center gap-1.5 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white text-sm font-bold rounded-xl px-4 py-2.5">
+              {delBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {t('Устгах')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {videoPhoto && album && (
         <AlbumVideoCreator albumId={album.id} photo={videoPhoto} isAdmin={!!profile && hasRole(profile, 'admin')}
