@@ -83,6 +83,8 @@ export const albumVideoApi = {
   status: (videoId: string) => call<VideoState>(`/status/${videoId}`, {}, true),
   retry: (videoId: string) => call<VideoState>('/retry', { method: 'POST', body: JSON.stringify({ videoId }) }, true),
   remove: (videoId: string) => call<{ ok: boolean }>('/delete', { method: 'POST', body: JSON.stringify({ videoId }) }, true),
+  /** Админ: загварын жишээ зургийг AI-аар үүсгэнэ */
+  adminPreview: (templateId: string) => call<{ previewUrl: string }>('/admin/preview', { method: 'POST', body: JSON.stringify({ templateId }) }, true),
   /** Цомог нээгдэхэд боловсруулж буй видеог ахиулна (алдааг үл тооно) */
   advance: (albumId: string) => call<{ done: number }>('/advance', { method: 'POST', body: JSON.stringify({ albumId }) }).catch(() => ({ done: 0 })),
 };

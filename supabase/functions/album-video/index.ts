@@ -19,6 +19,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { downloadVeo, pollVeo, startVeo } from "../ai-booth/veo.ts";
+import { generateImage } from "../ai-booth/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,6 +31,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const VIDEO_MODEL = Deno.env.get("ALBUM_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
+const IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 const VIDEO_SECONDS = Number(Deno.env.get("ALBUM_VIDEO_SECONDS") || 8);
 const AUTO_ATTEMPTS = 3;   // автоматаар дахин оролдох
 const MAX_ATTEMPTS = 6;    // эзэн «Дахин» дарж болох нийт хязгаар
@@ -85,6 +87,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET" && path.startsWith("/status/")) return json(await status(req, path.slice("/status/".length)));
     if (req.method === "POST" && path === "/retry") return json(await retry(req, await readJson(req)));
     if (req.method === "POST" && path === "/delete") return json(await remove(req, await readJson(req)));
+    if (req.method === "POST" && path === "/admin/preview") return json(await adminPreview(req, await readJson(req)));
     if (req.method === "POST" && path === "/advance") return json(await advanceAlbum(await readJson(req)));
     if (req.method === "POST" && path === "/qpay-callback") {
       await qpayCallback(url.searchParams.get("video") ?? "", await req.json().catch(() => ({})));
@@ -432,6 +435,51 @@ async function remove(req: Request, body: Record<string, unknown>) {
   await db.storage.from(BUCKET).remove(paths).catch(() => undefined);
   await db.from("album_ai_videos").update({ status: "deleted", video_url: "", poster_url: "", video_op: "", updated_at: now() }).eq("id", v.id);
   return { ok: true };
+}
+
+// ── Админ: загварын жишээ зургийг AI-аар үүсгэх ─────────────────────────────
+async function adminPreview(req: Request, body: Record<string, unknown>) {
+  const user = await currentUser(req);
+  if (!user.admin) throw new HttpError(403, "Зөвхөн админ");
+  if (!GEMINI_API_KEY) throw new HttpError(500, "GEMINI_API_KEY тохируулаагүй байна");
+  const id = str(body.templateId);
+  if (!isUuid(id)) throw new HttpError(400, "Загвар буруу");
+  const { data: tpl } = await db.from("ai_video_templates").select("id, slug, prompt, preview_url").eq("id", id).maybeSingle();
+  if (!tpl) throw new HttpError(404, "Загвар олдсонгүй");
+
+  const prompt = [
+    "Create one photorealistic, vibrant, cinematic still image that shows the most exciting moment of this short fun video idea:",
+    tpl.prompt,
+    "Show two or three cheerful adult Mongolian people (around 25–40 years old) at a festive indoor event, clearly enjoying the moment.",
+    "Dynamic, eye-catching composition for a thumbnail, rich colours, sharp focus, professional event photography look.",
+    "No text, no letters, no captions, no logos, no watermarks. No children.",
+  ].join(" ");
+
+  let result;
+  try {
+    result = await generateImage({ apiKey: GEMINI_API_KEY, model: IMAGE_MODEL, prompt, images: [], aspectRatio: "16:9", imageSize: "1K" });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("video template preview failed:", msg);
+    throw new HttpError(502, msg.slice(0, 300));
+  }
+  const bin = atob(result.image.data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const ext = result.image.mimeType === "image/png" ? "png" : result.image.mimeType === "image/webp" ? "webp" : "jpg";
+  const path = `samples/preview-${tpl.slug}-${Date.now()}.${ext}`;
+  const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: result.image.mimeType, upsert: true });
+  if (error) throw new Error(`preview upload: ${error.message}`);
+  const previewUrl = db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+  // Хуучин AI жишээ зургийг устгана
+  const old = String(tpl.preview_url ?? "");
+  const marker = `/${BUCKET}/samples/preview-`;
+  if (old.includes(marker)) {
+    await db.storage.from(BUCKET).remove([old.slice(old.indexOf(`/${BUCKET}/`) + BUCKET.length + 2).split("?")[0]]).catch(() => undefined);
+  }
+  await db.from("ai_video_templates").update({ preview_url: previewUrl, updated_at: now() }).eq("id", tpl.id);
+  return { previewUrl };
 }
 
 // ── QPay ─────────────────────────────────────────────────────────────────────
