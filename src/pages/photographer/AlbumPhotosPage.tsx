@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download,
+  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -115,6 +115,8 @@ export default function AlbumPhotosPage() {
         const r = Number((cfg as { offer_auto_accept_ratio: number | null }).offer_auto_accept_ratio ?? 0);
         setOfferCfg({ accept: (cfg as { accept_offers: boolean }).accept_offers === true, autoPct: r > 0 ? String(Math.round(r * 100)) : '', loaded: true, saving: false });
       }
+      const { data: vc, error: vcErr } = await supabase.from('albums').select('ai_video_enabled').eq('id', albumId!).maybeSingle();
+      if (!vcErr && vc) setVideoOn((vc as { ai_video_enabled: boolean }).ai_video_enabled !== false);
     }
     await Promise.all([loadPhotos(isManager), loadFolders(), albumFaceSearchEnabled(albumId!).then(setFaceEnabled)]);
     setLoading(false);
@@ -381,6 +383,18 @@ export default function AlbumPhotosPage() {
     else showToast('Үнийн саналын тохиргоо хадгалагдлаа');
   }
 
+  const [videoOn, setVideoOn] = useState<boolean | null>(null);
+  const [videoSaving, setVideoSaving] = useState(false);
+  async function toggleVideo() {
+    if (videoOn === null) return;
+    setVideoSaving(true);
+    const { error } = await supabase.rpc('set_album_ai_video_enabled', { p_album_id: albumId!, p_enabled: !videoOn });
+    setVideoSaving(false);
+    if (error) { showToast('Хадгалж чадсангүй: ' + error.message, 'error'); return; }
+    setVideoOn(!videoOn);
+    showToast(!videoOn ? 'AI видео нээгдлээ' : '«Видео үүсгэх» товч цомгоос нуугдлаа');
+  }
+
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToastMsg(msg);
     setToastType(type);
@@ -601,6 +615,16 @@ export default function AlbumPhotosPage() {
                   {offerCfg.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Хадгалах
                 </button>
                 <button onClick={() => navigate('/dashboard/offers')} className="text-amber-400 hover:text-amber-300 text-sm ml-auto">Ирсэн саналууд →</button>
+              </div>
+            )}
+            {canManage && videoOn !== null && (
+              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5">
+                <label className="flex items-center gap-2 text-sm text-stone-200 cursor-pointer">
+                  <input type="checkbox" checked={videoOn} disabled={videoSaving} onChange={toggleVideo} className="w-4 h-4 accent-fuchsia-500" />
+                  <Clapperboard className="w-4 h-4 text-fuchsia-300" /> Цомогт «Видео үүсгэх» (AI видео) товч харуулах
+                </label>
+                {videoSaving && <Loader2 className="w-4 h-4 animate-spin text-fuchsia-300" />}
+                <span className="text-stone-500 text-xs">Уран сайхны зураг зардаг цомогт хэрэггүй бол чагтыг авна.</span>
               </div>
             )}
           </div>
