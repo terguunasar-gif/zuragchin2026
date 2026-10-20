@@ -210,6 +210,19 @@ export default function PublicAlbumPage() {
   const [lockTokenState, setLockTokenState] = useState('');
   // Үнийн санал хүлээн авах эсэх (эзэн асааж/унтраана)
   const [offerRatio, setOfferRatio] = useState<number | null>(null);
+  // Цомогт AI видео бүтээх боломж (эзэн хааж болно)
+  const [videoOn, setVideoOn] = useState(true);
+  const [videoSaving, setVideoSaving] = useState(false);
+  async function toggleVideo() {
+    if (!album) return;
+    const next = !videoOn;
+    setVideoSaving(true);
+    const { error } = await authDb.rpc('set_album_ai_video_enabled', { p_album_id: album.id, p_enabled: next });
+    setVideoSaving(false);
+    if (error) { window.alert(error.message); return; }
+    setVideoOn(next);
+    if (!next && folderFilter === 'videos' && !videos.length) setFolderFilter('all');
+  }
   const [offerSaving, setOfferSaving] = useState(false);
   async function toggleOffers() {
     if (!album) return;
@@ -374,6 +387,9 @@ export default function PublicAlbumPage() {
     let { data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumData.id).maybeSingle();
     if (offerCfgErr) ({ data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers').eq('id', albumData.id).maybeSingle());
     setOfferRatio(Number((offerCfg as { offer_auto_accept_ratio?: number | null } | null)?.offer_auto_accept_ratio) || null);
+    // SQL (update-77) ажиллаагүй бол асаалттай гэж үзнэ
+    const { data: vidCfg, error: vidCfgErr } = await supabase.from('albums').select('ai_video_enabled').eq('id', albumData.id).maybeSingle();
+    setVideoOn(vidCfgErr ? true : (vidCfg as { ai_video_enabled?: boolean } | null)?.ai_video_enabled !== false);
     const albumObj: AlbumData = {
       ...albumData,
       name: albumData.title || albumData.name,
@@ -514,7 +530,7 @@ export default function PublicAlbumPage() {
       .map(f => ({ key: f.id, label: f.name, count: photos.filter(p => !isAi(p) && p.folder_id === f.id).length }))
       .filter(f => f.count > 0),
     ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
-    ...((ownerVideos ?? videos).length > 0 || ownerVideos
+    ...((ownerVideos ?? videos).length > 0 || (ownerVideos && videoOn)
       ? [{ key: 'videos', label: '🎬 ' + t('AI видео'), count: (ownerVideos ?? videos).length }] : []),
     ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
   ];
@@ -710,6 +726,21 @@ export default function PublicAlbumPage() {
             </p>
           ) : null;
         })()}
+        {canManage && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+            <button onClick={toggleVideo} disabled={videoSaving}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border font-semibold transition-colors ${
+                videoOn ? 'bg-fuchsia-500/15 border-fuchsia-500/40 text-fuchsia-200' : 'bg-white/5 border-white/15 text-stone-400 hover:text-white'}`}>
+              {videoSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clapperboard className="w-3.5 h-3.5" />}
+              {videoOn ? t('AI видео: Нээлттэй') : t('AI видео: Хаалттай')}
+            </button>
+            <span className="text-stone-500">
+              {videoOn
+                ? t('Зураг бүрийн доор «Видео үүсгэх» товч гарна. Уран сайхны зурагт хэрэггүй бол хаана.')
+                : t('«Видео үүсгэх» товч нуугдсан.')}
+            </span>
+          </div>
+        )}
         {canManage && !freeMode && (
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
             <button onClick={toggleOffers} disabled={offerSaving}
@@ -880,7 +911,7 @@ export default function PublicAlbumPage() {
                   type: 'download',
                   price: photoDownloadPrice(photo, album, aiPrice),
                 })}
-                onMakeVideo={canManage ? () => setVideoPhoto({ id: photo.id, url: photo.watermarked_url }) : undefined}
+                onMakeVideo={canManage && videoOn ? () => setVideoPhoto({ id: photo.id, url: photo.watermarked_url }) : undefined}
                 onOffer={!freeMode && album.accept_offers && photo.source !== 'ai_booth' && photoDownloadPrice(photo, album, aiPrice) > 0
                   ? () => setOfferPhoto(photo) : undefined}
                 onAddPrint={(size, price) => {
