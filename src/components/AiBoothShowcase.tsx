@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { AiTemplatePublic, AI_CATEGORY_GRADIENT, fetchAiTemplates } from '../lib/aiTemplates';
+import YouTubeAutoplay from './YouTubeAutoplay';
+import { useHomeVideo } from '../lib/homeVideo';
 
 /** Нүүр хуудасны «AI зургийн бүүт» хэсэг — загваруудын жишээ, бүх цомог руу орох, шинэ загвар захиалах */
 export default function AiBoothShowcase() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<AiTemplatePublic[]>([]);
 
+  const introVideo = useHomeVideo('home_booth_youtube');
   useEffect(() => { fetchAiTemplates().then(setTemplates); }, []);
 
   // Жишээ зурагтай загваруудыг эхэнд нь
-  const shown = [...templates].sort((a, b) => Number(!!b.preview_url) - Number(!!a.preview_url)).slice(0, 4);
+  const shown = [...templates].sort((a, b) => Number(!!b.preview_url) - Number(!!a.preview_url)).slice(0, 6);
   const open = () => navigate('/ai-booth');
 
   return (
@@ -35,24 +38,26 @@ export default function AiBoothShowcase() {
           </p>
         </div>
 
+        {/* Танилцуулга видео (админ YouTube холбоос оруулна) */}
+        {introVideo && <div className="mb-8"><YouTubeAutoplay url={introVideo} title="AI зургийн бүүт" /></div>}
+
         {/* Загваруудын жишээ */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
-          {(shown.length > 0 ? shown : Array.from({ length: 4 }, () => null)).map((t, i) => (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 md:gap-3 max-w-5xl mx-auto">
+          {(shown.length > 0 ? shown : Array.from({ length: 6 }, () => null)).map((t, i) => (
             <button key={t?.id ?? i} onClick={open}
-              className="group relative aspect-[3/4] rounded-3xl overflow-hidden border border-white/10 hover:border-amber-500/50 transition-all text-left">
+              className="group relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 hover:border-amber-500/50 transition-all text-left">
               {t?.preview_url ? (
                 <img src={t.preview_url} alt={t.name} loading="lazy"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
               ) : (
                 <div className={`absolute inset-0 bg-gradient-to-br ${AI_CATEGORY_GRADIENT[t?.category ?? ''] ?? 'from-stone-700 via-stone-800 to-stone-900'} flex items-center justify-center`}>
-                  <Wand2 className="w-12 h-12 text-white/30" />
+                  <Wand2 className="w-8 h-8 text-white/30" />
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/10 to-transparent" />
               {t && (
-                <div className="absolute bottom-0 inset-x-0 p-4">
-                  <p className="text-white font-bold text-sm sm:text-base">{t.name}</p>
-                  {t.description && <p className="text-stone-300 text-xs mt-0.5 line-clamp-1">{t.description}</p>}
+                <div className="absolute bottom-0 inset-x-0 p-2.5">
+                  <p className="text-white font-bold text-xs sm:text-sm leading-tight line-clamp-2">{t.name}</p>
                 </div>
               )}
             </button>
