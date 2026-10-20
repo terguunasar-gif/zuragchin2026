@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Clapperboard, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Clapperboard, ImagePlus, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { albumVideoApi } from '../../lib/albumVideo';
 import { supabase } from '../../lib/supabase';
 
 interface Tpl {
@@ -13,6 +14,25 @@ export default function AdminVideoTemplatesTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+  const [bulk, setBulk] = useState<{ done: number; total: number; failed: number } | null>(null);
+
+  /** Жишээ зураггүй бүх загварт AI зураг үүсгэнэ (нэг нэгээр) */
+  async function generateMissing() {
+    const todo = list.filter(t => !t.preview_url);
+    if (!todo.length) { window.alert('Бүх загвар AI зурагтай байна.'); return; }
+    if (!window.confirm(`${todo.length} загварт AI жишээ зураг үүсгэх үү? (нэг зураг ≈ 100–150₮, нэг нь 10–30 секунд)`)) return;
+    setBulk({ done: 0, total: todo.length, failed: 0 });
+    for (const t of todo) {
+      try {
+        const { previewUrl } = await albumVideoApi.adminPreview(t.id);
+        setList(l => l.map(x => (x.id === t.id ? { ...x, preview_url: previewUrl } : x)));
+        setBulk(b => b && { ...b, done: b.done + 1 });
+      } catch (e) {
+        console.error(t.name, e);
+        setBulk(b => b && { ...b, done: b.done + 1, failed: b.failed + 1 });
+      }
+    }
+  }
 
   async function load() {
     const { data, error: err } = await supabase.from('ai_video_templates').select('*').order('sort_order', { ascending: true });
@@ -44,10 +64,22 @@ export default function AdminVideoTemplatesTab() {
             Жишээ видео: өөрийн цомогт «Админ: төлбөргүй» сонголтоор бүтээгээд доороос сонгоно уу.
           </p>
         </div>
+        <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2">
+        <button onClick={generateMissing} disabled={!!bulk && bulk.done < bulk.total}
+          className="flex items-center gap-1.5 bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border border-fuchsia-500/40 text-fuchsia-200 disabled:opacity-60 font-semibold px-4 py-2 rounded-xl text-sm">
+          {bulk && bulk.done < bulk.total ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+          {bulk && bulk.done < bulk.total ? `AI зураг ${bulk.done}/${bulk.total}…` : 'Зураггүйд AI зураг үүсгэх'}
+        </button>
         <button onClick={add} className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl text-sm">
           <Plus className="w-4 h-4" /> Загвар нэмэх
         </button>
+        </div>
       </div>
+      {bulk && bulk.done >= bulk.total && (
+        <p className={`text-sm ${bulk.failed ? 'text-amber-300' : 'text-green-400'}`}>
+          AI зураг үүсгэж дууслаа: {bulk.total - bulk.failed} амжилттай{bulk.failed ? `, ${bulk.failed} бүтсэнгүй (дахин дарна уу)` : ''}.
+        </p>
+      )}
       {error && <p className="text-red-400 text-sm">{error}</p>}
       {loading ? <Loader2 className="w-6 h-6 text-amber-400 animate-spin" /> : (
         <div className="space-y-2">
@@ -77,6 +109,18 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
       .order('created_at', { ascending: false }).limit(12)
       .then(({ data }) => setMade((data ?? []) as { id: string; video_url: string; poster_url: string }[]));
   }, [open, tpl.id]);
+
+  const [genBusy, setGenBusy] = useState(false);
+  async function genPreview() {
+    setGenBusy(true);
+    try {
+      const { previewUrl } = await albumVideoApi.adminPreview(tpl.id);
+      const next = { ...f, preview_url: previewUrl };
+      setF(next); onSaved(next);
+    } catch (e) {
+      window.alert('AI зураг үүсгэж чадсангүй: ' + (e instanceof Error ? e.message : ''));
+    } finally { setGenBusy(false); }
+  }
 
   const set = <K extends keyof Tpl>(k: K, v: Tpl[K]) => setF(p => ({ ...p, [k]: v }));
 
@@ -117,7 +161,9 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
     <div className="bg-white/5 border border-white/10 rounded-2xl">
       <button onClick={onToggle} className="w-full flex items-center gap-3 p-3 text-left">
         <div className="w-16 aspect-video rounded-lg bg-stone-900 overflow-hidden flex items-center justify-center flex-shrink-0">
-          {f.sample_video_url ? <video src={f.sample_video_url} muted className="w-full h-full object-cover" /> : <span className="text-2xl">{f.emoji}</span>}
+          {f.sample_video_url ? <video src={f.sample_video_url} poster={f.preview_url || undefined} muted className="w-full h-full object-cover" />
+            : f.preview_url ? <img src={f.preview_url} alt="" className="w-full h-full object-cover" />
+            : <span className="text-2xl">{f.emoji}</span>}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-semibold truncate">{f.emoji} {f.name}</p>
@@ -140,6 +186,17 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
           <div>
             <p className="text-stone-400 text-xs mb-1">AI-д өгөх үйлдлийн тайлбар (англиар)</p>
             <textarea className={`${input} min-h-[110px] font-mono text-xs`} value={f.prompt} onChange={e => set('prompt', e.target.value)} />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {f.preview_url && <img src={f.preview_url} alt="" className="w-40 aspect-video object-cover rounded-lg border border-white/10" />}
+            <button onClick={genPreview} disabled={genBusy}
+              className="flex items-center gap-1.5 text-xs bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border border-fuchsia-500/40 text-fuchsia-200 rounded-lg px-3 py-2 disabled:opacity-60">
+              {genBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+              {f.preview_url ? 'AI зургийг дахин үүсгэх' : 'AI жишээ зураг үүсгэх'}
+            </button>
+            {f.preview_url && (
+              <button onClick={() => save({ preview_url: '' })} className="text-xs text-stone-400 hover:text-red-400">Зургийг хасах</button>
+            )}
           </div>
           <div className="space-y-2">
             <p className="text-stone-400 text-xs">Жишээ видео</p>
