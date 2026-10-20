@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Clapperboard, Images, MonitorPlay, Play, Sparkles } from 'lucide-react';
 import { publicDb } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import YouTubeAutoplay from './YouTubeAutoplay';
+import { useHomeVideo } from '../lib/homeVideo';
 
 interface Tpl { id: string; name: string; description: string; emoji: string; sample_video_url: string; preview_url: string; tags: string }
 
@@ -13,6 +15,7 @@ export default function AiVideoShowcase() {
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [price, setPrice] = useState(10000);
   const [enabled, setEnabled] = useState(true);
+  const introVideo = useHomeVideo('home_ai_video_youtube');
 
   useEffect(() => {
     publicDb.from('ai_video_templates').select('id, name, description, emoji, sample_video_url, preview_url, tags')
@@ -71,8 +74,11 @@ export default function AiVideoShowcase() {
           ))}
         </div>
 
+        {/* Танилцуулга видео (админ YouTube холбоос оруулна) */}
+        {introVideo && <div className="mb-10"><YouTubeAutoplay url={introVideo} title="AI видео" /></div>}
+
         {/* Загваруудын жишээ */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-2 md:gap-3 max-w-5xl mx-auto">
           {shown.map(t => <TemplateTile key={t.id} t={t} />)}
         </div>
 
@@ -101,21 +107,20 @@ function TemplateTile({ t }: { t: Tpl }) {
     return () => io.disconnect();
   }, []);
   return (
-    <div className="group relative aspect-video rounded-2xl overflow-hidden border border-white/10 hover:border-fuchsia-400/50 transition-colors bg-gradient-to-br from-fuchsia-900/50 via-stone-900 to-amber-900/30">
+    <div className="group relative aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-fuchsia-400/50 transition-colors bg-gradient-to-br from-fuchsia-900/50 via-stone-900 to-amber-900/30">
       {t.sample_video_url ? (
         <video ref={ref} src={t.sample_video_url} poster={t.preview_url || undefined} muted loop playsInline preload="metadata"
           className="absolute inset-0 w-full h-full object-cover" />
       ) : t.preview_url ? (
         <img src={t.preview_url} alt={t.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
       ) : (
-        <div className="absolute inset-x-0 top-0 bottom-9 sm:bottom-10 flex items-center justify-center">
-          <span className="text-3xl sm:text-5xl group-hover:scale-110 transition-transform" aria-hidden>{t.emoji}</span>
+        <div className="absolute inset-x-0 top-0 bottom-7 flex items-center justify-center">
+          <span className="text-2xl sm:text-3xl group-hover:scale-110 transition-transform" aria-hidden>{t.emoji}</span>
         </div>
       )}
       {t.sample_video_url && <Play className="absolute top-2 right-2 w-4 h-4 text-white/80 drop-shadow" />}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stone-950/95 via-stone-950/60 to-transparent px-3 pt-6 pb-2">
-        <p className="text-white font-bold text-sm leading-tight">{t.sample_video_url || t.preview_url ? `${t.emoji} ` : ''}{t.name}</p>
-        {t.tags && <p className="text-fuchsia-300/80 text-[11px] truncate">{t.tags}</p>}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stone-950/95 via-stone-950/60 to-transparent px-1.5 pt-4 pb-1.5">
+        <p className="text-white font-semibold text-[10px] sm:text-xs leading-tight line-clamp-2 text-center">{t.name}</p>
       </div>
     </div>
   );
