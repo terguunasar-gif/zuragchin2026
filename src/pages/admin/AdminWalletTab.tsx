@@ -3,6 +3,7 @@ import { TrendingUp, DollarSign, Calendar, ChevronDown, ChevronUp } from 'lucide
 import { supabase } from '../../lib/supabase';
 import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 import AiVideoSetting from './AiVideoSetting';
+import HomeVideosSetting from './HomeVideosSetting';
 import AlbumPolicySetting from './AlbumPolicySetting';
 import FreePackagesSetting from './FreePackagesSetting';
 import ListingPackagesSetting from './ListingPackagesSetting';
@@ -95,6 +96,7 @@ export default function AdminWalletTab() {
     <div className="space-y-6">
       <AiAlbumPriceSetting />
       <AiVideoSetting />
+      <HomeVideosSetting />
       <AlbumPolicySetting />
       <FreePackagesSetting />
       <ListingPackagesSetting />
