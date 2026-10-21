@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, Copy, CheckCircle2, Eye, EyeOff, Save, Instagram, Facebook, Phone, Upload, User, ImagePlus, Trash2, Pencil, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import PortfolioEditor from '../../components/PortfolioEditor';
 
 interface PhotographerProfile {
   id?: string;
@@ -16,6 +17,7 @@ interface PhotographerProfile {
   avatar_url?: string;
   cover_url?: string;
   location?: string;
+  portfolio_urls?: string[];
 }
 
 const SPECIALTIES = ['Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал', 'Портрет', 'Байгаль', 'Мода'];
@@ -66,7 +68,10 @@ export default function PhotographerProfileTab() {
     } catch { draft = null; }
     if (p || draft) {
       // Хадгалаагүй ноорог байвал түүнийг (DB-ийн id/zur_id-тэй нь) сэргээнэ.
-      setData(prev => ({ ...prev, ...(p ?? {}), ...(draft ?? {}), id: p?.id, zur_id: p?.zur_id }));
+      // Портфолио зөвхөн DB-ээс (ноорогт хуучирсан жагсаалт байж болно)
+      if (draft) delete (draft as { portfolio_urls?: string[] }).portfolio_urls;
+      setData(prev => ({ ...prev, ...(p ?? {}), ...(draft ?? {}), id: p?.id, zur_id: p?.zur_id,
+        ...(Array.isArray(p?.portfolio_urls) ? { portfolio_urls: p.portfolio_urls } : {}) }));
     }
     draftReady.current = true;
     setLoading(false);
@@ -246,6 +251,12 @@ export default function PhotographerProfileTab() {
           </div>
         </div>
       </div>
+
+      {/* Миний бүтээлүүд — 5 хүртэл зураг */}
+      {profile && (
+        <PortfolioEditor userId={profile.id} profileId={data.id ?? null} urls={data.portfolio_urls ?? []}
+          onChange={urls => setData(prev => ({ ...prev, portfolio_urls: urls }))} />
+      )}
 
       {/* Нүүр хуудсанд харагдах */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
