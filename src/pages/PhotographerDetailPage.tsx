@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import BrandMark from '../components/BrandMark';
+import PortfolioGallery from '../components/PortfolioGallery';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
 
@@ -243,6 +244,10 @@ export default function PhotographerDetailPage() {
             )}
           </div>
         </div>
+
+        {Array.isArray(p.portfolio_urls) && p.portfolio_urls.length > 0 && (
+          <PortfolioGallery urls={p.portfolio_urls as string[]} name={p.display_name || 'Зурагчин'} />
+        )}
 
         {albums.length > 0 && (
           <section className="mt-10">
