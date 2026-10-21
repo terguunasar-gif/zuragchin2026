@@ -254,7 +254,7 @@ export default function PhotographerProfileTab() {
 
       {/* Миний бүтээлүүд — 5 хүртэл зураг */}
       {profile && (
-        <PortfolioEditor userId={profile.id} profileId={data.id ?? null} urls={data.portfolio_urls ?? []}
+        <PortfolioEditor userId={profile.id} name={data.display_name || profile.name || ''} profileId={data.id ?? null} urls={data.portfolio_urls ?? []}
           onChange={urls => setData(prev => ({ ...prev, portfolio_urls: urls }))} />
       )}
 

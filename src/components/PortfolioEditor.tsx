@@ -1,13 +1,55 @@
 import { useRef, useState } from 'react';
 import { ImagePlus, Loader2, Star, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { applyWatermark } from '../lib/watermark';
 
 export const PORTFOLIO_MAX = 5;
+const MAX_EDGE = 2000;
+
+/** Зурагт «© Нэр · zuragchin.mn» тамгыг шингээнэ (тамгагүй хувилбар хадгалагдахгүй) */
+async function stampImage(file: File, name: string): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, fail) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error('Зураг уншиж чадсангүй')); i.src = url;
+    });
+    const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const text = `© ${name.trim() || 'Зурагчин'} · zuragchin.mn`;
+    const base = Math.min(w, h);
+    let size = Math.max(16, Math.round(base * 0.045));
+    ctx.font = `700 ${size}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+    // Хэт урт нэр зургаас хэтрэхгүй
+    while (ctx.measureText(text).width > w * 0.8 && size > 12) {
+      size -= 1; ctx.font = `700 ${size}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+    }
+    const tw = ctx.measureText(text).width;
+    const padX = size * 0.7, padY = size * 0.45, margin = Math.round(base * 0.03);
+    const bw = tw + padX * 2, bh = size + padY * 2;
+    const x = w - bw - margin, y = h - bh - margin;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    const r = bh / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.lineTo(x + bw - r, y); ctx.arc(x + bw - r, y + r, r, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(x + r, y + bh); ctx.arc(x + r, y + r, r, Math.PI / 2, -Math.PI / 2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + padX, y + bh / 2 + size * 0.04);
+
+    return await new Promise<Blob>((ok, fail) => c.toBlob(b => (b ? ok(b) : fail(new Error('Хөрвүүлж чадсангүй'))), 'image/jpeg', 0.88));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 /** Зурагчны профайл: өөрийн авсан шилдэг 5 зураг. Байршуулах бүрт шууд хадгална. */
-export default function PortfolioEditor({ userId, profileId, urls, onChange }: {
+export default function PortfolioEditor({ userId, profileId, urls, onChange, name }: {
   userId: string;
+  /** Тамганд бичигдэх зурагчны нэр */
+  name: string;
   /** photographer_profiles.id — профайл хадгалагдаагүй бол null */
   profileId: string | null;
   urls: string[];
@@ -38,8 +80,8 @@ export default function PortfolioEditor({ userId, profileId, urls, onChange }: {
     const added: string[] = [];
     for (const file of list) {
       try {
-        // Вэбэд хурдан ачаалагдах хэмжээнд (2000px) шахна — эх файлыг хадгалахгүй
-        const blob = await applyWatermark(file, { type: 'none', value: '', position: 'bottom-right', maxSize: 2000, quality: 0.88 });
+        // 2000px хүртэл жижигрүүлж «© Нэр · zuragchin.mn» тамга шингээнэ — эх файл хадгалагдахгүй
+        const blob = await stampImage(file, name);
         const path = `${userId}/portfolio/${crypto.randomUUID()}.jpg`;
         const { error: upErr } = await supabase.storage.from('covers').upload(path, blob, { contentType: 'image/jpeg' });
         if (upErr) throw new Error(upErr.message);
@@ -76,7 +118,7 @@ export default function PortfolioEditor({ userId, profileId, urls, onChange }: {
           <h3 className="text-white font-semibold flex items-center gap-2"><Star className="w-4 h-4 text-amber-400" /> Миний бүтээлүүд</h3>
           <p className="text-stone-500 text-xs mt-1">
             Өөрийн авсан шилдэг {PORTFOLIO_MAX} хүртэл зургаа оруулна уу. Профайл хуудсанд тань том харагдаж, захиалагчид таны ур чадварыг харна.
-            Эхний зураг хамгийн том гарна.
+            Эхний зураг хамгийн том гарна. Зураг бүрд «© {name || 'Таны нэр'} · zuragchin.mn» тамга автоматаар суулгана.
           </p>
         </div>
         <span className="text-stone-400 text-sm flex-shrink-0">{urls.length}/{PORTFOLIO_MAX}</span>
