@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /albums
+Disallow: /auth/
+Disallow: /receipt/
+Disallow: /offer/
+Disallow: /booth/
+Disallow: /my-purchases
+
+Sitemap: https://www.zuragchin.mn/sitemap.xml

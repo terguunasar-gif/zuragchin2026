@@ -1,45 +1,62 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { I18nProvider } from './lib/i18n';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
-import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
-import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
-import ResetPasswordPage from './pages/auth/ResetPasswordPage';
-import DashboardPage from './pages/DashboardPage';
-import CreateAlbumPage from './pages/albums/CreateAlbumPage';
-import AlbumEditPage from './pages/albums/AlbumEditPage';
-import AlbumsPage from './pages/albums/AlbumsPage';
-import PhotoUploadPage from './pages/photographer/PhotoUploadPage';
-import AlbumPhotosPage from './pages/photographer/AlbumPhotosPage';
-import PublicAlbumPage from './pages/PublicAlbumPage';
-import AlbumScreenPage from './pages/AlbumScreenPage';
-import ReceiptPage from './pages/ReceiptPage';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import EventListingsPage from './pages/EventListingsPage';
-import HomePage from './pages/HomePage';
-import PhotographersPage from './pages/PhotographersPage';
-import PhotographerDetailPage from './pages/PhotographerDetailPage';
-import BoothPage from './pages/booth/BoothPage';
-import MyPurchasesPage from './pages/MyPurchasesPage';
-import BoothResultPage from './pages/booth/BoothResultPage';
-import AiBoothSettingsPage from './pages/booth/AiBoothSettingsPage';
-import OrganizerRequestsPage from './pages/organizer/OrganizerRequestsPage';
-import AlbumActivatePage from './pages/albums/AlbumActivatePage';
-import PrintRequestsPage from './pages/organizer/PrintRequestsPage';
-import AlbumListingPage from './pages/albums/AlbumListingPage';
-import ExploreAlbumsPage from './pages/ExploreAlbumsPage';
-import WalletPage from './pages/wallet/WalletPage';
-import OfferPage from './pages/OfferPage';
-import AiBoothGalleryPage from './pages/AiBoothGalleryPage';
-import PriceOffersPage from './pages/photographer/PriceOffersPage';
+import RouteSeo from './components/RouteSeo';
+
+const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const CreateAlbumPage = lazy(() => import('./pages/albums/CreateAlbumPage'));
+const AlbumEditPage = lazy(() => import('./pages/albums/AlbumEditPage'));
+const AlbumsPage = lazy(() => import('./pages/albums/AlbumsPage'));
+const PhotoUploadPage = lazy(() => import('./pages/photographer/PhotoUploadPage'));
+const AlbumPhotosPage = lazy(() => import('./pages/photographer/AlbumPhotosPage'));
+const PublicAlbumPage = lazy(() => import('./pages/PublicAlbumPage'));
+const AlbumScreenPage = lazy(() => import('./pages/AlbumScreenPage'));
+const ReceiptPage = lazy(() => import('./pages/ReceiptPage'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const EventListingsPage = lazy(() => import('./pages/EventListingsPage'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const PhotographersPage = lazy(() => import('./pages/PhotographersPage'));
+const PhotographerDetailPage = lazy(() => import('./pages/PhotographerDetailPage'));
+const BoothPage = lazy(() => import('./pages/booth/BoothPage'));
+const MyPurchasesPage = lazy(() => import('./pages/MyPurchasesPage'));
+const BoothResultPage = lazy(() => import('./pages/booth/BoothResultPage'));
+const AiBoothSettingsPage = lazy(() => import('./pages/booth/AiBoothSettingsPage'));
+const OrganizerRequestsPage = lazy(() => import('./pages/organizer/OrganizerRequestsPage'));
+const AlbumActivatePage = lazy(() => import('./pages/albums/AlbumActivatePage'));
+const PrintRequestsPage = lazy(() => import('./pages/organizer/PrintRequestsPage'));
+const AlbumListingPage = lazy(() => import('./pages/albums/AlbumListingPage'));
+const ExploreAlbumsPage = lazy(() => import('./pages/ExploreAlbumsPage'));
+const WalletPage = lazy(() => import('./pages/wallet/WalletPage'));
+const OfferPage = lazy(() => import('./pages/OfferPage'));
+const AiBoothGalleryPage = lazy(() => import('./pages/AiBoothGalleryPage'));
+const PriceOffersPage = lazy(() => import('./pages/photographer/PriceOffersPage'));
+const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
+const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
+const ContactPage = lazy(() => import('./pages/legal/ContactPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+function PageFallback() {
+  return (
+    <div className="min-h-screen bg-stone-950 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
       <I18nProvider>
+        <RouteSeo />
+        <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth/login" element={<LoginPage />} />
@@ -118,7 +135,12 @@ export default function App() {
           <Route path="/my-purchases" element={<MyPurchasesPage />} />
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </I18nProvider>
       </AuthProvider>
     </BrowserRouter>

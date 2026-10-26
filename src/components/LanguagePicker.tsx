@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Globe } from 'lucide-react';
-import { guessLang, Lang, LANGS, translate, useI18n } from '../lib/i18n';
+import { ensureDict, Lang, LANGS, translate, useI18n } from '../lib/i18n';
 
-/** Цомгийн линкийг анх нээхэд гарах хэл сонгох цонх. Монгол хамгийн эхэнд. */
+/** Цомгийн линкийг анх нээхэд гарах хэл сонгох цонх. Монгол хамгийн эхэнд, анхдагч сонголт. */
 export function LanguagePickerModal() {
   const { chosen, setLang } = useI18n();
-  const [selected, setSelected] = useState<Lang>(() => guessLang());
+  const [selected, setSelected] = useState<Lang>('mn');
+  const [dictTick, setDictTick] = useState(0);
+  useEffect(() => {
+    let on = true;
+    ensureDict(selected).then(() => { if (on) setDictTick(n => n + 1); });
+    return () => { on = false; };
+  }, [selected]);
   if (chosen) return null;
 
-  // Цонхны бичиг сонгож буй хэлээр шууд солигдоно
-  const tt = (mn: string) => translate(selected, mn);
+  // dictTick өөрчлөгдөхөд орчуулгын chunk ачаалсны дараа дахин зурна.
+  const tt = (mn: string) => (dictTick >= 0 ? translate(selected, mn) : mn);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">

@@ -661,7 +661,8 @@ export default function AlbumPhotosPage() {
                 </p>
                 <p className="text-stone-500 text-xs mt-1 max-w-xl">
                   Асаавал зочид selfie авч өөрийн орсон зургуудыг олно. Зурган дахь царайны тоон хээ л хадгалагдана, selfie хадгалагдахгүй.
-                  Царайны мэдээлэл хувийн мэдээлэлд хамаарах тул зочдод урьдчилан мэдэгдээрэй.
+                  Царайны мэдээлэл хувийн мэдээлэлд хамаарах тул зочдод урьдчилан мэдэгдээрэй.{' '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300">Нууцлалын бодлого</a>
                 </p>
                 <p className="text-stone-400 text-xs mt-2">
                   Уншуулсан: <span className="text-white font-semibold">{photos.filter(p => p.faces_scanned_at).length}</span> / {photos.length} зураг

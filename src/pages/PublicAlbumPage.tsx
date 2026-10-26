@@ -28,6 +28,7 @@ import BrandMark from '../components/BrandMark';
 import AlbumVideoCreator from '../components/AlbumVideoCreator';
 import AlbumVideosGrid from '../components/AlbumVideosGrid';
 import { albumVideoApi, AlbumVideo, fetchAlbumVideos, fetchOwnerVideos, OwnerVideo } from '../lib/albumVideo';
+import { usePageMeta } from '../seo/head';
 
 export interface AlbumData {
   id: string;
@@ -540,6 +541,18 @@ export default function PublicAlbumPage() {
     : folderFilter === 'ai' ? isAi(p)
     : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
     : !isAi(p) && p.folder_id === folderFilter);
+
+  usePageMeta(!loading && album ? {
+    title: `${album.name} — Zuragchin.mn`,
+    description: (album.description || `${album.name} цомгийн зургууд. Өөрийн зургаа олж, утсандаа авна.`).slice(0, 180),
+    path: location.pathname,
+    robots: 'index,follow',
+  } : !loading ? {
+    title: 'Цомог олдсонгүй — Zuragchin.mn',
+    description: 'Холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.',
+    path: location.pathname,
+    robots: 'noindex,nofollow',
+  } : null);
 
   if (loading) {
     return (

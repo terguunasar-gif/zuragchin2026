@@ -324,8 +324,13 @@ export default function HomePage() {
             </div>
             <FooterContact />
           </div>
-          <div className="border-t border-white/10 pt-6 text-center text-stone-600 text-sm">
-            © {new Date().getFullYear()} Zuragchin.mn — Бүх эрх хуулиар хамгаалагдсан
+          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-stone-500 text-sm">
+            <p>© {new Date().getFullYear()} Zuragchin.mn — Бүх эрх хуулиар хамгаалагдсан</p>
+            <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+              <button onClick={() => navigate('/terms')} className="hover:text-white">Үйлчилгээний нөхцөл</button>
+              <button onClick={() => navigate('/privacy')} className="hover:text-white">Нууцлал</button>
+              <button onClick={() => navigate('/contact')} className="hover:text-white">Холбоо барих</button>
+            </nav>
           </div>
         </div>
       </footer>

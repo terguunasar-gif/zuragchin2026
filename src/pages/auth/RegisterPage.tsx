@@ -231,7 +231,10 @@ export default function RegisterPage() {
             </button>
 
             <p className="text-stone-600 text-xs text-center leading-relaxed">
-              {t('Бүртгэл үүсгэснээр та манай Үйлчилгээний нөхцөл болон Нууцлалын бодлогыг зөвшөөрч байна.')}
+              {t('Бүртгэл үүсгэснээр та манай Үйлчилгээний нөхцөл болон Нууцлалын бодлогыг зөвшөөрч байна.')}{' '}
+              <Link to="/terms" className="text-amber-400 hover:text-amber-300">{t('Үйлчилгээний нөхцөл')}</Link>
+              {' · '}
+              <Link to="/privacy" className="text-amber-400 hover:text-amber-300">{t('Нууцлалын бодлого')}</Link>
             </p>
           </form>
 

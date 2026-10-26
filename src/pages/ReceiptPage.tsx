@@ -508,7 +508,7 @@ export default function ReceiptPage() {
                     {pg && (
                       <div className="bg-stone-950/40 rounded-xl p-3 space-y-1.5">
                         <p className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-2">
-                          {t('Фотографчтай холбоо барих')}
+                          {t('Зурагчинтай холбоо барих')}
                         </p>
                         <p className="text-white text-sm font-medium">{pg.name}</p>
                         {Object.entries(pg.contact_info).map(([key, val]) => val ? (

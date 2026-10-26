@@ -450,7 +450,7 @@ function ConfirmModal({
               <span className="text-amber-400 font-semibold">₮{album.owner_amount.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-stone-400">
-              <span>Фотографчдын хувь (86%)</span>
+              <span>Зурагчдын хувь (86%)</span>
               <span className="text-blue-400 font-semibold">₮{album.photographer_pool.toLocaleString()}</span>
             </div>
           </div>
@@ -486,7 +486,7 @@ function ConfirmModal({
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
             <p className="text-amber-400 text-sm font-medium">
               Тооцоо хийсний дараа өөрчлөх боломжгүй.
-              Фотографчдын орлого нэн даруй тооцоологдсон болж шилжинэ.
+              Зурагчдын орлого нэн даруй тооцоологдсон болж шилжинэ.
             </p>
           </div>
 
@@ -541,7 +541,7 @@ function SettlementResultModal({ result, onClose }: { result: SettlementResult; 
             {[
               { label: 'Нийт орлого', value: result.total_revenue },
               { label: 'Таны хувь', value: result.owner_amount, hl: true },
-              { label: 'Фотографчид', value: result.photographer_pool },
+              { label: 'Зурагчид', value: result.photographer_pool },
               { label: 'Платформ', value: result.platform_amount },
             ].map(c => (
               <div key={c.label} className={`rounded-xl px-4 py-3 ${c.hl ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-stone-950/30'}`}>

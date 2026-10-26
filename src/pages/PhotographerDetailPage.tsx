@@ -10,6 +10,7 @@ import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
 import PublicAlbumCard from '../components/PublicAlbumCard';
 import BrandMark from '../components/BrandMark';
 import PortfolioGallery from '../components/PortfolioGallery';
+import { usePageMeta } from '../seo/head';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
 
@@ -38,6 +39,19 @@ export default function PhotographerDetailPage() {
     setLoading(false);
     if (data?.user_id) fetchPublicAlbums({ photographer: data.user_id, limit: 12 }).then(setAlbums).catch(() => setAlbums([]));
   }
+
+  const photographerName = String(p?.display_name || p?.name || '');
+  usePageMeta(!loading && photographerName ? {
+    title: `${photographerName} — Zuragchin.mn`,
+    description: `${photographerName} зурагчны профайл, багц болон цомгууд.`,
+    path: `/photographers/${id ?? ''}`,
+    robots: 'index,follow',
+  } : !loading && !p ? {
+    title: 'Зурагчин олдсонгүй — Zuragchin.mn',
+    description: 'Энэ зурагчны хуудас олдсонгүй.',
+    path: `/photographers/${id ?? ''}`,
+    robots: 'noindex,nofollow',
+  } : null);
 
   function copyZurId() {
     if (!p?.zur_id) return;
