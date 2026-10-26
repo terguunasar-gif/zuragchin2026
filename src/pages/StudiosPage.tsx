@@ -231,13 +231,13 @@ export default function StudiosPage() {
               <LocateFixed className="w-5 h-5" />
             </button>
           </div>
-          <div className="flex justify-between text-xs mt-1 pr-14">
+          <div className="flex justify-between text-[11px] sm:text-xs mt-1 pr-14">
             {RADIUS_STOPS.map(stop => (
               <button
                 key={stop.meters}
                 type="button"
                 onClick={() => updateParams({ r: String(stop.meters) })}
-                className={stop.meters === radiusMeters ? 'text-amber-400 font-medium' : 'text-stone-500 hover:text-stone-300'}
+                className={`whitespace-nowrap ${stop.meters === radiusMeters ? 'text-amber-400 font-medium' : 'text-stone-500 hover:text-stone-300'}`}
               >
                 {stop.label}
               </button>
