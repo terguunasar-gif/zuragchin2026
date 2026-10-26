@@ -9,18 +9,11 @@ import {
   filterStudios,
   formatDistance,
   hasCoordinates,
+  RADIUS_STOPS,
   requestCurrentPosition,
   studioPlace,
   type Studio,
 } from '../../lib/studios';
-
-/** Нүүр хуудасны радиус — макетийн 1км / 3км / 5км / Бүгд. /studios хуудас өөрийн RADIUS_STOPS-оо хадгална. */
-const HOME_RADIUS = [
-  { meters: 1000, label: '1км' },
-  { meters: 3000, label: '3км' },
-  { meters: 5000, label: '5км' },
-  { meters: Number.POSITIVE_INFINITY, label: 'Бүгд' },
-] as const;
 
 interface Props {
   /** Hero хайлтын нэр — «Нэрээр хайх» таб руу шилжүүлнэ */
@@ -42,14 +35,14 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
   const [mode, setMode] = useState<'place' | 'name'>('place');
   const [nameQuery, setNameQuery] = useState('');
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
-  const [radiusIndex, setRadiusIndex] = useState(1);
+  const [radiusIndex, setRadiusIndex] = useState(0);
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState('');
   const [flyNonce, setFlyNonce] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const radiusMeters = HOME_RADIUS[radiusIndex].meters;
-  const radiusPct = (radiusIndex / (HOME_RADIUS.length - 1)) * 100;
+  const radiusMeters = RADIUS_STOPS[radiusIndex].meters;
+  const radiusPct = (radiusIndex / (RADIUS_STOPS.length - 1)) * 100;
   const placeLabel = heroPlace && heroPlace !== 'Бүгд байршил' ? heroPlace : '';
 
   useEffect(() => {
@@ -118,8 +111,7 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
     if (mode === 'place' && origin) {
       params.set('lat', origin.lat.toFixed(6));
       params.set('lng', origin.lng.toFixed(6));
-      // /studios has no «Бүгд» stop; send its widest radius so the pin is not snapped back to 2км.
-      params.set('r', String(Number.isFinite(radiusMeters) ? radiusMeters : 10000));
+      params.set('r', String(radiusMeters));
     }
     const qs = params.toString();
     navigate(qs ? `/studios?${qs}` : '/studios');
@@ -187,7 +179,7 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
 
               <SearchMap
                 center={origin}
-                radiusMeters={origin && Number.isFinite(radiusMeters) ? radiusMeters : undefined}
+                radiusMeters={origin ? radiusMeters : undefined}
                 markers={markers}
                 flyNonce={flyNonce}
                 className="h-56 sm:h-80"
@@ -202,12 +194,12 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
               <div className="mt-4 max-w-xl">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <p className="text-sm text-stone-200">Хайлтын радиус</p>
-                  <p className="text-sm font-medium text-amber-400">{HOME_RADIUS[radiusIndex].label}</p>
+                  <p className="text-sm font-medium text-amber-400">{RADIUS_STOPS[radiusIndex].label}</p>
                 </div>
                 <input
                   type="range"
                   min={0}
-                  max={HOME_RADIUS.length - 1}
+                  max={RADIUS_STOPS.length - 1}
                   step={1}
                   value={radiusIndex}
                   aria-label="Хайлтын радиус"
@@ -215,13 +207,13 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
                   className="radius-slider w-full"
                   style={{ background: `linear-gradient(to right, #f59e0b ${radiusPct}%, rgba(255,255,255,0.12) ${radiusPct}%)` }}
                 />
-                <div className="flex justify-between text-xs mt-2">
-                  {HOME_RADIUS.map((stop, index) => (
+                <div className="flex justify-between text-[11px] sm:text-xs mt-2">
+                  {RADIUS_STOPS.map((stop, index) => (
                     <button
                       key={stop.label}
                       type="button"
                       onClick={() => setRadiusIndex(index)}
-                      className={index === radiusIndex ? 'text-amber-400 font-medium' : 'text-stone-500 hover:text-stone-300'}
+                      className={`whitespace-nowrap ${index === radiusIndex ? 'text-amber-400 font-medium' : 'text-stone-500 hover:text-stone-300'}`}
                     >
                       {stop.label}
                     </button>
@@ -229,7 +221,7 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
                 </div>
               </div>
               {locateError && <p className="text-red-400 text-xs mt-2">{locateError}</p>}
-              {!origin && Number.isFinite(radiusMeters) && (
+              {!origin && (
                 <p className="text-stone-500 text-xs mt-2">
                   Байршил сонгоогүй тул бүх батлагдсан студи харагдана. Цэг тавихад радиус доторх студи үлдэнэ.
                 </p>
