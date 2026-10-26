@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images, X } from 'lucide-react';
+import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images, X, Store } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import HomeAlbumsSection from '../components/HomeAlbumsSection';
@@ -201,6 +201,13 @@ export default function HomePage() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/studios')}
+            className="mt-5 inline-flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300"
+          >
+            <MapPin className="w-4 h-4" /> Фото студи газрын зураг дээр хайх
+          </button>
         </div>
       </section>
 
@@ -209,12 +216,20 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Зурагчингууд</h2>
-            <button
-              onClick={() => navigate('/photographers')}
-              className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
-            >
-              Бүгдийг харах <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate('/studios')}
+                className="flex items-center gap-1 text-stone-300 hover:text-white text-sm font-medium transition-colors"
+              >
+                <Store className="w-4 h-4 text-amber-400" /> Фото студи
+              </button>
+              <button
+                onClick={() => navigate('/photographers')}
+                className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
+              >
+                Бүгдийг харах <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {loadingPhotographers ? (

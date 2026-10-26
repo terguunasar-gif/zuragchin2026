@@ -41,6 +41,10 @@ const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 const ContactPage = lazy(() => import('./pages/legal/ContactPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const StudiosPage = lazy(() => import('./pages/StudiosPage'));
+const StudioDetailPage = lazy(() => import('./pages/StudioDetailPage'));
+const StudioFormPage = lazy(() => import('./pages/StudioFormPage'));
+const MyStudiosPage = lazy(() => import('./pages/MyStudiosPage'));
 
 function PageFallback() {
   return (
@@ -127,6 +131,11 @@ export default function App() {
           <Route path="/explore" element={<ExploreAlbumsPage />} />
           <Route path="/photographers" element={<PhotographersPage />} />
           <Route path="/photographers/:id" element={<PhotographerDetailPage />} />
+          <Route path="/studios" element={<StudiosPage />} />
+          <Route path="/studios/new" element={<ProtectedRoute><StudioFormPage /></ProtectedRoute>} />
+          <Route path="/studios/mine" element={<ProtectedRoute><MyStudiosPage /></ProtectedRoute>} />
+          <Route path="/studios/:slug/edit" element={<ProtectedRoute><StudioFormPage /></ProtectedRoute>} />
+          <Route path="/studios/:slug" element={<StudioDetailPage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/album/:shareLink/screen" element={<AlbumScreenPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />

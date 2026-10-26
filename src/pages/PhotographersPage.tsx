@@ -96,6 +96,16 @@ export default function PhotographersPage() {
           <p className="text-stone-400">Мэргэжлийн зурагчдын жагсаалт</p>
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-6">
+          <span className="px-4 py-2 rounded-full text-sm font-semibold bg-amber-500 text-stone-950">Зурагчин</span>
+          <button
+            onClick={() => navigate('/studios')}
+            className="px-4 py-2 rounded-full text-sm font-medium bg-white/5 text-stone-300 border border-white/10 hover:text-white"
+          >
+            Студи
+          </button>
+        </div>
+
         {/* Search + Location */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-2 flex flex-col sm:flex-row items-stretch gap-2 max-w-2xl mb-5">
           <div className="flex items-center gap-2 flex-1 px-3">

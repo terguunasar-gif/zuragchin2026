@@ -131,6 +131,8 @@ export function prerenderPlugin(): Plugin {
         'Disallow: /offer/',
         'Disallow: /booth/',
         'Disallow: /my-purchases',
+        'Disallow: /studios/new',
+        'Disallow: /studios/mine',
         '',
         'Sitemap: https://www.zuragchin.mn/sitemap.xml',
         '',

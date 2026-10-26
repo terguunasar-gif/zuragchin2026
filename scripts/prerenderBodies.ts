@@ -17,6 +17,7 @@ function chrome(inner: string): string {
       <nav class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-300">
         <a href="/explore">Цомгууд</a>
         <a href="/photographers">Зурагчид</a>
+        <a href="/studios">Студи</a>
         <a href="/listings">Зурагчин хайх</a>
         <a href="/ai-booth">AI бүүт</a>
         <a href="/contact">Холбоо барих</a>
@@ -51,12 +52,15 @@ const BODIES: Record<string, string> = {
     <p class="flex flex-wrap justify-center gap-3 text-sm">
       <a class="bg-amber-500 text-stone-950 font-semibold px-4 py-2 rounded-xl" href="/explore">Цомгууд үзэх</a>
       <a class="border border-white/15 px-4 py-2 rounded-xl" href="/photographers">Зурагчингууд</a>
+      <a class="border border-white/15 px-4 py-2 rounded-xl" href="/studios">Фото студи</a>
       <a class="border border-white/15 px-4 py-2 rounded-xl" href="/auth/register">Бүртгүүлэх</a>
     </p>
   </article>
   <section class="max-w-7xl mx-auto px-6 pb-16">
     <h2 class="text-2xl font-bold mb-3">Зурагчингууд</h2>
     <p class="text-stone-400 mb-4">Мэргэжлийн зурагчдыг чиглэл, байршлаар хайна.</p>
+    <h2 class="text-2xl font-bold mb-3">Фото студи</h2>
+    <p class="text-stone-400 mb-4">Студийг газрын зураг дээр байршил, радиусаар хайна. <a class="text-amber-400" href="/studios">Студи хайх</a>.</p>
     <h2 class="text-2xl font-bold mb-3">Цомгууд</h2>
     <p class="text-stone-400">Нийтлэгдсэн арга хэмжээний цомгоос өөрийн зургаа олно.</p>
   </section>`),
@@ -68,6 +72,11 @@ const BODIES: Record<string, string> = {
     'Мэргэжлийн зурагчдын жагсаалт.',
     'Нэр, чиглэл, байршлаар хайж, профайл болон багцыг үзнэ.',
   ]),
+  '/studios': article('Фото студи', [
+    'Фото студи газрын зураг дээр хайна.',
+    'Байршлаа тэмдэглээд 500 м, 2 км, 5 км, 10 км радиусаар шүүнэ. Нэр, чиглэлээр хайж болно.',
+    'Студи бүртгүүлэхэд админ баталсны дараа хайлтад гарна.',
+  ], '<p><a class="text-amber-400" href="/photographers">Зурагчингууд</a></p>'),
   '/listings': article('Зурагчин хайж байна', [
     'Арга хэмжээний зурагчин хайж буй зохион байгуулагчид.',
     'Зурагчид нээлттэй зарлалд хүсэлт илгээж болно.',
@@ -125,6 +134,7 @@ export const NOT_FOUND_MAIN = chrome(`<article class="max-w-xl mx-auto px-6 py-2
     <a class="bg-amber-500 text-stone-950 font-semibold px-4 py-2 rounded-xl" href="/">Нүүр хуудас</a>
     <a class="border border-white/15 px-4 py-2 rounded-xl" href="/explore">Цомгууд</a>
     <a class="border border-white/15 px-4 py-2 rounded-xl" href="/photographers">Зурагчид</a>
+    <a class="border border-white/15 px-4 py-2 rounded-xl" href="/studios">Студи</a>
   </p>
 </article>`);
 
