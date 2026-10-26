@@ -47,14 +47,17 @@ export const STUDIO_CITIES = [
   'Говьсүмбэр', 'Ховд', 'Баян-Өлгий', 'Увс', 'Завхан', 'Говь-Алтай', 'Хөвсгөл',
 ];
 
+/** Цэг тавьсны дараах хайлтын радиус. Нүүр болон /studios ижил шошго, анхны утга 500м. */
 export const RADIUS_STOPS = [
   { meters: 500, label: '500м' },
+  { meters: 1000, label: '1км' },
   { meters: 2000, label: '2км' },
+  { meters: 3000, label: '3км' },
   { meters: 5000, label: '5км' },
   { meters: 10000, label: '10км' },
 ] as const;
 
-export const DEFAULT_RADIUS_METERS = 2000;
+export const DEFAULT_RADIUS_METERS = 500;
 
 export const DEFAULT_STUDIO_COVER =
   'https://images.unsplash.com/photo-1471341971476-ae15ff5dd4ea?w=1200&h=600&fit=crop';
