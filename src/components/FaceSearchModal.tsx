@@ -142,10 +142,14 @@ export default function FaceSearchModal({ albumId, onClose, onResult }: {
               <p className="flex items-start gap-2"><ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />{t('Зөвхөн царайны тоон хээг харьцуулахад нэг удаа ашиглана.')}</p>
               <p className="flex items-start gap-2"><ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />{t('Үр дүн 100% биш — олдсон зургуудаа шалгаарай.')}</p>
             </div>
-            <label className="flex items-start gap-2 text-sm text-stone-300 mb-5 cursor-pointer">
+            <label className="flex items-start gap-2 text-sm text-stone-300 mb-2 cursor-pointer">
               <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} className="mt-0.5 w-4 h-4 accent-amber-500" />
               {t('Царайны мэдээллээ энэ хайлтад ашиглахыг зөвшөөрч байна.')}
             </label>
+            <p className="text-stone-500 text-xs mb-5">
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300">{t('Нууцлалын бодлого')}</a>
+              {' '}— selfie хадгалагдахгүй, царайны тоон хээ хэрхэн ашиглагдахыг уншина уу.
+            </p>
             <button onClick={startCamera} disabled={!agree}
               className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-bold py-3 rounded-xl flex items-center justify-center gap-2">
               <Camera className="w-5 h-5" /> {t('Камер нээх')}
