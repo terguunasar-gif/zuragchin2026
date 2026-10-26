@@ -4,6 +4,7 @@ import { Facebook, Instagram, MapPin, Pencil, Phone, Store } from 'lucide-react'
 import SearchMap from '../components/map/SearchMap';
 import StudioChrome from '../components/StudioChrome';
 import { useAuth } from '../contexts/AuthContext';
+import { hasRole } from '../lib/supabase';
 import { usePageMeta } from '../seo/head';
 import {
   DEFAULT_STUDIO_COVER,
@@ -12,6 +13,8 @@ import {
   hasCoordinates,
   instagramHref,
   isPublicStudio,
+  isWithinListingWindow,
+  listingPhase,
   STUDIO_STATUS_LABEL,
   studioPlace,
   type Studio,
@@ -20,7 +23,7 @@ import {
 export default function StudioDetailPage() {
   const { slug = '' } = useParams();
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, loading: authLoading } = useAuth();
   const [studio, setStudio] = useState<Studio | null>(null);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -42,19 +45,23 @@ export default function StudioDetailPage() {
 
   const name = studio?.name ?? '';
   const path = `/studios/${studio?.slug || slug}`;
-  usePageMeta(!loading && studio ? {
+  const isOwner = !!studio && !!profile && profile.id === studio.owner_user_id;
+  const isAdmin = hasRole(profile, 'admin');
+  const listedPublicly = !!studio && isPublicStudio(studio);
+  const blocked = !!studio && !listedPublicly && !authLoading && !isOwner && !isAdmin;
+  usePageMeta(!loading && studio && !blocked ? {
     title: `${name} — Фото студи — Zuragchin.mn`,
     description: studio.description || `${name} фото студи. ${studioPlace(studio) || 'Байршил, холбоо барих'}`.trim(),
     path,
-    robots: isPublicStudio(studio) ? 'index,follow' : 'noindex,nofollow',
-  } : !loading && missing ? {
+    robots: listedPublicly ? 'index,follow' : 'noindex,nofollow',
+  } : !loading && (missing || blocked) ? {
     title: 'Студи олдсонгүй — Zuragchin.mn',
     description: 'Энэ студийн хуудас олдсонгүй.',
     path: `/studios/${slug}`,
     robots: 'noindex,nofollow',
   } : null);
 
-  if (loading) {
+  if (loading || (!!studio && !listedPublicly && authLoading)) {
     return (
       <StudioChrome backTo="/studios" backLabel="Студи">
         <div className="flex justify-center py-24">
@@ -64,13 +71,13 @@ export default function StudioDetailPage() {
     );
   }
 
-  if (!studio) {
+  if (!studio || blocked) {
     return (
       <StudioChrome backTo="/studios" backLabel="Студи">
         <div className="max-w-xl mx-auto px-6 py-24 text-center">
           <Store className="w-12 h-12 text-stone-600 mx-auto mb-4" />
           <p className="text-lg font-semibold mb-2">Студи олдсонгүй</p>
-          <p className="text-stone-500 text-sm mb-5">Нуусан, батлагдаагүй эсвэл буруу холбоос байж болно.</p>
+          <p className="text-stone-500 text-sm mb-5">Нуусан, хугацаа дууссан, батлагдаагүй эсвэл буруу холбоос байж болно.</p>
           <button onClick={() => navigate('/studios')} className="text-amber-400 hover:text-amber-300 text-sm">
             Хайлт руу буцах
           </button>
@@ -79,8 +86,10 @@ export default function StudioDetailPage() {
     );
   }
 
-  const isOwner = !!profile && profile.id === studio.owner_user_id;
   const place = studioPlace(studio);
+  const windowNote = studio.status === 'approved' && studio.is_visible && !isWithinListingWindow(studio)
+    ? (listingPhase(studio) === 'scheduled' ? ' Жагсаалт хараахан эхлээгүй.' : ' Жагсаалтын хугацаа дууссан.')
+    : '';
   const coords = hasCoordinates(studio) ? { lat: studio.latitude, lng: studio.longitude } : null;
 
   return (
@@ -88,8 +97,8 @@ export default function StudioDetailPage() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         {!isPublicStudio(studio) && (
           <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-            Энэ студи олон нийтийн хайлтад хараахан гараагүй. Төлөв: {STUDIO_STATUS_LABEL[studio.status]}
-            {!studio.is_visible && studio.status === 'approved' ? ' · нуугдсан' : ''}.
+            Энэ студи олон нийтийн хайлтад гарахгүй. Төлөв: {STUDIO_STATUS_LABEL[studio.status]}
+            {!studio.is_visible && studio.status === 'approved' ? ' · нуугдсан' : ''}.{windowNote}
           </div>
         )}
 

@@ -5,6 +5,7 @@ import StudioChrome from '../components/StudioChrome';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import {
+  listingPhase,
   normalizeStudio,
   statusBadgeClass,
   STUDIO_STATUS_LABEL,
@@ -87,6 +88,8 @@ export default function MyStudiosPage() {
                 <span className={`text-xs border px-2 py-1 rounded-full ${statusBadgeClass(studio.status)}`}>
                   {STUDIO_STATUS_LABEL[studio.status]}
                   {studio.status === 'approved' && !studio.is_visible ? ' · нуусан' : ''}
+                  {studio.status === 'approved' && studio.is_visible && listingPhase(studio) === 'expired' ? ' · хугацаа дууссан' : ''}
+                  {studio.status === 'approved' && studio.is_visible && listingPhase(studio) === 'scheduled' ? ' · эхлээгүй' : ''}
                 </span>
                 <button
                   onClick={() => navigate(`/studios/${studio.slug}/edit`)}
