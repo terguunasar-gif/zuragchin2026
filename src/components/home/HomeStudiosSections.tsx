@@ -5,7 +5,7 @@ import SearchMap from '../map/SearchMap';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   DEFAULT_STUDIO_COVER,
-  fetchPublicStudios,
+  fetchHomeStudios,
   filterStudios,
   formatDistance,
   hasCoordinates,
@@ -24,7 +24,7 @@ interface Props {
 
 /**
  * Макетийн 3–4-р хэсэг: ойр орчмын газрын зураг + студийн хэвтээ картууд.
- * Шүүлт нь /studios-той ижил fetchPublicStudios / filterStudios / SearchMap дээр сууна.
+ * Нүүр: show_on_home + жагсаалтын цонх (fetchHomeStudios). /studios нь show_on_home шаарддаггүй.
  */
 export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
   const navigate = useNavigate();
@@ -48,7 +48,7 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchPublicStudios()
+    fetchHomeStudios()
       .then(rows => { if (!cancelled) { setStudios(rows); setError(''); } })
       .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : 'Студи ачааллахад алдаа гарлаа'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -223,7 +223,7 @@ export default function HomeStudiosSections({ heroQuery, heroPlace }: Props) {
               {locateError && <p className="text-red-400 text-xs mt-2">{locateError}</p>}
               {!origin && (
                 <p className="text-stone-500 text-xs mt-2">
-                  Байршил сонгоогүй тул бүх батлагдсан студи харагдана. Цэг тавихад радиус доторх студи үлдэнэ.
+                  Байршил сонгоогүй тул нүүрэнд гаргасан студи харагдана. Цэг тавихад радиус доторх студи үлдэнэ.
                 </p>
               )}
             </div>

@@ -21,6 +21,11 @@ export interface Studio {
   specialties: string[];
   status: StudioStatus;
   is_visible: boolean;
+  /** Нүүр хуудасны студийн хэсэг. Хайлтын is_visible-ээс тусдаа. */
+  show_on_home: boolean;
+  /** NULL = хязгааргүй / шууд. */
+  listed_from: string | null;
+  listed_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -146,8 +151,100 @@ export function hasCoordinates<T extends { latitude: number | null; longitude: n
     && Number.isFinite(studio.latitude) && Number.isFinite(studio.longitude);
 }
 
-export function isPublicStudio(studio: Pick<Studio, 'status' | 'is_visible'>): boolean {
-  return studio.status === 'approved' && studio.is_visible;
+export type ListingPhase = 'unlimited' | 'scheduled' | 'open' | 'expired';
+
+export function isWithinListingWindow(
+  studio: Pick<Studio, 'listed_from' | 'listed_until'>,
+  now = Date.now(),
+): boolean {
+  if (studio.listed_from) {
+    const from = new Date(studio.listed_from).getTime();
+    if (Number.isFinite(from) && now < from) return false;
+  }
+  if (studio.listed_until) {
+    const until = new Date(studio.listed_until).getTime();
+    if (Number.isFinite(until) && now > until) return false;
+  }
+  return true;
+}
+
+export function listingPhase(
+  studio: Pick<Studio, 'listed_from' | 'listed_until'>,
+  now = Date.now(),
+): ListingPhase {
+  const from = studio.listed_from ? new Date(studio.listed_from).getTime() : null;
+  const until = studio.listed_until ? new Date(studio.listed_until).getTime() : null;
+  const hasFrom = from != null && Number.isFinite(from);
+  const hasUntil = until != null && Number.isFinite(until);
+  if (hasFrom && now < (from as number)) return 'scheduled';
+  if (hasUntil && now > (until as number)) return 'expired';
+  if (!hasFrom && !hasUntil) return 'unlimited';
+  return 'open';
+}
+
+export function formatListingStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Админ жагсаалтад: үлдсэн хугацаа, дууссан, эхлээгүй, хязгааргүй. */
+export function listingSummary(
+  studio: Pick<Studio, 'listed_from' | 'listed_until'>,
+  now = Date.now(),
+): string {
+  const phase = listingPhase(studio, now);
+  if (phase === 'unlimited') return 'Хугацаагүй';
+  if (phase === 'scheduled' && studio.listed_from) return `Эхлээгүй · ${formatListingStamp(studio.listed_from)}`;
+  if (phase === 'expired') {
+    const stamp = studio.listed_until ? formatListingStamp(studio.listed_until) : '';
+    return stamp ? `Дууссан · ${stamp}` : 'Дууссан';
+  }
+  if (studio.listed_until) {
+    const ms = new Date(studio.listed_until).getTime() - now;
+    const days = Math.ceil(ms / 86400000);
+    if (days <= 1) return 'Өнөөдөр дуусна';
+    return `${days} хоног үлдсэн`;
+  }
+  return 'Идэвхтэй';
+}
+
+export function toDatetimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function fromDatetimeLocalValue(value: string): string | null {
+  if (!value.trim()) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+export function listingWindowError(fromIso: string | null, untilIso: string | null): string | null {
+  if (!fromIso || !untilIso) return null;
+  const from = new Date(fromIso).getTime();
+  const until = new Date(untilIso).getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(until)) return 'Огноо буруу байна.';
+  if (until < from) return 'Дуусах огноо эхлэх огнооноос өмнө байж болохгүй.';
+  return null;
+}
+
+export function isPublicStudio(
+  studio: Pick<Studio, 'status' | 'is_visible' | 'listed_from' | 'listed_until'>,
+): boolean {
+  return studio.status === 'approved' && studio.is_visible && isWithinListingWindow(studio);
+}
+
+/** Нүүр хуудас: нийтийн жагсаалт + show_on_home. */
+export function isHomeStudio(
+  studio: Pick<Studio, 'status' | 'is_visible' | 'listed_from' | 'listed_until' | 'show_on_home'>,
+): boolean {
+  return isPublicStudio(studio) && studio.show_on_home;
 }
 
 export function statusBadgeClass(status: StudioStatus): string {
@@ -172,6 +269,9 @@ export function normalizeStudio(row: Studio): Studio {
     specialties: Array.isArray(row.specialties) ? row.specialties : [],
     latitude: latitude != null && Number.isFinite(latitude) ? latitude : null,
     longitude: longitude != null && Number.isFinite(longitude) ? longitude : null,
+    show_on_home: row.show_on_home !== false,
+    listed_from: row.listed_from ?? null,
+    listed_until: row.listed_until ?? null,
   };
 }
 
@@ -236,6 +336,11 @@ export function requestCurrentPosition(): Promise<{ lat: number; lng: number }> 
   });
 }
 
+function applyListingWindow(rows: Studio[]): Studio[] {
+  return rows.filter(row => isWithinListingWindow(row));
+}
+
+/** Батлагдсан, харагдах, жагсаалтын цонхонд багтсан студи. show_on_home шаардлагагүй. */
 export async function fetchPublicStudios(): Promise<Studio[]> {
   const { data, error } = await supabase
     .from('studios')
@@ -244,7 +349,104 @@ export async function fetchPublicStudios(): Promise<Studio[]> {
     .eq('is_visible', true)
     .order('name');
   if (error) throw error;
-  return (data ?? []).map(row => normalizeStudio(row as Studio));
+  return applyListingWindow((data ?? []).map(row => normalizeStudio(row as Studio)));
+}
+
+/** Нүүр хуудасны студийн хэсэг: нийтийн жагсаалт + show_on_home. */
+export async function fetchHomeStudios(): Promise<Studio[]> {
+  const rows = await fetchPublicStudios();
+  return rows.filter(row => row.show_on_home);
+}
+
+export interface StudioOwner {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export function studioOwnerLabel(owner: Pick<StudioOwner, 'name' | 'email'> | null | undefined): string {
+  if (!owner) return 'Эзэмшигчгүй';
+  const name = owner.name.trim();
+  const email = owner.email.trim();
+  if (name && email) return `${name} · ${email}`;
+  return name || email || 'Эзэмшигч';
+}
+
+function mapOwnerRow(row: { id?: string; name?: string | null; email?: string | null }): StudioOwner {
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    email: String(row.email ?? ''),
+  };
+}
+
+async function queryOwnerTable(table: 'users' | 'profiles', q: string) {
+  let request = supabase
+    .from(table)
+    .select('id, name, email')
+    .contains('role', ['photographer'])
+    .order('name')
+    .limit(15);
+  if (q) request = request.or(`name.ilike.%${q}%,email.ilike.%${q}%`);
+  return request;
+}
+
+/** Бүртгэлтэй зурагчныг нэр эсвэл имэйлээр хайна (админ оноолт). */
+export async function searchStudioOwners(query: string): Promise<StudioOwner[]> {
+  const q = query.trim().replace(/[%_,]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
+  const primary = await queryOwnerTable('users', q);
+  const source = primary.error ? await queryOwnerTable('profiles', q) : primary;
+  if (source.error) throw source.error;
+  const byId = new Map<string, StudioOwner>();
+  for (const row of source.data ?? []) {
+    const owner = mapOwnerRow(row);
+    if (owner.id) byId.set(owner.id, owner);
+  }
+
+  if (q) {
+    const { data: profiles } = await supabase
+      .from('photographer_profiles')
+      .select('user_id, display_name')
+      .ilike('display_name', `%${q}%`)
+      .limit(15);
+    const named = (profiles ?? [])
+      .map(row => ({ id: String(row.user_id ?? ''), displayName: String(row.display_name ?? '') }))
+      .filter(row => row.id);
+    for (const row of named) {
+      const existing = byId.get(row.id);
+      if (existing && !existing.name && row.displayName) {
+        byId.set(row.id, { ...existing, name: row.displayName });
+      }
+    }
+    const missing = named.filter(row => !byId.has(row.id)).map(row => row.id);
+    if (missing.length > 0) {
+      const extra = await fetchStudioOwners(missing);
+      for (const row of named) {
+        if (byId.has(row.id)) continue;
+        const owner = extra[row.id];
+        if (!owner) continue;
+        byId.set(row.id, { ...owner, name: owner.name || row.displayName });
+      }
+    }
+  }
+
+  return [...byId.values()].slice(0, 15);
+}
+
+export async function fetchStudioOwners(ids: string[]): Promise<Record<string, StudioOwner>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return {};
+  const fromUsers = await supabase.from('users').select('id, name, email').in('id', unique);
+  const source = fromUsers.error
+    ? await supabase.from('profiles').select('id, name, email').in('id', unique)
+    : fromUsers;
+  if (source.error) throw source.error;
+  const map: Record<string, StudioOwner> = {};
+  for (const row of source.data ?? []) {
+    const owner = mapOwnerRow(row);
+    if (owner.id) map[owner.id] = owner;
+  }
+  return map;
 }
 
 export async function fetchStudioBySlug(slugOrId: string): Promise<Studio | null> {
