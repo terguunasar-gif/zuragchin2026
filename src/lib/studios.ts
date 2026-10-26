@@ -186,13 +186,18 @@ export function filterStudios(
   opts: { q: string; specialty: string; origin: { lat: number; lng: number } | null; radiusMeters: number },
 ): StudioHit[] {
   const q = opts.q.trim().toLowerCase();
+  // Non-finite radius (homepage «Бүгд») keeps every studio and still records distance.
+  const limitRadius = Number.isFinite(opts.radiusMeters);
   const hits: StudioHit[] = [];
   for (const row of rows) {
     let distanceMeters: number | null = null;
     if (opts.origin) {
-      if (!hasCoordinates(row)) continue;
-      distanceMeters = haversineMeters(opts.origin.lat, opts.origin.lng, row.latitude, row.longitude);
-      if (distanceMeters > opts.radiusMeters) continue;
+      if (hasCoordinates(row)) {
+        distanceMeters = haversineMeters(opts.origin.lat, opts.origin.lng, row.latitude, row.longitude);
+        if (limitRadius && distanceMeters > opts.radiusMeters) continue;
+      } else if (limitRadius) {
+        continue;
+      }
     }
     if (opts.specialty && opts.specialty !== 'Бүгд' && !row.specialties.includes(opts.specialty)) continue;
     if (q) {
@@ -204,7 +209,11 @@ export function filterStudios(
     hits.push({ ...row, distanceMeters });
   }
   hits.sort((a, b) => {
-    if (a.distanceMeters != null && b.distanceMeters != null) return a.distanceMeters - b.distanceMeters;
+    const ad = a.distanceMeters;
+    const bd = b.distanceMeters;
+    if (ad != null && bd != null) return ad - bd || a.name.localeCompare(b.name, 'mn');
+    if (ad != null) return -1;
+    if (bd != null) return 1;
     return a.name.localeCompare(b.name, 'mn');
   });
   return hits;
