@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  LogOut, LayoutDashboard, Users, FolderOpen, ArrowUpCircle, Wallet, ChevronRight, Shield, Sparkles, Clapperboard,
+  LogOut, LayoutDashboard, Users, FolderOpen, ArrowUpCircle, Wallet, ChevronRight, Shield, Sparkles, Clapperboard, Store,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminOverviewTab from './AdminOverviewTab';
@@ -11,9 +11,10 @@ import AdminPayoutsTab from './AdminPayoutsTab';
 import AdminWalletTab from './AdminWalletTab';
 import AdminAiTemplatesTab from './AdminAiTemplatesTab';
 import AdminVideoTemplatesTab from './AdminVideoTemplatesTab';
+import AdminStudiosTab from './AdminStudiosTab';
 import BrandMark from '../../components/BrandMark';
 
-type AdminTab = 'overview' | 'users' | 'albums' | 'payouts' | 'wallet' | 'ai' | 'video';
+type AdminTab = 'overview' | 'users' | 'albums' | 'payouts' | 'wallet' | 'ai' | 'video' | 'studios';
 
 const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Нэгдсэн',   icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -23,6 +24,7 @@ const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'wallet',   label: 'Платформ',   icon: <Wallet className="w-4 h-4" /> },
   { id: 'ai',       label: 'AI темплет', icon: <Sparkles className="w-4 h-4" /> },
   { id: 'video',    label: 'AI видео',   icon: <Clapperboard className="w-4 h-4" /> },
+  { id: 'studios',  label: 'Студи',      icon: <Store className="w-4 h-4" /> },
 ];
 
 export default function AdminDashboard() {
@@ -114,6 +116,7 @@ export default function AdminDashboard() {
           {activeTab === 'wallet'   && <AdminWalletTab />}
           {activeTab === 'ai'       && <AdminAiTemplatesTab />}
           {activeTab === 'video'    && <AdminVideoTemplatesTab />}
+          {activeTab === 'studios'  && <AdminStudiosTab />}
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins, MonitorPlay,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins, MonitorPlay, Store,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -299,6 +299,9 @@ export default function DashboardPage() {
                 <FolderOpen className="w-4 h-4" />Зохион байгуулагч болох
               </button>
             )}
+            <button onClick={() => navigate('/studios/mine')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium px-5 py-2.5 rounded-xl text-sm">
+              <Store className="w-4 h-4" />Миний студи
+            </button>
             <button onClick={() => navigate('/dashboard/albums/create')} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">
               <Plus className="w-5 h-5" />Шинэ цомог
             </button>

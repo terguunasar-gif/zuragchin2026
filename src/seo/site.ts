@@ -44,6 +44,14 @@ export const PUBLIC_PAGES: PublicPage[] = [
     index: true,
   },
   {
+    path: '/studios',
+    file: 'studios.html',
+    title: 'Фото студи — Zuragchin.mn',
+    description: 'Фото студи газрын зураг дээр хайна. Байршил, радиус, нэр болон чиглэлээр шүүнэ.',
+    sitemap: true,
+    index: true,
+  },
+  {
     path: '/listings',
     file: 'listings.html',
     title: 'Зурагчин хайж байна — Zuragchin.mn',
@@ -134,6 +142,30 @@ const DYNAMIC: DynamicRule[] = [
     test: /^\/album\/[^/]+$/,
     title: 'Цомог — Zuragchin.mn',
     description: 'Арга хэмжээний зургийн цомог. Өөрийн зургаа олж, утсандаа авна.',
+    index: true,
+  },
+  {
+    test: /^\/studios\/new$/,
+    title: 'Студи бүртгүүлэх — Zuragchin.mn',
+    description: 'Фото студи бүртгэж, газрын зураг дээр байршлаа тэмдэглэнэ.',
+    index: false,
+  },
+  {
+    test: /^\/studios\/mine$/,
+    title: 'Миний студи — Zuragchin.mn',
+    description: 'Таны бүртгэсэн фото студи.',
+    index: false,
+  },
+  {
+    test: /^\/studios\/[^/]+\/edit$/,
+    title: 'Студи засах — Zuragchin.mn',
+    description: 'Фото студийн мэдээлэл засах.',
+    index: false,
+  },
+  {
+    test: /^\/studios\/[^/]+$/,
+    title: 'Фото студи — Zuragchin.mn',
+    description: 'Фото студийн байршил, холбоо барих, чиглэл.',
     index: true,
   },
   {
