@@ -1,441 +1,277 @@
-import { useState, useRef, useEffect } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Instagram, Facebook, Youtube, Music2, Phone, Mail, MapPin, ChevronRight, Star, User, ChevronDown, LogOut, Settings, Images, X, Store } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { MapPin, Search, Star, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import HomeAlbumsSection from '../components/HomeAlbumsSection';
-import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../lib/visitedAlbums';
-import BrandMark from '../components/BrandMark';
 import AiBoothShowcase from '../components/AiBoothShowcase';
 import AiVideoShowcase from '../components/AiVideoShowcase';
-import { useSiteContact, normalizeUrl } from '../lib/siteContact';
+import HomeHeader from '../components/home/HomeHeader';
+import HomeStudiosSections from '../components/home/HomeStudiosSections';
+import HomeFooter from '../components/home/HomeFooter';
 
-const categories = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал, уулзалт'];
+/** Профайл дээрх чиглэлтэй таарна — шүүлт бодит өгөгдөл дээр ажиллана */
+const CATEGORIES = ['Бүгд', 'Хурим', 'Баяр наадам', 'Спорт', 'Соёл', 'Хөгжим', 'Марафон', 'Хурал', 'Портрет', 'Байгаль', 'Мода'];
 
-const LOCATIONS = [
-  'Бүгд байршил', 'Улаанбаатар', 'Дархан', 'Эрдэнэт', 'Баянхонгор',
+const CITIES = [
+  'Улаанбаатар', 'Дархан', 'Эрдэнэт', 'Баянхонгор',
   'Өвөрхангай', 'Архангай', 'Булган', 'Орхон', 'Сэлэнгэ', 'Төв',
   'Дорнод', 'Сүхбаатар', 'Хэнтий', 'Дорноговь', 'Дундговь', 'Өмнөговь',
   'Говьсүмбэр', 'Ховд', 'Баян-Өлгий', 'Увс', 'Завхан', 'Говь-Алтай', 'Хөвсгөл',
 ];
 
-const fallbackPhotographers = [
-  { id: 1, name: 'Б. Мөнхбаяр', specialty: 'Хурим, Портрет', rating: 4.9, image: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop', location: 'Улаанбаатар' },
-  { id: 2, name: 'Д. Энхтуяа', specialty: 'Байгаль, Аялал', rating: 4.8, image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=800&h=400&fit=crop', location: 'Дархан' },
-  { id: 3, name: 'Г. Батбаяр', specialty: 'Спорт, Арга хэмжээ', rating: 4.7, image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&h=400&fit=crop', location: 'Эрдэнэт' },
-  { id: 4, name: 'О. Номин', specialty: 'Мода, Портрет', rating: 4.9, image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop', cover: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=800&h=400&fit=crop', location: 'Улаанбаатар' },
+const DISTRICTS = [
+  'Баянгол', 'Баянзүрх', 'Хан-Уул', 'Чингэлтэй',
+  'Сонгинохайрхан', 'Налайх', 'Багануур', 'Багахангай',
 ];
 
+const ALL_PLACES = 'Бүгд байршил';
 
-const DEFAULT_COVER = 'https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&h=400&fit=crop';
+const fallbackPhotographers = [
+  { id: 'fallback-1', name: 'Б. Мөнхбаяр', specialty: 'Хурим, Портрет', rating: 4.9, image: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&h=400&fit=crop', location: 'Улаанбаатар', real: false },
+  { id: 'fallback-2', name: 'Д. Энхтуяа', specialty: 'Байгаль, Аялал', rating: 4.8, image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop', location: 'Дархан', real: false },
+  { id: 'fallback-3', name: 'Г. Батбаяр', specialty: 'Спорт, Арга хэмжээ', rating: 4.7, image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop', location: 'Эрдэнэт', real: false },
+  { id: 'fallback-4', name: 'О. Номин', specialty: 'Мода, Портрет', rating: 4.9, image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop', location: 'Улаанбаатар', real: false },
+];
 
+interface PhotographerCard {
+  id: string;
+  name: string;
+  specialty: string;
+  rating: number | null;
+  image: string | null;
+  location: string;
+  real: boolean;
+}
+
+function normalizePhotographer(row: Record<string, unknown>): PhotographerCard {
+  const specialties = Array.isArray(row.specialties) ? row.specialties.filter((s): s is string => typeof s === 'string') : [];
+  const rating = typeof row.rating === 'number' ? row.rating : null;
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.display_name || row.name || 'Нэргүй'),
+    specialty: specialties.join(', '),
+    rating,
+    image: typeof row.avatar_url === 'string' ? row.avatar_url : null,
+    location: typeof row.location === 'string' ? row.location : '',
+    real: true,
+  };
+}
+
+/**
+ * Нүүр хуудас — гар утасны макетийн дараалал:
+ * толгой, хайлт, ойр орчмын газар, студи, зурагчид, цомог, AI загвар, видео, хөл.
+ */
 export default function HomePage() {
   const navigate = useNavigate();
-  const { profile, signOut } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchLocation, setSearchLocation] = useState('Бүгд байршил');
+  const [draftQuery, setDraftQuery] = useState('');
+  const [draftPlace, setDraftPlace] = useState(ALL_PLACES);
+  const [query, setQuery] = useState('');
+  const [place, setPlace] = useState(ALL_PLACES);
   const [activeCategory, setActiveCategory] = useState('Бүгд');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [realPhotographers, setRealPhotographers] = useState<any[]>([]);
+  const [photographers, setPhotographers] = useState<PhotographerCard[]>([]);
   const [loadingPhotographers, setLoadingPhotographers] = useState(true);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('photographer_profiles')
+          .select('*')
+          .eq('is_visible', true)
+          .order('created_at', { ascending: false })
+          .limit(24);
+        if (cancelled) return;
+        if (!error && data && data.length > 0) {
+          setPhotographers(data.map(row => normalizePhotographer(row as Record<string, unknown>)));
+        }
+      } finally {
+        if (!cancelled) setLoadingPhotographers(false);
       }
-    }
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { loadPhotographers(); }, []);
-
-  async function loadPhotographers() {
-    setLoadingPhotographers(true);
-    const { data, error } = await supabase
-      .from('photographer_profiles')
-      .select('*')
-      .eq('is_visible', true)
-      .order('created_at', { ascending: false })
-      .limit(8);
-    if (!error && data && data.length > 0) setRealPhotographers(data);
-    setLoadingPhotographers(false);
+  function handleSearch(e?: FormEvent) {
+    e?.preventDefault();
+    const nextQuery = draftQuery.trim();
+    setQuery(nextQuery);
+    setPlace(draftPlace);
+    document.getElementById('near-places')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function handleSearch() {
+  function openPhotographers() {
     const params = new URLSearchParams();
-    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    if (query) params.set('q', query);
+    if (place !== ALL_PLACES) params.set('loc', place);
     if (activeCategory !== 'Бүгд') params.set('cat', activeCategory);
-    if (searchLocation !== 'Бүгд байршил') params.set('loc', searchLocation);
-    navigate(`/photographers?${params.toString()}`);
+    const qs = params.toString();
+    navigate(qs ? `/photographers?${qs}` : '/photographers');
   }
 
-  // Filter for homepage preview
-  const displayPhotographers = (() => {
-    const base = realPhotographers.length > 0 ? realPhotographers : fallbackPhotographers;
-    return base.slice(0, 4);
-  })();
+  const source = photographers.length > 0 ? photographers : (!loadingPhotographers ? fallbackPhotographers : []);
+  const needle = query.toLowerCase();
+  const visiblePhotographers = source.filter(p => {
+    const catOk = activeCategory === 'Бүгд' || p.specialty.toLowerCase().includes(activeCategory.toLowerCase());
+    const placeOk = place === ALL_PLACES || p.location.toLowerCase().includes(place.toLowerCase());
+    const queryOk = !needle
+      || p.name.toLowerCase().includes(needle)
+      || p.specialty.toLowerCase().includes(needle)
+      || p.location.toLowerCase().includes(needle);
+    return catOk && placeOk && queryOk;
+  }).slice(0, 16);
+
+  const filtering = Boolean(query || place !== ALL_PLACES || activeCategory !== 'Бүгд');
 
   return (
     <div className="min-h-screen bg-stone-950 text-white">
+      <HomeHeader />
 
-      {/* Header */}
-      <header className="border-b border-white/10 sticky top-0 z-50 bg-stone-950/95 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <BrandMark className="w-8 h-8 flex-shrink-0" />
-            <div>
-              <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
-              <span className="font-brand text-amber-400 font-semibold">.mn</span>
-            </div>
-          </button>
-          <div className="flex items-center gap-3">
-            {profile ? (
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  onClick={() => setDropdownOpen(o => !o)}
-                  className="flex items-center gap-2 text-stone-300 hover:text-white transition-colors bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5"
-                >
-                  <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
-                    <User className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="hidden sm:block text-sm font-medium max-w-[120px] truncate">{profile.name || profile.email}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {dropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-30">
-                    <div className="px-4 py-3 border-b border-white/10">
-                      <p className="text-white text-sm font-medium truncate">{profile.name}</p>
-                      <p className="text-stone-500 text-xs truncate">{profile.email}</p>
-                    </div>
-                    <div className="py-1">
-                      <button onClick={() => { setDropdownOpen(false); navigate('/dashboard'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-stone-300 hover:text-white hover:bg-white/5 transition-colors text-sm">
-                        <Settings className="w-4 h-4" /> Dashboard
-                      </button>
-                      <button onClick={() => { setDropdownOpen(false); signOut(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm">
-                        <LogOut className="w-4 h-4" /> Гарах
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <button onClick={() => navigate('/auth/login')} className="text-stone-400 hover:text-white text-sm transition-colors px-4 py-2">Нэвтрэх</button>
-                <button onClick={() => navigate('/auth/register')} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-4 py-2 rounded-xl transition-colors">Бүртгүүлэх</button>
-              </>
-            )}
-          </div>
-        </div>
-        {/* «Таны цомог» — өмнө нь линкээр орсон цомог руу буцах (толгой хэсэгтэй хамт дэлгэцэнд үлдэнэ) */}
-        <MyAlbumsBar />
-      </header>
-
-      {/* Hero */}
-      <section className="relative py-20 px-6 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent pointer-events-none" />
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+      <section className="px-4 sm:px-6 pt-8 pb-4 sm:pt-14 sm:pb-8">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-[2.05rem] leading-[1.12] sm:text-5xl md:text-6xl font-extrabold tracking-tight">
             Гэрэл зургаараа<br />
-            <span className="text-amber-400">ашиг олох шинэ боломж</span>
+            ашиг олох{' '}
+            <br className="md:hidden" />
+            <span className="text-amber-400">шинэ боломж</span>
           </h1>
-          <p className="text-stone-400 text-lg mb-10 max-w-2xl mx-auto">
+          <p className="mt-3 text-stone-400 text-sm sm:text-base max-w-xl">
             Зурагчид, зохион байгуулагчид болон дурсамжийг холбогч платформ
           </p>
 
-          {/* Search box — name + location + button */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-2 flex flex-col sm:flex-row items-stretch gap-2 max-w-2xl mx-auto mb-4">
-            {/* Name search */}
-            <div className="flex items-center gap-2 flex-1 px-3">
-              <Search className="w-4 h-4 text-stone-400 flex-shrink-0" />
+          <form onSubmit={handleSearch} className="mt-6 flex flex-col gap-3 md:grid md:grid-cols-2">
+            <label className="block rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-3 focus-within:border-amber-500/50">
+              <span className="flex items-center gap-1.5 text-xs text-stone-500">
+                <Search className="w-3.5 h-3.5 text-amber-400" /> Сэдэв, студи, зурагчин
+              </span>
               <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                placeholder="Нэр эсвэл чиглэлээр хайх..."
-                className="flex-1 bg-transparent text-white placeholder-stone-500 outline-none text-sm py-2"
+                value={draftQuery}
+                onChange={e => setDraftQuery(e.target.value)}
+                placeholder="Юу хайж байна?"
+                className="mt-1 w-full bg-transparent text-white text-base font-medium placeholder-stone-400 outline-none"
               />
-            </div>
-
-            {/* Divider */}
-            <div className="hidden sm:block w-px bg-white/10 my-1" />
-
-            {/* Location dropdown */}
-            <div className="relative flex items-center px-2">
-              <MapPin className="absolute left-4 w-4 h-4 text-stone-400 pointer-events-none" />
+            </label>
+            <label className="block rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-3 focus-within:border-amber-500/50">
+              <span className="flex items-center gap-1.5 text-xs text-stone-500">
+                <MapPin className="w-3.5 h-3.5 text-amber-400" /> Хот, дүүрэг
+              </span>
               <select
-                value={searchLocation}
-                onChange={e => setSearchLocation(e.target.value)}
-                className="bg-transparent text-stone-300 pl-8 pr-3 py-2 outline-none text-sm appearance-none cursor-pointer min-w-[150px]"
+                value={draftPlace}
+                onChange={e => setDraftPlace(e.target.value)}
+                aria-label="Хот, дүүрэг"
+                className="mt-1 w-full bg-transparent text-white text-base font-medium outline-none"
               >
-                {LOCATIONS.map(loc => (
-                  <option key={loc} value={loc} className="bg-stone-900 text-white">{loc}</option>
-                ))}
+                <option value={ALL_PLACES} className="bg-stone-900">Хаана?</option>
+                <optgroup label="Хот" className="bg-stone-900">
+                  {CITIES.map(city => <option key={city} value={city}>{city}</option>)}
+                </optgroup>
+                <optgroup label="Дүүрэг" className="bg-stone-900">
+                  {DISTRICTS.map(district => <option key={district} value={district}>{district}</option>)}
+                </optgroup>
               </select>
-            </div>
-
+            </label>
             <button
-              onClick={handleSearch}
-              className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-6 py-2.5 rounded-xl transition-colors text-sm whitespace-nowrap"
+              type="submit"
+              className="md:col-span-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-base py-3.5 rounded-2xl transition-colors"
             >
               Хайх
             </button>
+          </form>
+          {filtering && (
+            <button
+              type="button"
+              onClick={() => { setQuery(''); setPlace(ALL_PLACES); setDraftQuery(''); setDraftPlace(ALL_PLACES); setActiveCategory('Бүгд'); }}
+              className="mt-3 text-xs text-stone-500 hover:text-white"
+            >
+              Хайлт арилгах
+            </button>
+          )}
+        </div>
+      </section>
+
+      <HomeStudiosSections heroQuery={query} heroPlace={place} />
+
+      <section id="photographers" className="scroll-mt-20 px-4 sm:px-6 py-8 sm:py-12">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-end justify-between gap-3 mb-4">
+            <h2 className="text-xl sm:text-2xl font-bold">Гэрэл зурагчид</h2>
+            <button
+              type="button"
+              onClick={openPhotographers}
+              className="text-amber-400 hover:text-amber-300 text-sm font-medium whitespace-nowrap"
+            >
+              Бүгдийг үзэх
+            </button>
           </div>
 
-          {/* Category pills */}
-          <div className="flex flex-wrap justify-center gap-2">
-            {categories.map(cat => (
+          <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex gap-2 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {CATEGORIES.map(cat => (
               <button
                 key={cat}
+                type="button"
                 onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium ${
                   activeCategory === cat
-                    ? 'bg-stone-100 text-stone-950'
-                    : 'bg-white/5 text-stone-400 hover:text-white border border-white/10'
+                    ? 'bg-amber-500 text-stone-950'
+                    : 'bg-white/5 text-stone-300 border border-white/10 hover:text-white'
                 }`}
               >
                 {cat}
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/studios')}
-            className="mt-5 inline-flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300"
-          >
-            <MapPin className="w-4 h-4" /> Фото студи газрын зураг дээр хайх
-          </button>
-        </div>
-      </section>
-
-      {/* Зурагчингууд */}
-      <section className="py-16 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold">Зурагчингууд</h2>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate('/studios')}
-                className="flex items-center gap-1 text-stone-300 hover:text-white text-sm font-medium transition-colors"
-              >
-                <Store className="w-4 h-4 text-amber-400" /> Фото студи
-              </button>
-              <button
-                onClick={() => navigate('/photographers')}
-                className="flex items-center gap-1 text-amber-400 hover:text-amber-300 text-sm font-medium transition-colors"
-              >
-                Бүгдийг харах <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
 
           {loadingPhotographers ? (
-            <div className="flex justify-center py-12">
+            <div className="flex justify-center py-10">
               <div className="w-6 h-6 border-2 border-white/20 border-t-amber-500 rounded-full animate-spin" />
             </div>
+          ) : visiblePhotographers.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center">
+              <p className="text-stone-300 text-sm">Зурагчин олдсонгүй</p>
+              <button type="button" onClick={openPhotographers} className="mt-2 text-amber-400 text-sm">
+                Бүтэн жагсаалт
+              </button>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {displayPhotographers.map((p: any) => (
-                <div
+            <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {visiblePhotographers.map(p => (
+                <button
                   key={p.id}
-                  onClick={() => navigate('/photographers')}
-                  className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-amber-500/30 transition-all group cursor-pointer"
+                  type="button"
+                  onClick={() => navigate(p.real ? `/photographers/${p.id}` : '/photographers')}
+                  className="flex-shrink-0 w-[5.75rem] sm:w-24 text-center group"
                 >
-                  {/* Cover */}
-                  <div className="relative h-32 overflow-hidden bg-stone-900">
-                    <img
-                      src={p.cover_url || p.cover || DEFAULT_COVER}
-                      alt=""
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onError={e => { (e.target as HTMLImageElement).src = DEFAULT_COVER; }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 to-transparent" />
-                  </div>
-
-                  <div className="p-4 -mt-8 relative">
-                    {/* Avatar */}
-                    {p.avatar_url || p.image ? (
+                  <div className="mx-auto w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-white/10 bg-stone-800 group-hover:border-amber-400 transition-colors">
+                    {p.image ? (
                       <img
-                        src={p.avatar_url || p.image}
-                        alt={p.display_name || p.name}
-                        className="w-14 h-14 rounded-full border-2 border-stone-950 object-cover mb-3"
+                        src={p.image}
+                        alt=""
+                        className="w-full h-full object-cover"
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
-                      <div className="w-14 h-14 rounded-full border-2 border-stone-950 bg-stone-800 flex items-center justify-center mb-3">
+                      <span className="w-full h-full flex items-center justify-center">
                         <User className="w-6 h-6 text-stone-500" />
-                      </div>
+                      </span>
                     )}
-
-                    <h3 className="text-white font-semibold">{p.display_name || p.name}</h3>
-                    <p className="text-stone-400 text-xs mb-2 line-clamp-1">
-                      {Array.isArray(p.specialties) ? p.specialties.join(', ') : (p.specialty || '—')}
-                    </p>
-
-                    {/* Location — одны дээд хэсэгт */}
-                    {(p.location) && (
-                      <div className="flex items-center gap-1 text-stone-500 text-xs mb-1.5">
-                        <MapPin className="w-3 h-3 text-amber-500/70 flex-shrink-0" />
-                        <span>{p.location}</span>
-                      </div>
-                    )}
-
-                    {/* Rating */}
-                    <div className="flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      <span className="text-white text-sm font-medium">{p.rating ?? '—'}</span>
-                    </div>
-
-                    <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3 text-stone-500">
-                      {p.phone && (
-                        <button onClick={e => e.stopPropagation()} className="hover:text-white transition-colors">
-                          <Phone className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {p.instagram && (
-                        <button onClick={e => e.stopPropagation()} className="hover:text-pink-400 transition-colors">
-                          <Instagram className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {p.facebook && (
-                        <button onClick={e => e.stopPropagation()} className="hover:text-blue-400 transition-colors">
-                          <Facebook className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
                   </div>
-                </div>
+                  <p className="mt-2 text-xs font-medium text-white leading-tight line-clamp-2">{p.name}</p>
+                  {p.rating != null && (
+                    <p className="mt-0.5 text-[11px] text-amber-400 flex items-center justify-center gap-0.5">
+                      <Star className="w-3 h-3 fill-amber-400" /> {p.rating}
+                    </p>
+                  )}
+                </button>
               ))}
             </div>
           )}
         </div>
       </section>
 
-      {/* Цомгууд — зөвхөн төлбөртэй нийтлэгдсэн жинхэнэ цомгууд, хайлттай */}
       <HomeAlbumsSection />
-
-      {/* AI зургийн бүүт — загварууд, захиалгат загвар */}
       <AiBoothShowcase />
-
-      {/* AI видео — цомгийн зургаас хөдөлгөөнт видео (update-66) */}
       <AiVideoShowcase />
-
-      {/* Footer */}
-      <footer className="border-t border-white/10 py-12 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <BrandMark className="w-8 h-8 flex-shrink-0" />
-                <div>
-                  <span className="font-brand text-white font-semibold tracking-tight">Zuragchin</span>
-                  <span className="font-brand text-amber-400 font-semibold">.mn</span>
-                </div>
-              </div>
-              <p className="text-stone-500 text-sm leading-relaxed">Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.</p>
-            </div>
-            <FooterContact />
-          </div>
-          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-stone-500 text-sm">
-            <p>© {new Date().getFullYear()} Zuragchin.mn — Бүх эрх хуулиар хамгаалагдсан</p>
-            <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
-              <button onClick={() => navigate('/terms')} className="hover:text-white">Үйлчилгээний нөхцөл</button>
-              <button onClick={() => navigate('/privacy')} className="hover:text-white">Нууцлал</button>
-              <button onClick={() => navigate('/contact')} className="hover:text-white">Холбоо барих</button>
-            </nav>
-          </div>
-        </div>
-      </footer>
+      <HomeFooter />
     </div>
-  );
-}
-
-/** Энэ төхөөрөмжөөс үзсэн цомгууд руу буцах товч (нүүр хуудасны толгой хэсэгт) */
-function MyAlbumsBar() {
-  const navigate = useNavigate();
-  const [albums, setAlbums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
-  const [open, setOpen] = useState(false);
-  if (albums.length === 0) return null;
-  const last = albums[0];
-  return (
-    <div className="border-t border-white/5 bg-stone-950/95">
-      <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-end gap-2 relative">
-        <button onClick={() => navigate(`/album/${last.link}`)}
-          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-semibold text-sm pl-1.5 pr-3 py-1.5 rounded-xl transition-colors min-w-0 max-w-[75vw]">
-          {last.cover
-            ? <img src={last.cover} alt="" className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
-            : <Images className="w-5 h-5 flex-shrink-0 ml-1" />}
-          <span className="flex-shrink-0">Таны цомог</span>
-          <span className="font-normal truncate hidden sm:inline">· {last.name}</span>
-        </button>
-        {albums.length > 1 && (
-          <button onClick={() => setOpen(o => !o)} title="Бусад цомог"
-            className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-stone-300">
-            <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
-        )}
-        <button onClick={() => { clearVisitedAlbums(); setOpen(false); setAlbums([]); }} title="Хаах" aria-label="«Таны цомог» товчийг хаах"
-          className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-stone-400 hover:text-white flex-shrink-0">
-          <X className="w-4 h-4" />
-        </button>
-        {open && (
-          <div className="absolute right-6 top-full mt-1 w-72 max-w-[calc(100vw-3rem)] bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-50">
-            {albums.map(a => (
-              <button key={a.id} onClick={() => { setOpen(false); navigate(`/album/${a.link}`); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 text-left">
-                {a.cover
-                  ? <img src={a.cover} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                  : <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0"><Images className="w-4 h-4 text-stone-400" /></div>}
-                <span className="text-stone-200 text-sm truncate">{a.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Нүүр хуудасны доод хэсгийн холбоо барих мэдээлэл — Админ → Платформ хэсгээс засна */
-function FooterContact() {
-  const c = useSiteContact();
-  const socials = [
-    { url: c.social_facebook, icon: <Facebook className="w-4 h-4" />, label: 'Facebook', cls: 'hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400' },
-    { url: c.social_instagram, icon: <Instagram className="w-4 h-4" />, label: 'Instagram', cls: 'hover:bg-pink-500/20 hover:border-pink-500/30 hover:text-pink-400' },
-    { url: c.social_tiktok, icon: <Music2 className="w-4 h-4" />, label: 'TikTok', cls: 'hover:bg-white/15 hover:border-white/30 hover:text-white' },
-    { url: c.social_youtube, icon: <Youtube className="w-4 h-4" />, label: 'YouTube', cls: 'hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400' },
-  ].filter(s => !!s.url);
-  const phoneHref = c.contact_phone ? 'tel:' + c.contact_phone.replace(/[^\d+]/g, '') : '';
-  return (
-    <>
-      <div>
-        <h4 className="text-white font-semibold mb-4">Холбоо барих</h4>
-        <div className="space-y-2">
-          {c.contact_phone && (
-            <a href={phoneHref} className="flex items-center gap-2 text-stone-400 hover:text-white text-sm"><Phone className="w-4 h-4" /><span>{c.contact_phone}</span></a>
-          )}
-          {c.contact_email && (
-            <a href={`mailto:${c.contact_email}`} className="flex items-center gap-2 text-stone-400 hover:text-white text-sm"><Mail className="w-4 h-4" /><span>{c.contact_email}</span></a>
-          )}
-          <div className="flex items-center gap-2 text-stone-400 text-sm"><MapPin className="w-4 h-4" /><span>{c.contact_address || 'Улаанбаатар, Монгол'}</span></div>
-        </div>
-      </div>
-      {socials.length > 0 && (
-        <div>
-          <h4 className="text-white font-semibold mb-4">Сошиал хаяг</h4>
-          <div className="flex gap-3">
-            {socials.map(s => (
-              <a key={s.label} href={normalizeUrl(s.url!)} target="_blank" rel="noopener noreferrer" title={s.label} aria-label={s.label}
-                className={`w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-stone-400 transition-all ${s.cls}`}>
-                {s.icon}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
   );
 }

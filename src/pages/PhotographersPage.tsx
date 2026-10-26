@@ -60,7 +60,8 @@ export default function PhotographersPage() {
 
   const filtered = photographers.filter(p => {
     const matchesCat = activeCategory === 'Бүгд' || (Array.isArray(p.specialties) && p.specialties.includes(activeCategory));
-    const matchesLoc = activeLocation === 'Бүгд байршил' || p.location === activeLocation;
+    const matchesLoc = activeLocation === 'Бүгд байршил'
+      || (p.location ?? '').toLowerCase().includes(activeLocation.toLowerCase());
     const matchesSearch = search.trim() === '' ||
       (p.display_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (p.location ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -122,7 +123,9 @@ export default function PhotographersPage() {
             <select value={activeLocation}
               onChange={e => { setActiveLocation(e.target.value); updateParams({ q: search, cat: activeCategory, loc: e.target.value }); }}
               className={`bg-transparent pl-8 pr-3 py-2 outline-none text-sm appearance-none cursor-pointer min-w-[150px] ${activeLocation !== 'Бүгд байршил' ? 'text-amber-400' : 'text-stone-300'}`}>
-              {LOCATIONS.map(loc => <option key={loc} value={loc} className="bg-stone-900 text-white">{loc}</option>)}
+              {(LOCATIONS.includes(activeLocation) ? LOCATIONS : [LOCATIONS[0], activeLocation, ...LOCATIONS.slice(1)]).map(loc => (
+                <option key={loc} value={loc} className="bg-stone-900 text-white">{loc}</option>
+              ))}
             </select>
           </div>
         </div>

@@ -68,7 +68,7 @@ export default function HomeAlbumsSection() {
   const label = [query && `«${query}»`, category && `${CATEGORY_ICONS[category] ?? ''} ${category}`].filter(Boolean).join(' · ');
 
   return (
-    <section className="py-16 px-6">
+    <section id="albums" className="scroll-mt-20 py-10 sm:py-14 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
           <h2 className="text-2xl font-bold">Зургийн цомгууд</h2>
