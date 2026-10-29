@@ -2,11 +2,14 @@ import { useNavigate } from 'react-router-dom';
 import { Facebook, Instagram, Mail, MapPin, Music2, Phone, Youtube } from 'lucide-react';
 import { BrandLogo } from '../BrandMark';
 import { normalizeUrl, useSiteContact } from '../../lib/siteContact';
+import YouTubeAutoplay from '../YouTubeAutoplay';
+import { useHomeVideo } from '../../lib/homeVideo';
 
 /** Доод хэсэг: холбоо барих, Facebook, зохиогчийн эрх, нөхцөл/нууцлал. Бусад сошиалыг админ тохируулсан бол харуулна. */
 export default function HomeFooter() {
   const navigate = useNavigate();
   const c = useSiteContact();
+  const aboutVideo = useHomeVideo('home_about_youtube');
   const year = new Date().getFullYear();
   const socials = [
     { url: c.social_facebook, icon: <Facebook className="w-4 h-4" />, label: 'Facebook', cls: 'hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400' },
@@ -19,6 +22,12 @@ export default function HomeFooter() {
   return (
     <footer className="border-t border-white/10 px-4 sm:px-6 py-10">
       <div className="max-w-6xl mx-auto">
+        {aboutVideo && (
+          <section aria-label="Zuragchin.mn танилцуулга видео" className="mb-10 pb-10 border-b border-white/10">
+            <h2 className="text-white text-xl sm:text-2xl font-bold text-center mb-5">Zuragchin.mn-тэй танилцаарай</h2>
+            <YouTubeAutoplay url={aboutVideo} title="Zuragchin.mn танилцуулга" />
+          </section>
+        )}
         <BrandLogo />
         <p className="text-stone-500 text-sm leading-relaxed mt-3 max-w-md">
           Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.

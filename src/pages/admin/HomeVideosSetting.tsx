@@ -6,9 +6,10 @@ import { parseYouTube } from '../../components/YouTubeAutoplay';
 export const HOME_VIDEO_FIELDS = [
   { key: 'home_booth_youtube', label: 'AI зургийн бүүт хэсгийн видео' },
   { key: 'home_ai_video_youtube', label: 'AI видео хэсгийн видео' },
+  { key: 'home_about_youtube', label: 'Zuragchin.mn-ийн танилцуулга видео (нүүрийн доод хэсэг, холбоо барихын дээр)' },
 ] as const;
 
-/** Нүүр хуудасны AI хэсгүүдийн дээд талд тоглох YouTube видео — зөвхөн админ */
+/** Нүүр хуудасны AI хэсгүүд болон доод хэсгийн танилцуулгад тоглох YouTube видео — зөвхөн админ */
 export default function HomeVideosSetting() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
