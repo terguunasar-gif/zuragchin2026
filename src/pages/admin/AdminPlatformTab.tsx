@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 import AlbumPolicySetting from './AlbumPolicySetting';
 import HomeVideosSetting from './HomeVideosSetting';
+import PricingSetting from './PricingSetting';
 
 interface PlatformWallet {
   balance: number;
@@ -180,6 +181,7 @@ export default function AdminPlatformTab() {
       <AiAlbumPriceSetting />
       <AlbumPolicySetting />
       <HomeVideosSetting />
+      <PricingSetting />
 
       {/* ── Platform wallet cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

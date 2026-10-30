@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import AiAlbumPriceSetting from './AiAlbumPriceSetting';
 import AiVideoSetting from './AiVideoSetting';
 import HomeVideosSetting from './HomeVideosSetting';
+import PricingSetting from './PricingSetting';
 import AlbumPolicySetting from './AlbumPolicySetting';
 import FreePackagesSetting from './FreePackagesSetting';
 import ListingPackagesSetting from './ListingPackagesSetting';
@@ -97,6 +98,7 @@ export default function AdminWalletTab() {
       <AiAlbumPriceSetting />
       <AiVideoSetting />
       <HomeVideosSetting />
+      <PricingSetting />
       <AlbumPolicySetting />
       <FreePackagesSetting />
       <ListingPackagesSetting />

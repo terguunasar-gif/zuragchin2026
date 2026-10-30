@@ -4,6 +4,7 @@ import { BrandLogo } from '../BrandMark';
 import { normalizeUrl, useSiteContact } from '../../lib/siteContact';
 import YouTubeAutoplay from '../YouTubeAutoplay';
 import { useHomeVideo } from '../../lib/homeVideo';
+import HomePricing from './HomePricing';
 
 /** Доод хэсэг: холбоо барих, Facebook, зохиогчийн эрх, нөхцөл/нууцлал. Бусад сошиалыг админ тохируулсан бол харуулна. */
 export default function HomeFooter() {
@@ -28,6 +29,7 @@ export default function HomeFooter() {
             <YouTubeAutoplay url={aboutVideo} title="Zuragchin.mn танилцуулга" />
           </section>
         )}
+        <HomePricing />
         <BrandLogo />
         <p className="text-stone-500 text-sm leading-relaxed mt-3 max-w-md">
           Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.
