@@ -43,8 +43,8 @@ export default function HomePricing() {
         </Card>
 
         <Card icon={<Lock className="w-5 h-5 text-sky-300" />} tint="bg-sky-500/15" title="Цомгийн нэмэлт үйлчилгээ"
-          lead={<>Цомог үйл явдлаас хойш <b className="text-white">{p.albumOpenDays} хоног</b> нээлттэй байна.</>}>
-          <Row label={`Хугацаа сунгах (${p.albumExtendDays} хоног)`} value={price(p.albumExtendPrice)} />
+          lead={<>Цомог үйл явдлаас хойш <b className="text-white">{p.albumOpenDays} хоног</b> нээлттэй байна. Хүссэн үедээ сунгаж болно — үлдсэн хоног дээр нэмэгдэнэ.</>}>
+          {p.extendOptions.map(o => <Row key={o.days} label={`Хугацаа сунгах · ${o.days} хоног`} value={price(o.price)} />)}
           <Row label="4 оронтой кодоор түгжих" value={price(p.albumLockPrice)} />
           {p.listingPackages.map(l => <Row key={l.code} label={`Нүүр хуудсанд нийтлэх · ${l.name}`} value={price(l.price)} />)}
         </Card>

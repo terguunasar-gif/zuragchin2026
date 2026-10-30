@@ -3,6 +3,7 @@ import { publicDb } from './supabase';
 import { DEFAULT_FREE_PACKAGES, FreePackage, normalizePackages } from './freePackages';
 import { DEFAULT_LISTING_PACKAGES, ListingPackage, normalizeListingPackages } from './listing';
 import { DEFAULT_GUEST_PACKAGES, GuestPackage, normalizeGuestPackages } from './guestPhotos';
+import { ExtendOption, normalizeExtendOptions } from './albumExtend';
 
 /** Нүүр хуудасны «Үнэ, төлбөр» хэсэгт харуулах бүх үнэ — бүгд platform_settings-ээс (админ засна) */
 export interface QuotaPackage { code: string; name: string; photos: number; price: number }
@@ -17,6 +18,7 @@ export interface SitePricing {
   albumOpenDays: number;
   albumExtendPrice: number;
   albumExtendDays: number;
+  extendOptions: ExtendOption[];
   albumLockPrice: number;
   aiBoothPrice: number;
   aiAlbumPrice: number;
@@ -31,7 +33,7 @@ export interface SitePricing {
 
 export const PRICING_KEYS = [
   'home_pricing_enabled', 'photo_quota_free', 'photo_quota_packages', 'free_packages', 'listing_packages', 'guest_photo_packages',
-  'album_open_days', 'album_extend_price', 'album_extend_days', 'album_lock_price',
+  'album_open_days', 'album_extend_price', 'album_extend_days', 'album_extend_options', 'album_lock_price',
   'ai_booth_price', 'ai_album_price', 'ai_video_enabled', 'ai_video_price',
   'album_video_enabled', 'album_video_price', 'min_photo_price', 'purchase_download_days', 'payout_min',
 ] as const;
@@ -60,6 +62,9 @@ export function usePricing(): SitePricing | null {
         albumOpenDays: num(m.album_open_days, 30),
         albumExtendPrice: num(m.album_extend_price, 10000),
         albumExtendDays: num(m.album_extend_days, 30),
+        extendOptions: m.album_extend_options
+          ? normalizeExtendOptions(m.album_extend_options)
+          : [{ days: num(m.album_extend_days, 30), price: num(m.album_extend_price, 10000) }],
         albumLockPrice: num(m.album_lock_price, 10000),
         aiBoothPrice: num(m.ai_booth_price, 5000),
         aiAlbumPrice: num(m.ai_album_price, 3000),

@@ -5,7 +5,7 @@ import {
   CheckCircle2, FolderOpen, ChevronRight,
   Users, Shield, LayoutDashboard,
   ShoppingBag, ChevronDown, Settings, Printer,
-  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins, MonitorPlay, Store,
+  Calendar, Eye, Upload, Trash2, QrCode, Link, Copy, Check, Pencil, Sparkles, HandCoins, MonitorPlay, Store, X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
@@ -17,6 +17,7 @@ import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
 import BrandMark from '../components/BrandMark';
 import AlbumLockPanel from '../components/AlbumLockPanel';
 import GuestPhotosPanel from '../components/GuestPhotosPanel';
+import ExtendAlbumForm from '../components/ExtendAlbumForm';
 
 interface Album {
   id: string;
@@ -46,6 +47,8 @@ export default function DashboardPage() {
 
   const [albums, setAlbums] = useState<Album[]>([]);
   const [qrModal, setQrModal] = useState<{ id: string; name: string } | null>(null);
+  // Цомгийн хугацаа сунгах цонх
+  const [extendModal, setExtendModal] = useState<{ id: string; name: string } | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
   function copyAlbumLink(albumId: string) {
@@ -433,7 +436,7 @@ export default function DashboardPage() {
                           <div className="text-xs mt-1 mb-3 text-stone-500">Зургууд устгагдсан</div>
                         );
                         if (days <= 0) return (
-                          <button onClick={e => { e.stopPropagation(); window.open(`/album/${album.id}`, '_blank'); }}
+                          <button onClick={e => { e.stopPropagation(); setExtendModal({ id: album.id, name: album.title || album.name }); }}
                             className="flex items-center gap-1.5 text-xs mt-1 mb-3 text-red-400 hover:text-red-300">
                             <Clock className="w-3 h-3 flex-shrink-0" />
                             <span className="font-semibold">Хугацаа дууссан · Сунгах →</span>
@@ -448,6 +451,10 @@ export default function DashboardPage() {
                               ? <span className="text-red-400 font-semibold">Маргааш хаагдана!</span>
                               : <span>{days} хоног үлдлээ</span>
                             }
+                            <button onClick={e => { e.stopPropagation(); setExtendModal({ id: album.id, name: album.title || album.name }); }}
+                              className="ml-1 px-2 py-0.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-semibold transition-colors">
+                              Хугацаа сунгах
+                            </button>
                           </div>
                         );
                       })()}
@@ -526,6 +533,20 @@ export default function DashboardPage() {
       </main>
 
       {/* QR Modal */}
+      {extendModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-stone-950/80 backdrop-blur-sm" onClick={() => setExtendModal(null)} />
+          <div className="relative bg-stone-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <button onClick={() => setExtendModal(null)} aria-label="Хаах" className="absolute top-4 right-4 text-stone-400 hover:text-white"><X className="w-5 h-5" /></button>
+            <h3 className="text-white font-semibold text-lg pr-8">Цомгийн хугацаа сунгах</h3>
+            <p className="text-stone-400 text-sm mb-4 truncate">{extendModal.name}</p>
+            <ExtendAlbumForm albumId={extendModal.id} defaultName={profile?.name ?? ''}
+              onExtended={() => { setExtendModal(null); loadOrganizerAlbums(); }} />
+            <p className="text-stone-500 text-[11px] mt-3 text-center">Үлдсэн хоног дээр нэмэгдэнэ.</p>
+          </div>
+        </div>
+      )}
+
       {qrModal && (
         <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={() => setQrModal(null)}>
