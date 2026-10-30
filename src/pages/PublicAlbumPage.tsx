@@ -27,6 +27,8 @@ import { rememberAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
 import AlbumVideoCreator from '../components/AlbumVideoCreator';
 import AlbumVideosGrid from '../components/AlbumVideosGrid';
+import GuestPhotosSection from '../components/GuestPhotosSection';
+import { GuestInfo, guestPhotoInfo } from '../lib/guestPhotos';
 import { albumVideoApi, AlbumVideo, fetchAlbumVideos, fetchOwnerVideos, OwnerVideo } from '../lib/albumVideo';
 import { usePageMeta } from '../seo/head';
 
@@ -209,6 +211,8 @@ export default function PublicAlbumPage() {
   const [ownerVideos, setOwnerVideos] = useState<OwnerVideo[] | null>(null);
   const [videoPhoto, setVideoPhoto] = useState<{ id: string; url: string } | null>(null);
   const [lockTokenState, setLockTokenState] = useState('');
+  // Зочдын зураг (update-81)
+  const [guestInfo, setGuestInfo] = useState<GuestInfo | null>(null);
   // Үнийн санал хүлээн авах эсэх (эзэн асааж/унтраана)
   const [offerRatio, setOfferRatio] = useState<number | null>(null);
   // Цомогт AI видео бүтээх боломж (эзэн хааж болно)
@@ -499,6 +503,12 @@ export default function PublicAlbumPage() {
     if (profile && profile.id === album.owner_id) fetchOwnerVideos(album.id).then(setOwnerVideos);
   }, [album, lockTokenState, profile]);
 
+  // Зочдын зургийн төлөв (эзэн эсэхээс хамаарна)
+  useEffect(() => {
+    if (!album || pinGate || expired) { setGuestInfo(null); return; }
+    guestPhotoInfo(album.id).then(setGuestInfo);
+  }, [album, profile, pinGate, expired]);
+
   // Эзэн нэвтэрсэн бол боловсруулж буй / нуусан видеог ч харна
   useEffect(() => {
     if (album && profile && profile.id === album.owner_id) fetchOwnerVideos(album.id).then(setOwnerVideos);
@@ -533,6 +543,8 @@ export default function PublicAlbumPage() {
     ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
     ...((ownerVideos ?? videos).length > 0 || (ownerVideos && videoOn)
       ? [{ key: 'videos', label: '🎬 ' + t('AI видео'), count: (ownerVideos ?? videos).length }] : []),
+    ...(guestInfo && (guestInfo.photo_limit > 0 || guestInfo.can_manage)
+      ? [{ key: 'guests', label: '👥 ' + t('Зочдын зураг'), count: guestInfo.used }] : []),
     ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
   ];
   const visiblePhotos = photos.filter(p => !phFilter || p.photographer_id === phFilter).filter(p =>
@@ -833,14 +845,14 @@ export default function PublicAlbumPage() {
           </div>
         )}
           </div>
-          {canManage && photos.length > 0 && folderFilter !== 'videos' && (
+          {canManage && photos.length > 0 && folderFilter !== 'videos' && folderFilter !== 'guests' && (
             <button onClick={() => { setDelMode(m => !m); setDelPicks(new Set()); }} title={t('Зураг устгах')}
               className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                 delMode ? 'bg-red-500 border-red-500 text-white' : 'bg-white/5 border-white/10 text-stone-300 hover:text-red-300 hover:border-red-500/40'}`}>
               <Trash2 className="w-4 h-4" /><span className="hidden sm:inline">{delMode ? t('Болих') : t('Устгах')}</span>
             </button>
           )}
-          {photos.length > 0 && (
+          {photos.length > 0 && folderFilter !== 'guests' && (
             <div className="flex-shrink-0 flex rounded-xl overflow-hidden border border-white/10 bg-white/5" role="group" aria-label={t('Харагдац')}>
               {([
                 ['large', t('Том'), <Square key="l" className="w-4 h-4" />],
@@ -857,6 +869,8 @@ export default function PublicAlbumPage() {
         </div>
         {folderFilter === 'videos' ? (
           <AlbumVideosGrid videos={videos} ownerVideos={ownerVideos} isOwner={isOwner} onRefresh={refreshVideos} />
+        ) : folderFilter === 'guests' && guestInfo ? (
+          <GuestPhotosSection albumId={album.id} lockToken={lockTokenState} info={guestInfo} onInfo={setGuestInfo} />
         ) : photos.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">

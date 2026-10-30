@@ -16,6 +16,7 @@ import PublicAlbumCard from '../components/PublicAlbumCard';
 import SalesPanel, { useMySales, summarize } from '../components/SalesPanel';
 import BrandMark from '../components/BrandMark';
 import AlbumLockPanel from '../components/AlbumLockPanel';
+import GuestPhotosPanel from '../components/GuestPhotosPanel';
 
 interface Album {
   id: string;
@@ -36,6 +37,12 @@ interface Album {
 export default function DashboardPage() {
   const { profile, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  // Цомгоос «Нэвтэрч зураг оруулах» дарсан бол нэвтэрсний дараа тэр цомог руу буцаана
+  useEffect(() => {
+    let next = '';
+    try { next = localStorage.getItem('login_next') ?? ''; localStorage.removeItem('login_next'); } catch { /* */ }
+    if (next.startsWith('/') && !next.startsWith('//')) navigate(next, { replace: true });
+  }, [navigate]);
 
   const [albums, setAlbums] = useState<Album[]>([]);
   const [qrModal, setQrModal] = useState<{ id: string; name: string } | null>(null);
@@ -573,6 +580,9 @@ export default function DashboardPage() {
 
             {/* 4 оронтой кодоор түгжих (төлбөртэй) */}
             <AlbumLockPanel albumId={qrModal.id} albumUrl={`${window.location.origin}/album/${qrModal.id}`} />
+
+            {/* Зочдын зураг — хамт олон утасны зургаа үнэгүй хуваалцана (багцтай) */}
+            <GuestPhotosPanel albumId={qrModal.id} />
           </div>
         </div>
       )}
