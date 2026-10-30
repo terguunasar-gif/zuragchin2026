@@ -226,7 +226,9 @@ export default function AlbumEditPage() {
     setIsFree(data.is_free ?? false);
 
     // watermark_value (шинэ формат) → layers
-    const fromValue = parseWatermarkValue(data.watermark_value);
+    // Үнэгүй цомогт өмнө хадгалагдсан битүү тамгыг анхдагчаар хасна (хүсвэл товчоор дахин нэмнэ)
+    const parsed = parseWatermarkValue(data.watermark_value);
+    const fromValue = parsed && data.is_free ? parsed.filter(l => l.type !== 'tiled-text') : parsed;
     if (fromValue && fromValue.length > 0) {
       setLayers(fromValue);
       setActiveId(fromValue[0].id);
@@ -302,6 +304,16 @@ export default function AlbumEditPage() {
 
   function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
     setLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  }
+  /** Үнэгүй ↔ Төлбөртэй: үнэгүйд битүү тамгыг хасна (хүсвэл товчоор нэмнэ), төлбөртэйд байхгүй бол нэмнэ */
+  function chooseFree(free: boolean) {
+    setIsFree(free);
+    setLayers(prev => {
+      const next = free ? prev.filter(l => l.type !== 'tiled-text')
+        : prev.some(l => l.type === 'tiled-text') ? prev : [...prev, makeTiledTextLayer()];
+      if (!next.some(l => l.id === activeId)) setActiveId(next[0]?.id || '');
+      return next;
+    });
   }
   function addText()       { const l = makeTextLayer();       setLayers(prev => [...prev, l]); setActiveId(l.id); }
   function addLogo()       { const l = makeLogoLayer();       setLayers(prev => [...prev, l]); setActiveId(l.id); }
@@ -454,8 +466,8 @@ export default function AlbumEditPage() {
                 </div>
                 <div><label className="text-stone-400 text-xs mb-1.5 block">Татах төлбөр</label>
                   <div className="flex rounded-xl overflow-hidden border border-white/10">
-                    <button type="button" onClick={() => setIsFree(true)} className={`flex-1 py-2.5 text-xs font-medium transition-all ${isFree ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>Үнэгүй</button>
-                    <button type="button" onClick={() => setIsFree(false)} className={`flex-1 py-2.5 text-xs font-medium transition-all ${!isFree ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>Төлбөртэй</button>
+                    <button type="button" onClick={() => chooseFree(true)} className={`flex-1 py-2.5 text-xs font-medium transition-all ${isFree ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>Үнэгүй</button>
+                    <button type="button" onClick={() => chooseFree(false)} className={`flex-1 py-2.5 text-xs font-medium transition-all ${!isFree ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400 hover:text-white'}`}>Төлбөртэй</button>
                   </div>
                 </div>
               </div>
@@ -469,7 +481,7 @@ export default function AlbumEditPage() {
               {isFree && (
                 <p className="text-emerald-200/80 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 leading-relaxed">
                   Үнэгүй хуваалцах цомогт текст, лого давхарга нь <b>шинээр оруулах</b> бүх зургийн буланд суугдаж, зочдын татах зурагт ч гарна.
-                  Өмнө оруулсан зурагт нөлөөлөхгүй. «Битүү тамга» хэрэглэгдэхгүй.
+                  Өмнө оруулсан зурагт нөлөөлөхгүй. «Битүү тамга» анхдагчаар <b>тавигдахгүй</b> — хүсвэл «+ Битүү тамга» товчоор нэмнэ.
                 </p>
               )}
 

@@ -25,6 +25,8 @@ interface WatermarkOptions {
   maxSize?: number;
   /** Брэнд горим (үнэгүй цомог): зөвхөн булангийн лого/текст, давтагдах хамгаалалтын тамгагүй */
   brandOnly?: boolean;
+  /** brandOnly үед ч эзний санаатай нэмсэн «Битүү тамга»-г тавина (үнэгүй цомог) */
+  keepTiled?: boolean;
   /** JPEG чанар (0–1) */
   quality?: number;
   /** Худалдах цомгийн preview: өтгөн тамга, голоор дайрсан том бичиг, торон зураас — AI-аар арилгахад хэцүү */
@@ -53,7 +55,7 @@ export async function applyWatermark(
       const layers: WatermarkLayer[] = JSON.parse(opts.value);
       hasTiled = layers.some(l => l.type === 'tiled-text' && !!l.text);
       for (const layer of layers) {
-        if (layer.type === 'tiled-text' && opts.brandOnly) {
+        if (layer.type === 'tiled-text' && opts.brandOnly && !opts.keepTiled) {
           continue;
         } else if (layer.type === 'tiled-text' && layer.text) {
           // Бүх зургийг бүрхэх давтагдах текст тамга

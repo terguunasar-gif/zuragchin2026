@@ -258,7 +258,7 @@ export default function PhotoUploadPage() {
         let originalBlob: Blob = entry.file;
         let compressed = false;
         if (brand) {
-          originalBlob = await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
+          originalBlob = await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
           compressed = true;
         } else {
           // Эх файлыг шахна — илт багасах үед л (аль хэдийн жижиг файлыг хөндөхгүй)
@@ -269,7 +269,7 @@ export default function PhotoUploadPage() {
         }
         const previewBlob = album.is_free
           ? await applyWatermark(entry.file, brand
-              ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, maxSize: 1600 }
+              ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, maxSize: 1600 }
               : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
           : await makeSalePreview(entry.file, album);
 
@@ -755,11 +755,11 @@ function StatusRow({ label, value, color }: { label: string; value: number; colo
   );
 }
 
-/** Цомогт булангийн лого / текст давхарга байгаа эсэх (давтагдах тамга тооцохгүй) */
+/** Цомогт лого / текст / эзний нэмсэн битүү тамга давхарга байгаа эсэх */
 function hasBrandLayers(album: { watermark_type: string; watermark_value: string }): boolean {
   if (album.watermark_type !== 'layers' || !album.watermark_value) return false;
   try {
     const layers = JSON.parse(album.watermark_value) as { type: string; text?: string; imagePreview?: string }[];
-    return Array.isArray(layers) && layers.some(l => (l.type === 'text' && !!l.text?.trim()) || (l.type === 'image' && !!l.imagePreview));
+    return Array.isArray(layers) && layers.some(l => ((l.type === 'text' || l.type === 'tiled-text') && !!l.text?.trim()) || (l.type === 'image' && !!l.imagePreview));
   } catch { return false; }
 }
