@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, withTimeout, hasRole } from '../lib/supabase';
@@ -213,6 +213,8 @@ export default function PublicAlbumPage() {
   const [lockTokenState, setLockTokenState] = useState('');
   // Зочдын зураг (update-81)
   const [guestInfo, setGuestInfo] = useState<GuestInfo | null>(null);
+  // Эзэн «Зочдын зураг» товч дарж тохиргоог нээсэн эсэх (багц аваагүй цомогт таб анхдагчаар харагдахгүй)
+  const [guestSetup, setGuestSetup] = useState(false);
   // Үнийн санал хүлээн авах эсэх (эзэн асааж/унтраана)
   const [offerRatio, setOfferRatio] = useState<number | null>(null);
   // Цомогт AI видео бүтээх боломж (эзэн хааж болно)
@@ -543,7 +545,7 @@ export default function PublicAlbumPage() {
     ...(aiCount > 0 ? [{ key: 'ai', label: '✨ ' + t('AI бүүт'), count: aiCount }] : []),
     ...((ownerVideos ?? videos).length > 0 || (ownerVideos && videoOn)
       ? [{ key: 'videos', label: '🎬 ' + t('AI видео'), count: (ownerVideos ?? videos).length }] : []),
-    ...(guestInfo && (guestInfo.photo_limit > 0 || guestInfo.can_manage)
+    ...(guestInfo && (guestInfo.photo_limit > 0 || (guestInfo.can_manage && guestSetup))
       ? [{ key: 'guests', label: '👥 ' + t('Зочдын зураг'), count: guestInfo.used }] : []),
     ...(otherCount > 0 && (folders.length > 0 || aiCount > 0) ? [{ key: 'other', label: t('Бусад'), count: otherCount }] : []),
   ];
@@ -763,6 +765,22 @@ export default function PublicAlbumPage() {
               {videoOn
                 ? t('Зураг бүрийн доор «Видео үүсгэх» товч гарна. Уран сайхны зурагт хэрэггүй бол хаана.')
                 : t('«Видео үүсгэх» товч нуугдсан.')}
+            </span>
+          </div>
+        )}
+        {guestInfo?.can_manage && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+            <button onClick={() => { setGuestSetup(true); setFolderFilter('guests'); }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border font-semibold transition-colors ${
+                guestInfo.photo_limit > 0 && guestInfo.enabled ? 'bg-teal-500/15 border-teal-500/40 text-teal-200' : 'bg-white/5 border-white/15 text-stone-400 hover:text-white'}`}>
+              <Users className="w-3.5 h-3.5" />
+              {guestInfo.photo_limit === 0 ? t('Зочдын зураг: Хаалттай')
+                : guestInfo.enabled ? t('Зочдын зураг: Нээлттэй') : t('Зочдын зураг: Түр зогссон')}
+            </button>
+            <span className="text-stone-500">
+              {guestInfo.photo_limit === 0
+                ? t('Арга хэмжээний цомогт хамт олон утасны зургаа үнэгүй хуваалцана. Уран сайхны цомогт хэрэггүй.')
+                : t('{a} / {b} зураг', { a: guestInfo.used.toLocaleString(), b: guestInfo.photo_limit.toLocaleString() })}
             </span>
           </div>
         )}
