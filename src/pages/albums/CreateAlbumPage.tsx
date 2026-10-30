@@ -96,7 +96,8 @@ export default function CreateAlbumPage() {
   // ✅ ЗАСВАР: 'draft' → 'active' (цомог үүссэний дараа шууд нийтэд харагдана)
   const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('active');
 
-  const [wmLayers, setWmLayers] = useState<WatermarkLayer[]>([newTextLayer()]);
+  // «Худалдах» (анхдагч) цомогт битүү тамга автоматаар орно; «Үнэгүй» сонгоход хасагдана
+  const [wmLayers, setWmLayers] = useState<WatermarkLayer[]>(() => [newTextLayer(), newTiledTextLayer()]);
   const [activeLayerId, setActiveLayerId] = useState<string>(() => wmLayers[0].id);
   const imageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -166,6 +167,21 @@ export default function CreateAlbumPage() {
 
   function updateLayer(id: string, patch: Partial<WatermarkLayer>) {
     setWmLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  }
+  /** Үнэгүй ↔ Худалдах: үнэгүйд битүү тамгыг хасна (хүсвэл товчоор нэмнэ), худалдахад байхгүй бол нэмнэ */
+  function chooseFree(free: boolean) {
+    setIsFree(free);
+    setWmLayers(prev => {
+      let next = prev;
+      if (free) {
+        next = prev.filter(l => l.type !== 'tiled-text');
+        if (next.length === 0) next = [newTextLayer()];
+      } else if (!prev.some(l => l.type === 'tiled-text')) {
+        next = [...prev, newTiledTextLayer()];
+      }
+      if (!next.some(l => l.id === activeLayerId)) setActiveLayerId(next[0].id);
+      return next;
+    });
   }
   function addLayer(type: WatermarkType) {
     const layer = type === 'text' ? newTextLayer() : type === 'image' ? newImageLayer() : newTiledTextLayer();
@@ -418,7 +434,7 @@ export default function CreateAlbumPage() {
                 {isFree && (
                   <p className="text-emerald-200/80 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 leading-relaxed">
                     Үнэгүй хуваалцах цомогт хамгаалалтын тамга тавигдахгүй. Энд нэмсэн <b>текст</b> (жишээ нь «Бат ❤ Сараа · 2026.10.08»)
-                    болон <b>лого</b> нь бүх зургийн буланд суугдаж, зочдын татах зурагт ч хамт гарна. «Битүү тамга» хэрэглэгдэхгүй.
+                    болон <b>лого</b> нь бүх зургийн буланд суугдаж, зочдын татах зурагт ч хамт гарна. «Битүү тамга» анхдагчаар <b>тавигдахгүй</b> — хүсвэл «+ Битүү тамга» товчоор нэмнэ.
                     Брэнд хэрэггүй бол текст, лого давхаргуудыг устгана уу.
                   </p>
                 )}
@@ -565,8 +581,8 @@ export default function CreateAlbumPage() {
             <Section title="Үнэлгээ" icon={<span className="text-xs font-bold text-stone-400">₮</span>}>
               <div className="space-y-5">
                 <div className="flex rounded-xl overflow-hidden border border-white/10">
-                  <TypeToggleBtn active={isFree} onClick={() => setIsFree(true)} icon={<span className="text-xs font-bold">FREE</span>} label="Үнэгүй хуваалцах" />
-                  <TypeToggleBtn active={!isFree} onClick={() => setIsFree(false)} icon={<span className="text-xs font-bold">₮</span>} label="Худалдах" />
+                  <TypeToggleBtn active={isFree} onClick={() => chooseFree(true)} icon={<span className="text-xs font-bold">FREE</span>} label="Үнэгүй хуваалцах" />
+                  <TypeToggleBtn active={!isFree} onClick={() => chooseFree(false)} icon={<span className="text-xs font-bold">₮</span>} label="Худалдах" />
                 </div>
                 {isFree && (
                   <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-xs text-emerald-100/80 leading-relaxed space-y-1.5">
