@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { publicDb } from './supabase';
 import { DEFAULT_FREE_PACKAGES, FreePackage, normalizePackages } from './freePackages';
 import { DEFAULT_LISTING_PACKAGES, ListingPackage, normalizeListingPackages } from './listing';
+import { DEFAULT_GUEST_PACKAGES, GuestPackage, normalizeGuestPackages } from './guestPhotos';
 
 /** Нүүр хуудасны «Үнэ, төлбөр» хэсэгт харуулах бүх үнэ — бүгд platform_settings-ээс (админ засна) */
 export interface QuotaPackage { code: string; name: string; photos: number; price: number }
@@ -12,6 +13,7 @@ export interface SitePricing {
   quotaPackages: QuotaPackage[];
   freePackages: FreePackage[];
   listingPackages: ListingPackage[];
+  guestPackages: GuestPackage[];
   albumOpenDays: number;
   albumExtendPrice: number;
   albumExtendDays: number;
@@ -28,7 +30,7 @@ export interface SitePricing {
 }
 
 export const PRICING_KEYS = [
-  'home_pricing_enabled', 'photo_quota_free', 'photo_quota_packages', 'free_packages', 'listing_packages',
+  'home_pricing_enabled', 'photo_quota_free', 'photo_quota_packages', 'free_packages', 'listing_packages', 'guest_photo_packages',
   'album_open_days', 'album_extend_price', 'album_extend_days', 'album_lock_price',
   'ai_booth_price', 'ai_album_price', 'ai_video_enabled', 'ai_video_price',
   'album_video_enabled', 'album_video_price', 'min_photo_price', 'purchase_download_days', 'payout_min',
@@ -54,6 +56,7 @@ export function usePricing(): SitePricing | null {
         quotaPackages: quotaPackages(m.photo_quota_packages),
         freePackages: m.free_packages ? normalizePackages(m.free_packages) : DEFAULT_FREE_PACKAGES,
         listingPackages: m.listing_packages ? normalizeListingPackages(m.listing_packages) : DEFAULT_LISTING_PACKAGES,
+        guestPackages: m.guest_photo_packages ? normalizeGuestPackages(m.guest_photo_packages) : DEFAULT_GUEST_PACKAGES,
         albumOpenDays: num(m.album_open_days, 30),
         albumExtendPrice: num(m.album_extend_price, 10000),
         albumExtendDays: num(m.album_extend_days, 30),

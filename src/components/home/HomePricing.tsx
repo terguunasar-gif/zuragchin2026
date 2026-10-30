@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Gift, Lock, Sparkles, Store } from 'lucide-react';
+import { Gift, Lock, Sparkles, Store, Users } from 'lucide-react';
 import { fmtMNT } from '../../lib/freePackages';
 import { usePricing } from '../../lib/pricing';
 
@@ -34,6 +34,12 @@ export default function HomePricing() {
           {p.freePackages.map(f => (
             <Row key={f.code} label={`${f.name} · ${n(f.photos)} зураг · ${f.days} хоног`} value={price(f.price)} />
           ))}
+        </Card>
+
+        <Card icon={<Users className="w-5 h-5 text-teal-300" />} tint="bg-teal-500/15" title="Зочдын зураг"
+          lead="Хамт олны гишүүд утсаараа авсан зургаа цомогт оруулж, бусадтайгаа үнэгүй хуваалцана. Зочдын зураг зарагдахгүй.">
+          {p.guestPackages.map(g => <Row key={g.code} label={`${g.name} · нийт ${n(g.photos)} зураг`} value={price(g.price)} />)}
+          <Note>Цомгийн эзэн нэг удаа төлнө. Зочин бүрт хязгаар байхгүй — бүх зочид нийт хязгаарыг хамтдаа ашиглана.</Note>
         </Card>
 
         <Card icon={<Lock className="w-5 h-5 text-sky-300" />} tint="bg-sky-500/15" title="Цомгийн нэмэлт үйлчилгээ"

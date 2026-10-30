@@ -10,6 +10,7 @@ import FreePackagesSetting from './FreePackagesSetting';
 import ListingPackagesSetting from './ListingPackagesSetting';
 import SiteContactSetting from './SiteContactSetting';
 import PhotoQuotaSetting from './PhotoQuotaSetting';
+import GuestPackagesSetting from './GuestPackagesSetting';
 
 interface MonthlyFee {
   month: string;
@@ -103,6 +104,7 @@ export default function AdminWalletTab() {
       <FreePackagesSetting />
       <ListingPackagesSetting />
       <PhotoQuotaSetting />
+      <GuestPackagesSetting />
       <SiteContactSetting />
       {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
