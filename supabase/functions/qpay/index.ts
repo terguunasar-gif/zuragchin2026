@@ -189,7 +189,7 @@ Deno.serve(async (req: Request) => {
 
     // ── ЦОМОГ СУНГАХ: нэхэмжлэх үүсгэх (хэн ч төлж болно) ──
     if (req.method === "POST" && path === "/extend-invoice") {
-      const { albumId, buyerName, buyerPhone } = await req.json() as { albumId: string; buyerName: string; buyerPhone: string };
+      const { albumId, buyerName, buyerPhone, days: wantDays } = await req.json() as { albumId: string; buyerName: string; buyerPhone: string; days?: number };
       if (!String(buyerName ?? "").trim() || !/^\d{8,}$/.test(String(buyerPhone ?? "").trim())) {
         return json({ error: "Нэр, утасны дугаараа зөв оруулна уу" }, 400);
       }
@@ -197,8 +197,11 @@ Deno.serve(async (req: Request) => {
       const { data: album } = await db.from("albums").select("id, name, title, status, files_purged_at").eq("id", albumId).maybeSingle();
       if (!album) return json({ error: "Цомог олдсонгүй" }, 404);
       if (album.files_purged_at) return json({ error: "Цомгийн зургууд устсан тул сунгах боломжгүй" }, 410);
-      const price = await settingNumber(db, "album_extend_price", 10000);
-      const days = await settingNumber(db, "album_extend_days", 30);
+      // Сонголтууд (update-82): [{days, price}]; байхгүй бол хуучин нэг үнийн тохиргоо
+      const options = await extendOptions(db);
+      const opt = wantDays ? options.find(o => o.days === Number(wantDays)) : options[0];
+      if (!opt) return json({ error: "Сунгах хугацааны сонголт олдсонгүй" }, 400);
+      const { price, days } = opt;
       if (!(price > 0) || !(days > 0)) return json({ error: "Сунгалтын тохиргоо буруу байна" }, 500);
 
       const token = await qpayToken();
@@ -1308,6 +1311,19 @@ async function processExtension(db: any, invoiceId: string, paymentId: string, p
     await db.rpc("increment_platform_wallet", { p_amount: net });
   }
   return newExpiry ? String(newExpiry) : null;
+}
+
+/** Цомог сунгах сонголтууд — platform_settings.album_extend_options, байхгүй бол album_extend_price/days */
+// deno-lint-ignore no-explicit-any
+async function extendOptions(db: any): Promise<{ days: number; price: number }[]> {
+  const { data } = await db.from("platform_settings").select("value").eq("key", "album_extend_options").maybeSingle();
+  const arr = Array.isArray(data?.value) ? data.value : [];
+  // deno-lint-ignore no-explicit-any
+  const list = arr.map((o: any) => ({ days: Math.round(Number(o.days)), price: Math.round(Number(o.price)) }))
+    .filter((o: { days: number; price: number }) => o.days > 0 && o.price > 0)
+    .sort((a: { days: number }, b: { days: number }) => a.days - b.days);
+  if (list.length) return list;
+  return [{ days: await settingNumber(db, "album_extend_days", 30), price: await settingNumber(db, "album_extend_price", 10000) }];
 }
 
 /** Нэхэмжлэхийг төлөгдсөн болгож, орлогыг нэг л удаа хуваарилна. Төлөгдсөн бол true. */
