@@ -8,6 +8,29 @@ export interface BankLink { name: string; description?: string; link: string; lo
 /** Банкны апп зөвхөн утсан дээр нээгдэнэ (khanbank:// гэх мэт). Компьютер дээр QR уншуулна. */
 export const canOpenBankApps = isAndroid || isIOS;
 
+/**
+ * Харуулах апп-ууд (энэ дарааллаар): qPay хэтэвч, Хаан, Төрийн, Хас, TDB.
+ * QPay-ийн жагсаалтын нэр / тайлбар / холбоосын схемээр (khanbank:// …) таньна.
+ * Холбоосын query-д «qPay_QRcode» байдаг тул бүтэн холбоосоор шалгахгүй.
+ */
+const ALLOWED: RegExp[] = [
+  /qpay|qpaywallet/i,
+  /^(?!.*(chinggis|чингис)).*(khan|хаан)/i,
+  /state\s*bank|statebank|төрийн/i,
+  /xac|khas|хас/i,
+  /tdb|trade\s*and\s*development|худалдаа хөгжлийн/i,
+];
+
+export function pickBankLinks(urls: BankLink[]): BankLink[] {
+  const picked: BankLink[] = [];
+  for (const re of ALLOWED) {
+    const hit = urls.find(u => re.test(`${u.name} ${u.description ?? ''} ${u.link.split('://')[0]}`) && !picked.includes(u));
+    if (hit) picked.push(hit);
+  }
+  // Таних нэр олдохгүй бол (QPay нэрээ өөрчилсөн г.м.) төлбөр гацахгүйн тулд бүгдийг харуулна
+  return picked.length ? picked : urls;
+}
+
 export default function BankLinks({ urls }: { urls: BankLink[] }) {
   const { t } = useI18n();
   if (!urls?.length) return null;
@@ -21,9 +44,10 @@ export default function BankLinks({ urls }: { urls: BankLink[] }) {
       </div>
     );
   }
+  const shown = pickBankLinks(urls);
   return (
-    <div className="grid grid-cols-4 gap-2">
-      {urls.map((u, i) => (
+    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+      {shown.map((u, i) => (
         <a key={i} href={u.link} target="_blank" rel="noreferrer"
           className="flex flex-col items-center gap-1.5 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-xl p-2 transition-colors">
           {u.logo
