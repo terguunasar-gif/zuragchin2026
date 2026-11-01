@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Images, LogOut, Menu, Settings, X } from 'lucide-react';
+import { ChevronDown, Images, LogOut, Menu, Settings, Smartphone, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePwaInstall } from '../../lib/pwaInstall';
 import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../../lib/visitedAlbums';
 import { BrandLogo } from '../BrandMark';
 
@@ -17,7 +18,15 @@ const MENU_LINKS = [
 export default function HomeHeader() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
+  const { installed } = usePwaInstall();
   const [open, setOpen] = useState(false);
+
+  function scrollToInstall() {
+    setOpen(false);
+    window.setTimeout(() => {
+      document.getElementById('app-install')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -46,9 +55,21 @@ export default function HomeHeader() {
             onClick={() => { navigate('/'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             className="hover:opacity-80 transition-opacity min-w-0"
           >
-            <BrandLogo />
+            <span className="sm:hidden"><BrandLogo size="sm" truncate /></span>
+            <span className="hidden sm:inline-flex"><BrandLogo truncate /></span>
           </button>
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {!installed && (
+              <button
+                type="button"
+                onClick={scrollToInstall}
+                className="flex items-center gap-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl h-9 px-2 sm:px-2.5 text-xs"
+                aria-label="Апп суулгах"
+              >
+                <Smartphone className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Апп</span>
+              </button>
+            )}
             {profile ? (
               <button
                 onClick={() => setOpen(true)}
@@ -59,7 +80,7 @@ export default function HomeHeader() {
             ) : (
               <button
                 onClick={() => navigate('/auth/login')}
-                className="text-sm font-medium text-stone-200 hover:text-white px-3 py-2"
+                className="text-sm font-medium text-stone-200 hover:text-white px-2 sm:px-3 py-2"
               >
                 Нэвтрэх
               </button>
@@ -105,6 +126,11 @@ export default function HomeHeader() {
               </div>
             )}
             <div className="flex-1 overflow-y-auto py-2">
+              {!installed && (
+                <button onClick={scrollToInstall} className="w-full flex items-center gap-3 px-4 py-3 text-amber-400 hover:bg-white/5 text-sm font-medium">
+                  <Smartphone className="w-4 h-4" /> Апп суулгах
+                </button>
+              )}
               {profile && (
                 <button onClick={() => go('/dashboard')} className="w-full flex items-center gap-3 px-4 py-3 text-stone-200 hover:bg-white/5 text-sm">
                   <Settings className="w-4 h-4 text-amber-400" /> Хяналтын самбар

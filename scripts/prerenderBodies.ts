@@ -56,6 +56,22 @@ const BODIES: Record<string, string> = {
       <a class="border border-white/15 px-4 py-2 rounded-xl" href="/auth/register">Бүртгүүлэх</a>
     </p>
   </article>
+  <section id="app-install" class="max-w-3xl mx-auto px-6 pb-10 text-left">
+    <div class="rounded-3xl border border-amber-400/40 px-6 py-6">
+      <h2 class="text-2xl font-bold text-white">Апп суулгах — утсандаа нүүр дэлгэцнээс нээх</h2>
+      <p class="text-stone-300 mt-2">Play Store, App Store-оос хайхгүй. Энэ вэбсайтаас шууд утасныхаа нүүр дэлгэцэнд Zuragchin-г суулгаад, апп шиг нээнэ.</p>
+      <h3 class="text-lg font-semibold mt-4">Андройд</h3>
+      <ol class="text-stone-300 list-decimal pl-5 mt-1">
+        <li>Chrome-ийн баруун дээд ⋮ цэсийг нээнэ</li>
+        <li>Install app эсвэл Add to Home screen / Апп суулгах-ийг сонгоно</li>
+      </ol>
+      <h3 class="text-lg font-semibold mt-4">iPhone</h3>
+      <ol class="text-stone-300 list-decimal pl-5 mt-1">
+        <li>Safari-ийн Share (хуваалцах) товчийг дарна</li>
+        <li>Add to Home Screen / Нүүр дэлгэцэд нэмэх-ийг сонгоно</li>
+      </ol>
+    </div>
+  </section>
   <section class="max-w-7xl mx-auto px-6 pb-16">
     <h2 class="text-2xl font-bold mb-3">Зурагчингууд</h2>
     <p class="text-stone-400 mb-4">Мэргэжлийн зурагчдыг чиглэл, байршлаар хайна.</p>

@@ -23,13 +23,13 @@ export default function BrandMark({ className = 'w-8 h-8' }: { className?: strin
 }
 
 /** Лого + «Zuragchin.mn» бичиг */
-export function BrandLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+export function BrandLogo({ size = 'md', truncate = false }: { size?: 'sm' | 'md' | 'lg'; truncate?: boolean }) {
   const mark = size === 'lg' ? 'w-10 h-10' : size === 'sm' ? 'w-7 h-7' : 'w-8 h-8';
   const text = size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-sm' : 'text-base';
   return (
-    <span className="flex items-center gap-2.5">
+    <span className={`flex items-center gap-2.5 ${truncate ? 'min-w-0 max-w-full' : ''}`}>
       <BrandMark className={`${mark} flex-shrink-0`} />
-      <span className={`font-brand font-semibold tracking-tight ${text}`}>
+      <span className={`font-brand font-semibold tracking-tight ${text} ${truncate ? 'truncate' : ''}`}>
         <span className="text-white">Zuragchin</span><span className="text-amber-400">.mn</span>
       </span>
     </span>
