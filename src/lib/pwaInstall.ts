@@ -18,6 +18,11 @@ type Listener = () => void;
 
 let deferred: InstallPromptEvent | null = null;
 let installedNow = false;
+/** getInstalledRelatedApps-ийн хариу. Хоосон жагсаалт нь устгасны дараа дахин харуулна. */
+let relatedInstall: 'unknown' | 'installed' | 'absent' = 'unknown';
+let relatedChecked = false;
+/** Суулгасны дараа хөтчийн жагсаалт түр хоцорч болно. Энэ хугацаанд хоосон хариуг устгалаа гэж үзэхгүй. */
+let installedAt = 0;
 const listeners = new Set<Listener>();
 
 function emit() {
@@ -44,6 +49,8 @@ function bindInstallListeners() {
   window.addEventListener('appinstalled', () => {
     deferred = null;
     installedNow = true;
+    relatedInstall = 'installed';
+    installedAt = Date.now();
     emit();
   });
 }
@@ -70,6 +77,8 @@ export async function promptInstall(): Promise<InstallOutcome> {
     const choice = await event.userChoice;
     if (choice.outcome === 'accepted') {
       installedNow = true;
+      relatedInstall = 'installed';
+      installedAt = Date.now();
       emit();
       return 'accepted';
     }
@@ -85,21 +94,70 @@ export function phonePlatform(): PhonePlatform {
   return 'other';
 }
 
-function isDisplayModeStandalone(): boolean {
+/** Суулгасан апп өөрийн цонхоороо нээгдсэн үе. Энгийн таб биш. */
+export function isDisplayModeStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = navigator as Navigator & { standalone?: boolean };
   if (nav.standalone === true) return true;
-  return window.matchMedia('(display-mode: standalone)').matches;
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: minimal-ui)').matches
+    || window.matchMedia('(display-mode: window-controls-overlay)').matches;
 }
 
-/** Суулгасан цонх (standalone) эсвэл энэ сесс дээр дөнгөж суулгасан. */
-export function isRunningAsApp(): boolean {
-  return installedNow || isDisplayModeStandalone();
+type RelatedAppsNavigator = Navigator & {
+  getInstalledRelatedApps?: () => Promise<Array<{ platform?: string }>>;
+};
+
+function hasRelatedAppsApi(): boolean {
+  return typeof navigator !== 'undefined'
+    && typeof (navigator as RelatedAppsNavigator).getInstalledRelatedApps === 'function';
 }
 
-/** Хөтчийн таб дээр дөнгөж суулгасан — баталгааны мөрийг харуулахад. */
-export function justInstalledInBrowser(): boolean {
-  return installedNow && !isDisplayModeStandalone();
+/**
+ * Chrome/Edge: манифестын related_applications-аар энэ PWA суусан эсэхийг асууна.
+ * Устгасан бол жагсаалт хоосон болж, карт дахин гарна. localStorage ашиглахгүй.
+ */
+export async function refreshRelatedInstall(): Promise<void> {
+  const nav = navigator as RelatedAppsNavigator;
+  if (typeof nav.getInstalledRelatedApps !== 'function') {
+    relatedChecked = true;
+    relatedInstall = 'unknown';
+    emit();
+    return;
+  }
+  try {
+    const apps = await nav.getInstalledRelatedApps();
+    const installed = Array.isArray(apps) && apps.length > 0;
+    if (installed) {
+      relatedInstall = 'installed';
+      installedNow = true;
+    } else if (installedNow && Date.now() - installedAt < 4000) {
+      relatedInstall = 'installed';
+    } else {
+      relatedInstall = 'absent';
+      if (!isDisplayModeStandalone()) installedNow = false;
+    }
+  } catch {
+    relatedInstall = 'unknown';
+  }
+  relatedChecked = true;
+  emit();
+}
+
+/**
+ * Карт харагдах эсэх.
+ * Суулгасан цонх, эсвэл хөтөч «аль хэдийн суусан» гэж хэлбэл нууна.
+ * beforeinstallprompt ирвэл суугаагүй тул харуулна. iOS дээр зөвхөн standalone-аар танина.
+ */
+export function shouldShowInstall(): boolean {
+  if (isDisplayModeStandalone()) return false;
+  // Суусан гэж батлагдвал суулгах цонх ирсэн ч картыг харуулахгүй.
+  if (relatedInstall === 'installed') return false;
+  if (installedNow && relatedInstall !== 'absent') return false;
+  if (canPromptInstall()) return true;
+  if (relatedInstall === 'absent') return true;
+  if (hasRelatedAppsApi() && !relatedChecked) return false;
+  return true;
 }
 
 /** iPhone дээрх жинхэнэ Safari. Chrome (CriOS) болон апп доторх цонх биш. */
@@ -111,29 +169,40 @@ export function isIosSafari(): boolean {
 
 export function usePwaInstall() {
   const [canPrompt, setCanPrompt] = useState(canPromptInstall);
-  const [installed, setInstalled] = useState(isRunningAsApp);
-  const [justInstalled, setJustInstalled] = useState(justInstalledInBrowser);
+  const [showInstall, setShowInstall] = useState(shouldShowInstall);
 
   useEffect(() => {
     const sync = () => {
       setCanPrompt(canPromptInstall());
-      setInstalled(isRunningAsApp());
-      setJustInstalled(justInstalledInBrowser());
+      setShowInstall(shouldShowInstall());
     };
     sync();
     const detach = onInstallState(sync);
-    const mq = window.matchMedia('(display-mode: standalone)');
-    mq.addEventListener('change', sync);
+    void refreshRelatedInstall();
+    const onReturn = () => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshRelatedInstall();
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
+    window.addEventListener('pageshow', onReturn);
+    const queries = ['standalone', 'minimal-ui', 'window-controls-overlay'].map(mode => {
+      const mq = window.matchMedia(`(display-mode: ${mode})`);
+      mq.addEventListener('change', sync);
+      return mq;
+    });
     return () => {
       detach();
-      mq.removeEventListener('change', sync);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
+      window.removeEventListener('pageshow', onReturn);
+      queries.forEach(mq => mq.removeEventListener('change', sync));
     };
   }, []);
 
   return {
     canPrompt,
-    installed,
-    justInstalled,
+    showInstall,
     platform: phonePlatform(),
     promptInstall,
   };

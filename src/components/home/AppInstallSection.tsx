@@ -151,22 +151,12 @@ function InstallGuide({ kind, onClose }: { kind: Guide; onClose: () => void }) {
 
 /** Нүүр хуудасны апп суулгах хэсэг. Дэлгүүрийн жагсаалт биш, сайтаас PWA суулгана. */
 export default function AppInstallSection() {
-  const { canPrompt, installed, justInstalled, platform, promptInstall } = usePwaInstall();
+  const { canPrompt, showInstall, platform, promptInstall } = usePwaInstall();
   const [guide, setGuide] = useState<Guide | null>(null);
   const [note, setNote] = useState('');
   const inApp = inAppBrowserName();
 
-  if (justInstalled) {
-    return (
-      <section className="px-4 sm:px-6 pt-5" aria-live="polite">
-        <p className="max-w-3xl mx-auto rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Суулгалаа. Нүүр дэлгэцнээсээ Zuragchin-г нээнэ үү.
-        </p>
-      </section>
-    );
-  }
-
-  if (installed) return null;
+  if (!showInstall) return null;
 
   async function onAndroid() {
     const outcome = await promptInstall();
@@ -179,7 +169,7 @@ export default function AppInstallSection() {
   }
 
   return (
-    <section id="app-install" className="scroll-mt-20 px-4 sm:px-6 pt-5 pb-1">
+    <section id="app-install" className="scroll-mt-24 mb-10 pb-10 border-b border-white/10">
       <div className="max-w-3xl mx-auto rounded-3xl border border-amber-400/40 bg-stone-900/90 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.18),transparent_58%)] p-4 sm:p-6">
         <div className="flex items-start gap-3">
           <span className="flex-shrink-0 w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center">

@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase';
 import HomeAlbumsSection from '../components/HomeAlbumsSection';
 import AiBoothShowcase from '../components/AiBoothShowcase';
 import AiVideoShowcase from '../components/AiVideoShowcase';
-import AppInstallSection from '../components/home/AppInstallSection';
 import HomeHeader from '../components/home/HomeHeader';
 import HomeStudiosSections from '../components/home/HomeStudiosSections';
 import HomeFooter from '../components/home/HomeFooter';
@@ -127,9 +126,8 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-stone-950 text-white">
       <HomeHeader />
-      <AppInstallSection />
 
-      <section className="px-4 sm:px-6 pt-6 pb-4 sm:pt-10 sm:pb-8">
+      <section className="px-4 sm:px-6 pt-8 pb-4 sm:pt-14 sm:pb-8">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-[2.05rem] leading-[1.12] sm:text-5xl md:text-6xl font-extrabold tracking-tight">
             Гэрэл зургаараа<br />
