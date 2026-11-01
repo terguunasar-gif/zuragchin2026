@@ -35,6 +35,15 @@ export default defineConfig({
         background_color: '#0c0a09',
         theme_color: '#0c0a09',
         prefer_related_applications: false,
+        // Chrome/Edge-д «аль хэдийн суусан» эсэхийг getInstalledRelatedApps()-аар таниулна.
+        // prefer_related_applications хэвээр false тул суулгалт Play Store руу үсрэхгүй.
+        related_applications: [
+          {
+            platform: 'webapp',
+            url: '/site.webmanifest',
+            id: 'https://www.zuragchin.mn/',
+          },
+        ],
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

@@ -18,7 +18,7 @@ const MENU_LINKS = [
 export default function HomeHeader() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
-  const { installed } = usePwaInstall();
+  const { showInstall } = usePwaInstall();
   const [open, setOpen] = useState(false);
 
   function scrollToInstall() {
@@ -59,7 +59,7 @@ export default function HomeHeader() {
             <span className="hidden sm:inline-flex"><BrandLogo truncate /></span>
           </button>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            {!installed && (
+            {showInstall && (
               <button
                 type="button"
                 onClick={scrollToInstall}
@@ -126,7 +126,7 @@ export default function HomeHeader() {
               </div>
             )}
             <div className="flex-1 overflow-y-auto py-2">
-              {!installed && (
+              {showInstall && (
                 <button onClick={scrollToInstall} className="w-full flex items-center gap-3 px-4 py-3 text-amber-400 hover:bg-white/5 text-sm font-medium">
                   <Smartphone className="w-4 h-4" /> Апп суулгах
                 </button>

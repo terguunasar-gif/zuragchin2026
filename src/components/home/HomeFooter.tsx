@@ -4,6 +4,7 @@ import { BrandLogo } from '../BrandMark';
 import { normalizeUrl, useSiteContact } from '../../lib/siteContact';
 import YouTubeAutoplay from '../YouTubeAutoplay';
 import { useHomeVideo } from '../../lib/homeVideo';
+import AppInstallSection from './AppInstallSection';
 import HomePricing from './HomePricing';
 
 /** Доод хэсэг: холбоо барих, Facebook, зохиогчийн эрх, нөхцөл/нууцлал. Бусад сошиалыг админ тохируулсан бол харуулна. */
@@ -30,6 +31,7 @@ export default function HomeFooter() {
           </section>
         )}
         <HomePricing />
+        <AppInstallSection />
         <BrandLogo />
         <p className="text-stone-500 text-sm leading-relaxed mt-3 max-w-md">
           Зурагчид болон зохион байгуулагчдыг холбогч Монголын тэргүүлэх платформ.
