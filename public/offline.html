@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c0a09" />
+    <meta name="robots" content="noindex" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Zuragchin" />
+    <title>Холболт алга — Zuragchin.mn</title>
+    <style>
+      html, body { margin: 0; background: #0c0a09; color: #fafaf9; }
+      body {
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      main {
+        min-height: 100vh;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+      }
+      svg { width: 72px; height: 72px; }
+      h1 { font-size: 1.5rem; line-height: 1.3; margin: 20px 0 8px; }
+      p { color: #a8a29e; margin: 0 auto 24px; max-width: 28rem; line-height: 1.5; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+      button, a {
+        appearance: none;
+        border-radius: 12px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button { background: #f59e0b; color: #0c0a09; border: 0; }
+      a { color: #fafaf9; border: 1px solid rgba(255, 255, 255, 0.15); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Zuragchin.mn">
+          <path d="M50.00 30.80L80.68 13.09A48 48 0 0 1 97.31 58.11L66.63 40.40Z" fill="#fbbf24"/>
+          <path d="M66.63 40.40L97.31 58.11A48 48 0 0 1 66.63 95.03L66.63 59.60Z" fill="#f59e0b"/>
+          <path d="M66.63 59.60L66.63 95.03A48 48 0 0 1 19.32 86.91L50.00 69.20Z" fill="#f59e0b"/>
+          <path d="M50.00 69.20L19.32 86.91A48 48 0 0 1 2.69 41.89L33.37 59.60Z" fill="#d97706"/>
+          <path d="M33.37 59.60L2.69 41.89A48 48 0 0 1 33.37 4.97L33.37 40.40Z" fill="#b45309"/>
+          <path d="M33.37 40.40L33.37 4.97A48 48 0 0 1 80.68 13.09L50.00 30.80Z" fill="#d97706"/>
+          <polygon points="50.00,30.80 66.63,40.40 66.63,59.60 50.00,69.20 33.37,59.60 33.37,40.40" fill="#0c0a09"/>
+          <circle cx="55.76" cy="44.24" r="3.60" fill="#fff"/>
+        </svg>
+        <h1>Интернэт холболт алга</h1>
+        <p>Zuragchin.mn-ийг нээхийн тулд сүлжээнд холбогдоод дахин оролдоно уу.</p>
+        <div class="actions">
+          <button type="button" onclick="location.reload()">Дахин оролдох</button>
+          <a href="/">Нүүр хуудас</a>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

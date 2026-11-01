@@ -17,7 +17,7 @@
   "routes": [
     { "handle": "filesystem" },
     { "src": "^/assets/(.*)$", "dest": "/assets/$1" },
-    { "src": "^/(favicon\\.ico|favicon\\.svg|favicon-32\\.png|apple-touch-icon\\.png|icon-192\\.png|icon-512\\.png|og-image\\.png|site\\.webmanifest|robots\\.txt|sitemap\\.xml)$", "dest": "/$1" },
+    { "src": "^/(favicon\\.ico|favicon\\.svg|favicon-32\\.png|apple-touch-icon\\.png|icon-192\\.png|icon-512\\.png|icon-maskable-192\\.png|icon-maskable-512\\.png|og-image\\.png|site\\.webmanifest|robots\\.txt|sitemap\\.xml|offline\\.html|sw\\.js|registerSW\\.js)$", "dest": "/$1" },
     { "src": "^/(.*\\.(?:js|css|map|png|svg|ico|webp|txt|xml|webmanifest|json|woff2?))$", "dest": "/$1" },
     { "src": "^/$", "dest": "/index.html" },
     { "src": "^/explore/?$", "dest": "/explore.html" },
@@ -48,5 +48,22 @@
     { "src": "^/albums/?$", "dest": "/app.html" },
     { "src": "^/my-purchases/?$", "dest": "/app.html" },
     { "src": "/.*", "status": 404, "dest": "/404.html" }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    },
+    {
+      "source": "/registerSW.js",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    },
+    {
+      "source": "/site.webmanifest",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json" },
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    }
   ]
 }
