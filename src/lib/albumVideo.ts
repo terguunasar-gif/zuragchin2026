@@ -13,12 +13,16 @@ export interface VideoTemplate {
   sample_video_url: string;
   preview_url: string;
   tags: string;
+  /** 'glam' = Glambot маягийн удаашруулсан кино камер (update-84) */
+  style?: 'action' | 'glam';
 }
 
 export interface VideoTemplatesInfo {
   enabled: boolean;
   price: number;
   seconds: number;
+  /** Glam Motion видеоны урт (сек) */
+  glamSeconds?: number;
   templates: VideoTemplate[];
 }
 

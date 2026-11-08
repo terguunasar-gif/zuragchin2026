@@ -114,7 +114,7 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
           <div className="min-w-0 flex-1">
             <p className="text-white font-semibold flex items-center gap-2"><Clapperboard className="w-4 h-4 text-fuchsia-300" /> AI видео үүсгэх</p>
             <p className="text-stone-500 text-xs truncate">
-              {info ? `${info.seconds} секунд · ${aspect === '9:16' ? 'босоо' : 'хэвтээ'} · ₮${price.toLocaleString()}` : 'Ачаалж байна…'}
+              {info ? `${picked?.style === 'glam' ? (info.glamSeconds ?? 6) : info.seconds} секунд · ${aspect === '9:16' ? 'босоо' : 'хэвтээ'} · ₮${price.toLocaleString()}` : 'Ачаалж байна…'}
             </p>
           </div>
           <button onClick={onClose} className="text-stone-400 hover:text-white p-1" aria-label="Хаах"><X className="w-5 h-5" /></button>
@@ -128,11 +128,27 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
             : (
               <>
                 <p className="text-stone-400 text-sm mb-4">
-                  Загвараа сонгоно уу. Видео эхний ~2 секундэд таны зураг хэвээрээ байж, дараа нь загварын дагуу хөдөлгөөнд орно.
-                  Бэлэн видео цомгийн <b className="text-stone-200">🎬 AI видео</b> хавтсанд орж, дэлгэцийн горимд гарна.
+                  Загвараа сонгоно уу. Бэлэн видео цомгийн <b className="text-stone-200">🎬 AI видео</b> хавтсанд орж, дэлгэцийн горимд гарна.
+                </p>
+                {info.templates.some(t => t.style === 'glam') && (
+                  <>
+                    <p className="text-amber-300 text-sm font-semibold mb-1">✨ Glam Motion</p>
+                    <p className="text-stone-500 text-xs mb-3">
+                      Glambot маягийн удаашруулсан кино камер — {info.glamSeconds ?? 6} секунд, үс, даавуу намирч, камер аажим хөдөлнө. Хүмүүс байрлалаа хадгална.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
+                      {info.templates.filter(t => t.style === 'glam').map(tpl => (
+                        <TemplateCard key={tpl.id} tpl={tpl} active={picked?.id === tpl.id} onPick={() => setPicked(tpl)} />
+                      ))}
+                    </div>
+                    <p className="text-fuchsia-300 text-sm font-semibold mb-1">🎬 Хөгжилтэй үйлдэл</p>
+                  </>
+                )}
+                <p className="text-stone-500 text-xs mb-3">
+                  Видео эхний ~2 секундэд таны зураг хэвээрээ байж, дараа нь загварын дагуу хөдөлгөөнд орно ({info.seconds} секунд).
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {info.templates.map(tpl => (
+                  {info.templates.filter(t => t.style !== 'glam').map(tpl => (
                     <TemplateCard key={tpl.id} tpl={tpl} active={picked?.id === tpl.id} onPick={() => setPicked(tpl)} />
                   ))}
                 </div>

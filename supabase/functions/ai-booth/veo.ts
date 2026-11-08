@@ -1,7 +1,23 @@
-// Google Veo (Gemini API) — AI зургаас тохирох хөдөлгөөнтэй богино видео үүсгэх.
-// predictLongRunning → operation name → GET operation (done) → video uri → татаж авах.
+// AI зургаас богино видео үүсгэх — хоёр үйлчилгээ үзүүлэгчтэй (update-84):
+//
+//  • fal.ai (FAL_KEY secret байвал анхдагч) — queue API: submit → status → result → video.url
+//      Загвар: FAL_VIDEO_MODEL (анхдагч google/gemini-omni-flash/v1.2/image-to-video).
+//      Operation-ийг "fal|<response_url>" хэлбэрээр хадгална.
+//  • Google Veo (Gemini API) — predictLongRunning → operation → video uri.
+//      АНХААР: veo-3.1-*-preview загварууд 2026-10-22-нд хаагдсан. FAL_KEY-гүй бол
+//      GEMINI_VIDEO_MODEL / ALBUM_VIDEO_MODEL-д ажиллаж буй загвар заавал тохируулна.
+//
+// startVeo / pollVeo / downloadVeo-ийн интерфейс өөрчлөгдөөгүй тул ai-booth, album-video хоёулаа шууд ажиллана.
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const FAL_KEY = Deno.env.get("FAL_KEY") ?? "";
+const FAL_VIDEO_MODEL = Deno.env.get("FAL_VIDEO_MODEL") || "google/gemini-omni-flash/v1.2/image-to-video";
+const FAL_QUEUE = "https://queue.fal.run";
+
+/** fal.ai ашиглах эсэх (FAL_KEY байвал) */
+export function usingFal(): boolean {
+  return !!FAL_KEY;
+}
 
 /** AI-аас зурагт тохирох хөдөлгөөн асуух заавар */
 const MOTION_INSTRUCTION = [
@@ -58,6 +74,8 @@ export interface VeoStartOptions {
   durationSeconds?: number;
   aspectRatio?: "9:16" | "16:9";
   resolution?: "720p" | "1080p";
+  /** fal.ai дуусмагц POST хийх URL (заавал биш) — polling-оос гадна хурдан дуусгана */
+  webhookUrl?: string;
 }
 
 export class VeoError extends Error {
@@ -68,6 +86,7 @@ export class VeoError extends Error {
 
 /** Видео үүсгэлтийг эхлүүлж operation name буцаана. Параметр татгалзвал хялбаршуулж дахин оролдоно. */
 export async function startVeo(o: VeoStartOptions): Promise<string> {
+  if (FAL_KEY) return await startFal(o);
   // Gemini API-ийн Veo predictLongRunning нь bytesBase64Encoded хэлбэрийг хүлээж авна
   // (inlineData-г «isn't supported» гэж татгалздаг). Аль алиныг нь оролдоно.
   const asBytes = (i: { mimeType: string; data: string }) => ({ bytesBase64Encoded: i.data, mimeType: i.mimeType });
@@ -114,6 +133,7 @@ export type VeoPoll =
   | { done: true; error: string };
 
 export async function pollVeo(apiKey: string, operationName: string): Promise<VeoPoll> {
+  if (operationName.startsWith("fal|")) return await pollFal(operationName.slice(4));
   const res = await fetch(`${API_BASE}/${operationName}`, { headers: { "x-goog-api-key": apiKey } });
   const text = await res.text();
   if (!res.ok) throw new VeoError(`Veo poll ${res.status}: ${text.slice(0, 300)}`, res.status);
@@ -131,7 +151,81 @@ export async function pollVeo(apiKey: string, operationName: string): Promise<Ve
 }
 
 export async function downloadVeo(apiKey: string, uri: string): Promise<Uint8Array> {
-  const res = await fetch(uri, { headers: { "x-goog-api-key": apiKey }, redirect: "follow" });
-  if (!res.ok) throw new VeoError(`Veo download ${res.status}`, res.status);
+  // Google-ийн файл түлхүүр шаарддаг; fal.ai-ийн CDN линк нийтийн
+  const isGoogle = uri.includes("generativelanguage.googleapis.com");
+  const res = await fetch(uri, { headers: isGoogle ? { "x-goog-api-key": apiKey } : {}, redirect: "follow" });
+  if (!res.ok) throw new VeoError(`Video download ${res.status}`, res.status);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+// ── fal.ai ───────────────────────────────────────────────────────────────────
+
+/** Загвар бүрийн оролтын хэлбэр өөр — Kling: duration "5"/"10", aspect-гүй; бусад: integer секунд */
+function falInput(model: string, o: VeoStartOptions, imageDataUri: string, minimal: boolean): Record<string, unknown> {
+  const prompt = o.prompt ?? motionVideoPrompt(FALLBACK_MOTION);
+  const secs = o.durationSeconds ?? 6;
+  if (minimal) return { prompt, image_url: imageDataUri };
+  if (/kling/i.test(model)) {
+    return {
+      prompt,
+      image_url: imageDataUri,
+      duration: secs > 7 ? "10" : "5",
+      negative_prompt: "morphing faces, extra people, distorted hands, blur, text, watermark, low quality",
+    };
+  }
+  return {
+    prompt,
+    image_url: imageDataUri,
+    aspect_ratio: o.aspectRatio ?? "9:16",
+    resolution: o.resolution ?? "720p",
+    duration: Math.max(3, Math.min(15, Math.round(secs))),
+  };
+}
+
+async function startFal(o: VeoStartOptions): Promise<string> {
+  // Endpoint ID нь "owner/app/..." хэлбэртэй; Veo-гийн нэр ирвэл FAL_VIDEO_MODEL-ийг ашиглана
+  const model = o.model.includes("/") ? o.model : FAL_VIDEO_MODEL;
+  const dataUri = `data:${o.image.mimeType};base64,${o.image.data}`;
+  const qs = o.webhookUrl ? `?fal_webhook=${encodeURIComponent(o.webhookUrl)}` : "";
+  let lastErr = "";
+  for (const minimal of [false, true]) {
+    const res = await fetch(`${FAL_QUEUE}/${model}${qs}`, {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(falInput(model, o, dataUri, minimal)),
+    });
+    const text = await res.text();
+    if (res.ok) {
+      const data = JSON.parse(text);
+      const id = String(data?.request_id ?? "");
+      if (!id) throw new VeoError(`fal: request_id missing: ${text.slice(0, 300)}`);
+      // response_url байхгүй бол owner/app-аас бүтээнэ (queue URL зөвхөн эхний 2 хэсгийг ашигладаг)
+      const app = model.split("/").slice(0, 2).join("/");
+      const responseUrl = String(data?.response_url || `${FAL_QUEUE}/${app}/requests/${id}`);
+      return `fal|${responseUrl}`;
+    }
+    lastErr = `fal start ${res.status}: ${text.slice(0, 500)}`;
+    // 422 = параметр буруу → хамгийн бага оролтоор дахин; бусад алдааг шууд шиднэ
+    if (res.status !== 422) throw new VeoError(lastErr, res.status);
+  }
+  throw new VeoError(lastErr, 422);
+}
+
+async function pollFal(responseUrl: string): Promise<VeoPoll> {
+  const auth = { Authorization: `Key ${FAL_KEY}` };
+  const st = await fetch(`${responseUrl}/status`, { headers: auth });
+  const stText = await st.text();
+  if (!st.ok) throw new VeoError(`fal status ${st.status}: ${stText.slice(0, 300)}`, st.status);
+  const status = JSON.parse(stText);
+  if (status?.status !== "COMPLETED") return { done: false };
+  if (status?.error) return { done: true, error: `fal: ${String(status.error).slice(0, 500)}` };
+
+  const res = await fetch(responseUrl, { headers: auth });
+  const text = await res.text();
+  // Загварын алдаа (аюулгүй байдал, 422, 500) энд ирнэ — дахин оролдох шаардлагатай
+  if (!res.ok) return { done: true, error: `fal result ${res.status}: ${text.slice(0, 500)}` };
+  const data = JSON.parse(text);
+  const url = data?.video?.url ?? data?.videos?.[0]?.url ?? "";
+  if (!url) return { done: true, error: `fal: no video (${text.slice(0, 300)})` };
+  return { done: true, videoUri: String(url) };
 }
