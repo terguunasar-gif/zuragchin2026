@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, ExternalLink, Search } from 'lucide-react';
+import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface AdminAlbum {
@@ -33,6 +33,8 @@ export default function AdminAlbumsTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [extending, setExtending] = useState<AdminAlbum | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -50,13 +52,18 @@ export default function AdminAlbumsTab() {
   async function load() {
     setLoading(true);
 
-    const COLS = 'id,name,event_date,status,share_link,download_price,created_at,owner_id,users(name,email)';
+    setLoadError('');
+    // `users!owner_id` — album_photographer_quota хүснэгт albums↔users хоёр дахь холбоо үүсгэдэг тул
+    // FK-г заахгүй бол PostgREST «more than one relationship» алдаа өгч жагсаалт хоосон гардаг байсан.
+    const COLS = 'id,name,event_date,status,share_link,download_price,created_at,owner_id,users!owner_id(name,email)';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let albumsData: any[] | null = null;
     let withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at,listed_until,listing_hidden').order('created_at', { ascending: false });
     if (withExpiry.error) withExpiry = await supabase.from('albums').select(COLS + ',expires_at,files_purged_at').order('created_at', { ascending: false });
     if (withExpiry.error) {
-      ({ data: albumsData } = await supabase.from('albums').select(COLS).order('created_at', { ascending: false }));
+      const plain = await supabase.from('albums').select(COLS).order('created_at', { ascending: false });
+      albumsData = plain.data;
+      if (plain.error) setLoadError(plain.error.message);
     } else {
       albumsData = withExpiry.data;
     }
@@ -144,6 +151,12 @@ export default function AdminAlbumsTab() {
         </div>
       </div>
 
+      {loadError && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3">
+          Цомгуудыг ачаалж чадсангүй: {loadError}
+        </div>
+      )}
+
       {/* Summary */}
       <div className="flex flex-wrap gap-2">
         {['active', 'draft', 'closed'].map(s => {
@@ -204,7 +217,15 @@ export default function AdminAlbumsTab() {
                       {a.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3"><ExpiryCell expiresAt={a.expires_at} purgedAt={a.files_purged_at} /></td>
+                  <td className="px-4 py-3">
+                    <ExpiryCell expiresAt={a.expires_at} purgedAt={a.files_purged_at} />
+                    {!a.files_purged_at && (
+                      <button onClick={() => setExtending(a)}
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10">
+                        <CalendarPlus className="w-3 h-3" /> Сунгах
+                      </button>
+                    )}
+                  </td>
                   <td className="px-4 py-3"><ListingCell album={a} onChange={hidden => setAlbums(prev => prev.map(x => (x.id === a.id ? { ...x, listing_hidden: hidden } : x)))} /></td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.photo_count}</td>
                   <td className="px-4 py-3 text-right text-stone-300 text-sm">{a.total_sales}</td>
@@ -231,6 +252,85 @@ export default function AdminAlbumsTab() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {extending && (
+        <ExtendDialog
+          album={extending}
+          onClose={() => setExtending(null)}
+          onDone={newExpiry => {
+            setAlbums(prev => prev.map(x => (x.id === extending.id ? { ...x, expires_at: newExpiry } : x)));
+            setExtending(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Супер админ цомгийн хугацааг гараар сунгана (admin_extend_album RPC) */
+function ExtendDialog({ album, onClose, onDone }: { album: AdminAlbum; onClose: () => void; onDone: (newExpiry: string) => void }) {
+  const [days, setDays] = useState(30);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const base = Math.max(album.expires_at ? new Date(album.expires_at).getTime() : 0, Date.now());
+  const preview = new Date(base + days * 86400000);
+  const fmt = (d: Date) => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+
+  async function submit() {
+    if (!Number.isInteger(days) || days < 1 || days > 3650) { setErr('Хоногийн тоо 1–3650 байна'); return; }
+    setBusy(true); setErr('');
+    const { data, error } = await supabase.rpc('admin_extend_album', { p_album_id: album.id, p_days: days, p_note: note });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onDone(String(data));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-stone-950/80 backdrop-blur-sm" onClick={busy ? undefined : onClose} />
+      <div className="relative w-full max-w-sm bg-stone-900 border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-white font-semibold flex items-center gap-2"><CalendarPlus className="w-4 h-4 text-amber-400" /> Хугацаа сунгах</p>
+            <p className="text-stone-400 text-xs truncate mt-0.5">{album.name} · {album.owner_name}</p>
+          </div>
+          <button onClick={onClose} disabled={busy} className="text-stone-400 hover:text-white" aria-label="Хаах"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="flex gap-2">
+          {[7, 30, 60, 90].map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`flex-1 py-2 rounded-lg text-sm border ${days === d ? 'bg-amber-500 text-stone-950 border-amber-500 font-semibold' : 'border-white/10 text-stone-300 hover:bg-white/5'}`}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <label className="block">
+          <span className="text-stone-400 text-xs">Өөр хоног</span>
+          <input type="number" min={1} max={3650} value={days} onChange={e => setDays(Math.round(Number(e.target.value)))}
+            className="mt-1 w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500/50" />
+        </label>
+        <label className="block">
+          <span className="text-stone-400 text-xs">Тэмдэглэл (заавал биш)</span>
+          <input value={note} onChange={e => setNote(e.target.value)} maxLength={300} placeholder="Жишээ нь: бэлнээр төлсөн"
+            className="mt-1 w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500/50" />
+        </label>
+
+        <div className="bg-white/5 rounded-xl px-4 py-3 text-sm">
+          <p className="text-stone-400 text-xs">Одоо: {album.expires_at ? fmt(new Date(album.expires_at)) : '—'}</p>
+          <p className="text-white mt-0.5">Шинэ хугацаа: <b className="text-amber-300">{fmt(preview)}</b></p>
+          <p className="text-stone-500 text-[11px] mt-1">Хугацаа дууссан бол өнөөдрөөс, дуусаагүй бол дуусах өдрөөс эхэлж нэмэгдэнэ. Төлбөргүй.</p>
+        </div>
+
+        {err && <p className="text-red-400 text-sm">{err}</p>}
+
+        <button onClick={submit} disabled={busy}
+          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 font-semibold rounded-xl py-2.5 text-sm">
+          {busy && <Loader2 className="w-4 h-4 animate-spin" />} {days} хоногоор сунгах
+        </button>
       </div>
     </div>
   );
