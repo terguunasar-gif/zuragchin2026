@@ -263,8 +263,11 @@ export default function PhotoUploadPage() {
         } else {
           // Эх файлыг шахна — илт багасах үед л (аль хэдийн жижиг файлыг хөндөхгүй)
           try {
-            const c = await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
-            if (c.size < entry.file.size * 0.9) { originalBlob = c; compressed = true; }
+            // Худалдах цомгийн эх файл = худалдан авагчийн төлсөн зураг → сайтын тэмдэггүй.
+            // Үнэгүй цомгийн эх файлыг зочид чөлөөтэй татаж хуваалцдаг → жижиг Zuragchin.mn тэмдэгтэй (сурталчилгаа).
+            const c = await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE, siteBadge: !!album.is_free });
+            // Үнэгүй цомогт тэмдэгтэй хувилбарыг заавал ашиглана; бусад үед илт багассан бол л
+            if (album.is_free || c.size < entry.file.size * 0.9) { originalBlob = c; compressed = true; }
           } catch { /* шахаж чадаагүй бол эх файлаар нь */ }
         }
         const previewBlob = album.is_free

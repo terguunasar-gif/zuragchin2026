@@ -74,7 +74,7 @@ async function withBrand(url: string, raw: string, filename: string): Promise<st
   try {
     const blob = await (await fetch(url)).blob();
     const out = await applyWatermark(new File([blob], filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }),
-      { type: 'layers', value: layers, position: 'bottom-right', brandOnly: true, quality: 0.95 });
+      { type: 'layers', value: layers, position: 'bottom-right', brandOnly: true, quality: 0.95, siteBadge: false });
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result));
