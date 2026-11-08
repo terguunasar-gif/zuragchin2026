@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 interface Tpl {
   id: string; slug: string; name: string; description: string; emoji: string; prompt: string;
   sample_video_url: string; preview_url: string; tags: string; sort_order: number; is_active: boolean;
+  style: 'action' | 'glam';
 }
 
 /** Сайтын админ: цомгийн AI видео загварууд + үнэ, орлогын хуваарь */
@@ -129,6 +130,7 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
     setSaving(true);
     const { error } = await supabase.from('ai_video_templates').update({
       name: next.name, emoji: next.emoji, description: next.description, tags: next.tags, prompt: next.prompt,
+      style: next.style === 'glam' ? 'glam' : 'action',
       sort_order: Number(next.sort_order) || 0, is_active: next.is_active,
       sample_video_url: next.sample_video_url, preview_url: next.preview_url, updated_at: new Date().toISOString(),
     }).eq('id', tpl.id);
@@ -166,7 +168,7 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
             : <span className="text-2xl">{f.emoji}</span>}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-semibold truncate">{f.emoji} {f.name}</p>
+          <p className="text-white text-sm font-semibold truncate">{f.emoji} {f.name}{f.style === 'glam' && <span className="ml-2 text-[10px] text-amber-300 border border-amber-400/40 rounded px-1">GLAM</span>}</p>
           <p className="text-stone-500 text-xs truncate">{f.description}</p>
         </div>
         <span className={`text-[11px] px-2 py-0.5 rounded-full ${f.is_active ? 'bg-green-500/15 text-green-300' : 'bg-white/10 text-stone-400'}`}>
@@ -184,7 +186,18 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
           <input className={input} value={f.description} onChange={e => set('description', e.target.value)} placeholder="Тайлбар (эзэнд харагдана)" />
           <input className={input} value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="Тохирох арга хэмжээ (жишээ нь: Хурим, төрсөн өдөр)" />
           <div>
-            <p className="text-stone-400 text-xs mb-1">AI-д өгөх үйлдлийн тайлбар (англиар)</p>
+            <p className="text-stone-400 text-xs mb-1">Төрөл</p>
+            <select className={input} value={f.style === 'glam' ? 'glam' : 'action'} onChange={e => set('style', e.target.value as Tpl['style'])}>
+              <option value="action">🎬 Хөгжилтэй үйлдэл — эхний 2 сек царцаана, дараа нь үйлдэл</option>
+              <option value="glam">✨ Glam Motion — бүхэлдээ slow-motion кино камер</option>
+            </select>
+          </div>
+          <div>
+            <p className="text-stone-400 text-xs mb-1">
+              {f.style === 'glam'
+                ? 'Камерын хөдөлгөөн + эффект (англиар). Удаашруулалт, царай хадгалах дүрмийг систем өөрөө нэмнэ.'
+                : 'AI-д өгөх үйлдлийн тайлбар (англиар)'}
+            </p>
             <textarea className={`${input} min-h-[110px] font-mono text-xs`} value={f.prompt} onChange={e => set('prompt', e.target.value)} />
           </div>
           <div className="flex flex-wrap items-center gap-3">

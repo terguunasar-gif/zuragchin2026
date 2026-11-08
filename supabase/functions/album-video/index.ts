@@ -15,10 +15,15 @@
 // Deploy:  Dashboard → Edge Functions → album-video (Verify JWT OFF)
 // Secrets: GEMINI_API_KEY (ai-booth-тэй ижил), QPAY_* (ai-booth-тэй ижил)
 //          ALBUM_VIDEO_MODEL (default: veo-3.1-fast-generate-preview), ALBUM_VIDEO_SECONDS (8)
+//          FAL_KEY (update-84: байвал видеог fal.ai-аар үүсгэнэ), FAL_VIDEO_MODEL, GLAM_VIDEO_SECONDS (6)
+//
+// update-84 — «✨ Glam Motion» (Glambot загвар): загварын style = 'glam' бол эхний 2 сек царцаахгүй,
+// бүхэл видео нь удаашруулсан (slow-motion) кино камерын хөдөлгөөн. style = 'action' (анхдагч) хуучнаараа.
+//   POST /fal-webhook?video=…        fal.ai дуусмагц дуудна → видеог шууд татаж хадгална
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { downloadVeo, pollVeo, startVeo } from "../ai-booth/veo.ts";
+import { downloadVeo, pollVeo, startVeo, usingFal } from "../ai-booth/veo.ts";
 import { generateImage } from "../ai-booth/gemini.ts";
 
 const corsHeaders = {
@@ -33,6 +38,7 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const VIDEO_MODEL = Deno.env.get("ALBUM_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
 const IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 const VIDEO_SECONDS = Number(Deno.env.get("ALBUM_VIDEO_SECONDS") || 8);
+const GLAM_SECONDS = Number(Deno.env.get("GLAM_VIDEO_SECONDS") || 6);
 const AUTO_ATTEMPTS = 3;   // автоматаар дахин оролдох
 const MAX_ATTEMPTS = 6;    // эзэн «Дахин» дарж болох нийт хязгаар
 
@@ -89,6 +95,17 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/delete") return json(await remove(req, await readJson(req)));
     if (req.method === "POST" && path === "/admin/preview") return json(await adminPreview(req, await readJson(req)));
     if (req.method === "POST" && path === "/advance") return json(await advanceAlbum(await readJson(req)));
+    if (req.method === "POST" && path === "/fal-webhook") {
+      // Хариуг 15 сек дотор буцаах ёстой — татаж хадгалахыг арын горимд хийнэ.
+      // Webhook-ийн биеийг огт итгэхгүй: зөвхөн видеог «ахиулж», fal-аас өөрсдийн түлхүүрээр шалгана.
+      const id = url.searchParams.get("video") ?? "";
+      await req.text().catch(() => "");
+      const job = webhookAdvance(id);
+      // deno-lint-ignore no-explicit-any
+      const rt = (globalThis as any).EdgeRuntime;
+      if (rt?.waitUntil) rt.waitUntil(job); else await job;
+      return json({ ok: true });
+    }
     if (req.method === "POST" && path === "/qpay-callback") {
       await qpayCallback(url.searchParams.get("video") ?? "", await req.json().catch(() => ({})));
       return json({ ok: true });
@@ -119,10 +136,10 @@ async function settings() {
 async function listTemplates() {
   const s = await settings();
   const { data, error } = await db.from("ai_video_templates")
-    .select("id, slug, name, description, emoji, sample_video_url, preview_url, tags, sort_order")
+    .select("id, slug, name, description, emoji, sample_video_url, preview_url, tags, sort_order, style")
     .eq("is_active", true).order("sort_order", { ascending: true });
   if (error) throw new Error(`templates: ${error.message}`);
-  return { enabled: s.enabled, price: s.price, seconds: VIDEO_SECONDS, templates: data ?? [] };
+  return { enabled: s.enabled, price: s.price, seconds: VIDEO_SECONDS, glamSeconds: GLAM_SECONDS, templates: data ?? [] };
 }
 
 // ── Нэвтрэлт: цомгийн эзэн эсвэл админ ───────────────────────────────────────
@@ -160,7 +177,7 @@ async function start(req: Request, body: Record<string, unknown>) {
   if (album.status !== "active") throw new HttpError(409, "Цомог идэвхгүй байна");
   const s = await settings();
   if (!s.enabled) throw new HttpError(403, "AI видео одоогоор хаалттай байна");
-  if (!GEMINI_API_KEY) throw new HttpError(500, "GEMINI_API_KEY тохируулаагүй байна");
+  if (!GEMINI_API_KEY && !usingFal()) throw new HttpError(500, "GEMINI_API_KEY эсвэл FAL_KEY тохируулаагүй байна");
 
   const photoId = str(body.photoId);
   const templateId = str(body.templateId);
@@ -255,6 +272,20 @@ async function reload(id: string): Promise<Video | null> {
 }
 
 // ── Видео: эхлүүлэх / ахиулах ────────────────────────────────────────────────
+/** «✨ Glam Motion» — Glambot маягийн удаашруулсан кино камер. action = камерын хөдөлгөөн + эффект */
+function glamPrompt(action: string): string {
+  return [
+    `A ${GLAM_SECONDS}-second cinematic slow-motion video that starts from this exact photo,`,
+    "filmed like a high-speed robotic 'glam cam' at 120 frames per second played back in smooth slow motion.",
+    `Camera and effect: ${action.trim()}`,
+    "The people hold their pose with only small, graceful natural movements in slow motion: hair and clothing flowing softly, a gentle smile, a blink.",
+    "Rich depth and parallax between foreground, people and background; shallow depth of field; luxurious warm cinematic lighting.",
+    "Every person keeps exactly the same face, identity, hairstyle and clothing as in the photo; each person appears exactly once; no new people; no morphing.",
+    "Sharp, stable, photorealistic. No text, captions, subtitles or logos.",
+    "Elegant cinematic music swell with soft whoosh, no speech.",
+  ].join(" ");
+}
+
 function videoPrompt(action: string): string {
   return [
     `An ${VIDEO_SECONDS}-second video that starts from this exact photo.`,
@@ -307,8 +338,9 @@ async function beginVideo(v: Video): Promise<Video> {
   const attempts = (v.video_attempts ?? 0) + 1;
   try {
     if (!v.photo_id) throw new Error("Зураг устгагдсан байна");
-    const { data: tpl } = await db.from("ai_video_templates").select("prompt").eq("id", v.template_id ?? "").maybeSingle();
+    const { data: tpl } = await db.from("ai_video_templates").select("prompt, style").eq("id", v.template_id ?? "").maybeSingle();
     if (!tpl?.prompt) throw new Error("Загвар устгагдсан байна");
+    const glam = tpl.style === "glam";
     const src = await loadSourceImage(v.photo_id);
 
     // Постер: цомгийн тамгатай preview (тамгагүй эх зургийг олон нийтийн санд хадгалахгүй)
@@ -318,10 +350,11 @@ async function beginVideo(v: Video): Promise<Video> {
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
       image: { mimeType: src.mimeType, data: bytesToBase64(src.bytes) },
-      prompt: videoPrompt(tpl.prompt),
-      durationSeconds: VIDEO_SECONDS,
+      prompt: glam ? glamPrompt(tpl.prompt) : videoPrompt(tpl.prompt),
+      durationSeconds: glam ? GLAM_SECONDS : VIDEO_SECONDS,
       aspectRatio: v.aspect_ratio,
       resolution: "720p",
+      webhookUrl: `${SUPABASE_URL}/functions/v1/album-video/fal-webhook?video=${v.id}`,
     });
     const patch = { status: "processing", video_op: op, video_attempts: attempts, poster_url: posterUrl, error: "", updated_at: now() };
     await db.from("album_ai_videos").update(patch).eq("id", v.id);
@@ -412,6 +445,17 @@ async function advanceAlbum(body: Record<string, unknown>) {
     if (v.status === "done") done++;
   }
   return { done };
+}
+
+/** fal.ai webhook — тухайн видеог ахиулна (давхар дуудалт аюулгүй: advance нь status=processing-оор шүүнэ) */
+async function webhookAdvance(id: string) {
+  try {
+    if (!isUuid(id)) return;
+    const v = await reload(id);
+    if (v && v.status === "processing" && v.video_op) await advance(v);
+  } catch (e) {
+    console.error("fal webhook advance failed:", e instanceof Error ? e.message : e);
+  }
 }
 
 async function retry(req: Request, body: Record<string, unknown>) {
@@ -574,7 +618,7 @@ async function checkQpayPaid(invoiceId: string): Promise<{ isPaid: boolean; paym
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function friendlyError(raw: string): string {
   if (!raw) return "AI видеог бүтээж чадсангүй.";
-  if (/safety|blocked|prohibited|rai|filtered/i.test(raw)) {
+  if (/safety|blocked|prohibited|rai|filtered|content_policy|nsfw/i.test(raw)) {
     return "AI энэ зураг эсвэл загварыг аюулгүй байдлын шалтгаанаар татгалзлаа. Өөр зураг эсвэл загвар сонгоно уу.";
   }
   if (/\b429\b|RESOURCE_EXHAUSTED|quota|rate limit/i.test(raw)) return "AI сервер завгүй байна. Хэсэг хугацааны дараа дахин оролдоно уу.";
