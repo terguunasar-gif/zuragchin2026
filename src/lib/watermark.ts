@@ -31,7 +31,12 @@ interface WatermarkOptions {
   quality?: number;
   /** Худалдах цомгийн preview: өтгөн тамга, голоор дайрсан том бичиг, торон зураас — AI-аар арилгахад хэцүү */
   protect?: boolean;
+  /** update-87: жижиг «Zuragchin.mn» тэмдэг (сурталчилгаа). Анхдагч: асаалттай.
+   *  Цомог үүсгэгчийн лого/текстэй давхцахгүй буланд автоматаар байрлана. */
+  siteBadge?: boolean;
 }
+
+type Rect = { x: number; y: number; w: number; h: number };
 
 const DEFAULT_TILED_TEXT = 'zuragchin.mn';
 
@@ -46,6 +51,8 @@ export async function applyWatermark(
   canvas.height = Math.round(img.naturalHeight * scale);
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  // Цомог үүсгэгчийн лого/текстийн эзэлсэн хэсэг — сайтын тэмдгийг эдгээртэй давхцуулахгүй
+  const occupied: Rect[] = [];
 
   if (opts.type === 'none') {
     // тамгагүй
@@ -65,16 +72,17 @@ export async function applyWatermark(
           );
         } else if (layer.type === 'text' && layer.text) {
           // Булангийн байршилд нэг удаа харуулах текст
-          applyTextWatermarkPositioned(
+          occupied.push(applyTextWatermarkPositioned(
             ctx, canvas.width, canvas.height,
             layer.text, layer.opacity, layer.fontSize, layer.color, layer.position,
-          );
+          ));
         } else if (layer.type === 'image' && layer.imagePreview) {
           // Булангийн байршилд лого
-          await applyImageWatermarkPositioned(
+          const r = await applyImageWatermarkPositioned(
             ctx, canvas.width, canvas.height,
             layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position,
           );
+          if (r) occupied.push(r);
         }
       }
     } catch (err) {
@@ -92,6 +100,7 @@ export async function applyWatermark(
   }
 
   if (opts.protect && opts.type !== 'none' && !opts.brandOnly) applyProtection(ctx, canvas.width, canvas.height);
+  if (opts.siteBadge !== false) applySiteBadge(ctx, canvas.width, canvas.height, occupied);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -112,7 +121,7 @@ function applyTextWatermarkPositioned(
   fontSizePx: number,
   color: string,
   position: WatermarkPosition,
-) {
+): Rect {
   const fontSize = Math.max(12, Math.round(w * (fontSizePx / 1000)));
   const padding  = Math.round(w * 0.02);
 
@@ -132,6 +141,8 @@ function applyTextWatermarkPositioned(
   ctx.strokeText(text, x, y);
   ctx.fillText(text, x, y);
   ctx.restore();
+  // fillText-ийн y нь суурь шугам — дээд ирмэг нь ойролцоогоор y - th
+  return { x, y: y - th, w: tw, h: th * 1.25 };
 }
 
 // ── Булангийн байршилд лого зураг ────────────────────────────────────────────
@@ -143,7 +154,7 @@ async function applyImageWatermarkPositioned(
   opacity: number,
   imageSizePct: number,
   position: WatermarkPosition,
-) {
+): Promise<Rect | null> {
   try {
     const wmImg = await loadImageFromUrl(url);
     const wmW   = Math.round(w * (imageSizePct / 100));
@@ -151,15 +162,110 @@ async function applyImageWatermarkPositioned(
     const wmH   = Math.round(wmImg.naturalHeight * scale);
     const padding = Math.round(w * 0.02);
 
-    const { x, y } = getPositionXY(position, w, h, wmW, wmH, padding);
+    // getPositionXY нь текстийн суурь шугамаар (доод ирмэг) тооцдог; drawImage дээд ирмэгээр зурдаг тул
+    // wmH-ийг хасна. Үгүй бол доод булангийн лого зургаас гарч таслагдаж байсан (update-87 засвар).
+    const pos = getPositionXY(position, w, h, wmW, wmH, padding);
+    const x = pos.x;
+    const y = pos.y - wmH;
 
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.drawImage(wmImg, x, y, wmW, wmH);
     ctx.restore();
+    return { x, y, w: wmW, h: wmH };
   } catch (err) {
     console.error('Positioned image watermark failed:', err);
+    return null;
   }
+}
+
+// ── update-87: жижиг «Zuragchin.mn» тэмдэг ───────────────────────────────────
+// Диафрагмын лого (BrandMark.tsx-тэй ижил) + «Zuragchin.mn». Хагас тунгалаг бараан суурьтай жижиг пилл.
+const APERTURE_BLADES: [string, string][] = [
+  ['M50.00 30.80L80.68 13.09A48 48 0 0 1 97.31 58.11L66.63 40.40Z', '#fbbf24'],
+  ['M66.63 40.40L97.31 58.11A48 48 0 0 1 66.63 95.03L66.63 59.60Z', '#f59e0b'],
+  ['M66.63 59.60L66.63 95.03A48 48 0 0 1 19.32 86.91L50.00 69.20Z', '#f59e0b'],
+  ['M50.00 69.20L19.32 86.91A48 48 0 0 1 2.69 41.89L33.37 59.60Z', '#d97706'],
+  ['M33.37 59.60L2.69 41.89A48 48 0 0 1 33.37 4.97L33.37 40.40Z', '#b45309'],
+  ['M33.37 40.40L33.37 4.97A48 48 0 0 1 80.68 13.09L50.00 30.80Z', '#d97706'],
+];
+const APERTURE_HOLE = 'M50.00 30.80L66.63 40.40L66.63 59.60L50.00 69.20L33.37 59.60L33.37 40.40Z';
+
+function drawAperture(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(size / 100, size / 100);
+  for (const [d, fill] of APERTURE_BLADES) { ctx.fillStyle = fill; ctx.fill(new Path2D(d)); }
+  ctx.fillStyle = '#0c0a09';
+  ctx.fill(new Path2D(APERTURE_HOLE));
+  ctx.restore();
+}
+
+function overlapArea(a: Rect, b: Rect): number {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/** Сайтын тэмдгийн хэмжээ, байрлалыг тооцоолно (тест хийхэд ч ашиглана) */
+export function siteBadgeRect(w: number, h: number, occupied: Rect[], textWidth: (fontPx: number) => number): Rect {
+  // Хэмжээ: богино талын ~3.2% (1600px preview-д ≈ 34–51px өндөр) — анзаарагдахуйц ч саад болохгүй
+  const bh = Math.max(14, Math.round(Math.min(w, h) * 0.032));
+  const font = Math.round(bh * 0.52);
+  const bw = Math.round(bh * 0.25 + bh * 0.72 + bh * 0.22 + textWidth(font) + bh * 0.38);
+  const pad = Math.round(Math.min(w, h) * 0.018);
+  const corners: Rect[] = [
+    { x: w - bw - pad, y: h - bh - pad, w: bw, h: bh }, // баруун доор
+    { x: pad,          y: h - bh - pad, w: bw, h: bh }, // зүүн доор
+    { x: w - bw - pad, y: pad,          w: bw, h: bh }, // баруун дээр
+    { x: pad,          y: pad,          w: bw, h: bh }, // зүүн дээр
+  ];
+  // Зай авч шалгана — хүрэлцэх төдий ойр байхаас ч зайлсхийнэ
+  const gap = pad;
+  const grown = occupied.map(r => ({ x: r.x - gap, y: r.y - gap, w: r.w + gap * 2, h: r.h + gap * 2 }));
+  let best = corners[0];
+  let bestOverlap = Infinity;
+  for (const c of corners) {
+    const ov = grown.reduce((sum, r) => sum + overlapArea(c, r), 0);
+    if (ov === 0) return c;
+    if (ov < bestOverlap) { bestOverlap = ov; best = c; }
+  }
+  return best;
+}
+
+function applySiteBadge(ctx: CanvasRenderingContext2D, w: number, h: number, occupied: Rect[]) {
+  ctx.save();
+  const measure = (font: number) => {
+    ctx.font = `600 ${font}px Arial, sans-serif`;
+    return ctx.measureText('Zuragchin.mn').width;
+  };
+  const r = siteBadgeRect(w, h, occupied, measure);
+  const bh = r.h;
+  const font = Math.round(bh * 0.52);
+
+  // Суурь пилл
+  ctx.globalAlpha = 0.62;
+  ctx.fillStyle = '#0c0a09';
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(r.x, r.y, r.w, r.h, bh / 2);
+  else ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.fill();
+
+  // Лого + бичиг
+  ctx.globalAlpha = 0.95;
+  const iconSize = Math.round(bh * 0.72);
+  const ix = r.x + Math.round(bh * 0.25);
+  drawAperture(ctx, ix, r.y + (bh - iconSize) / 2, iconSize);
+
+  ctx.font = `600 ${font}px Arial, sans-serif`;
+  ctx.textBaseline = 'middle';
+  const tx = ix + iconSize + Math.round(bh * 0.22);
+  const ty = r.y + bh / 2 + 1;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('Zuragchin', tx, ty);
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('.mn', tx + ctx.measureText('Zuragchin').width, ty);
+  ctx.restore();
 }
 
 // ── Байршлын XY тооцоолол ────────────────────────────────────────────────────
