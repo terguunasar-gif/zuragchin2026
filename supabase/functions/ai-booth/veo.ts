@@ -39,6 +39,25 @@ export function motionVideoPrompt(motion: string): string {
   ].join(" ");
 }
 
+/** «✨ Glam Motion» — Glambot маягийн удаашруулсан кино камер (цомгийн видео ба AI бүүт хоёулаа ашиглана).
+ *  action = камерын хөдөлгөөн + эффект (англиар). */
+export function glamVideoPrompt(action: string, seconds: number): string {
+  return [
+    `A ${seconds}-second cinematic slow-motion video that starts from this exact photo,`,
+    "filmed like a high-speed robotic 'glam cam' at 120 frames per second played back in smooth slow motion.",
+    `Camera and effect: ${action.trim()}`,
+    "The people hold their pose with only small, graceful natural movements in slow motion: hair and clothing flowing softly, a gentle smile, a blink.",
+    "Rich depth and parallax between foreground, people and background; shallow depth of field; luxurious warm cinematic lighting.",
+    "Every person keeps exactly the same face, identity, hairstyle and clothing as in the photo; each person appears exactly once; no new people; no morphing.",
+    "Sharp, stable, photorealistic. No text, captions, subtitles or logos.",
+    "Elegant cinematic music swell with soft whoosh, no speech.",
+  ].join(" ");
+}
+
+/** AI бүүтийн Glam видеоны анхдагч камер — ямар ч темплетэд тохирно */
+export const BOOTH_GLAM_ACTION =
+  "A very slow, smooth dolly push-in toward the people with a slight upward arc. A soft breeze lifts hair and fabric in slow motion; tiny golden sparkles float and glitter in the light.";
+
 export const FALLBACK_MOTION =
   "The people smile, laugh and move joyfully in place; lights twinkle and sparkles drift through the air; slow gentle camera push-in.";
 
