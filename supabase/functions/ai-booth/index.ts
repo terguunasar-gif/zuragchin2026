@@ -22,7 +22,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
-import { downloadVeo, motionVideoPrompt, pollVeo, startVeo, suggestMotion } from "./veo.ts";
+import { BOOTH_GLAM_ACTION, downloadVeo, glamVideoPrompt, motionVideoPrompt, pollVeo, startVeo, suggestMotion } from "./veo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +37,7 @@ const GEMINI_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-ima
 const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") || "veo-3.1-lite-generate-preview";
 const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") || "gemini-2.5-flash";
 const VIDEO_SECONDS = Number(Deno.env.get("GEMINI_VIDEO_SECONDS") || 6);
+const GLAM_SECONDS = Number(Deno.env.get("GLAM_VIDEO_SECONDS") || 6);
 const MAX_VIDEO_ATTEMPTS = 3;     // автоматаар дахин оролдох тоо
 const MAX_VIDEO_TOTAL = 9;        // зочин «Дахин оролдох» дарж болох нийт хязгаар
 
@@ -95,6 +96,8 @@ interface Job {
   created_at: string;
   expires_at: string;
   kind: "photo" | "video";
+  /** update-86: 'motion' = AI хөдөлгөөн сонгоно, 'glam' = slow-motion кино камер */
+  video_style?: "motion" | "glam";
   video_op: string;
   video_path: string;
   video_attempts: number;
@@ -226,6 +229,7 @@ async function startJob(body: Record<string, unknown>) {
   const templateId = str(body.templateId);
   const isKiosk = body.kiosk === true;
   const kind: "photo" | "video" = body.kind === "video" ? "video" : "photo";
+  const videoStyle: "motion" | "glam" = kind === "video" && body.videoStyle === "glam" ? "glam" : "motion";
 
   const { booth, album, closed } = await loadOpenBooth(boothToken);
   if (closed) throw new HttpError(403, "Энэ бүүт одоогоор хаалттай байна");
@@ -251,6 +255,7 @@ async function startJob(body: Record<string, unknown>) {
     album_id: album.id,
     template_id: tpl.id,
     kind,
+    video_style: videoStyle,
     status: price > 0 ? "pending_payment" : "paid",
     amount_mnt: price,
     owner_share: booth.owner_share,
@@ -362,15 +367,23 @@ async function startVideoFor(job: Job): Promise<Job> {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const mimeType = job.raw_path.endsWith(".png") ? "image/png" : job.raw_path.endsWith(".webp") ? "image/webp" : "image/jpeg";
     const first = { mimeType, data: bytesToBase64(bytes) };
-    // Зурагт тохирох хөдөлгөөнийг AI сонгоно (бүжиглэх, хөөс оргилох, цас бууж эргэлдэх…)
-    const motion = await suggestMotion(GEMINI_API_KEY, TEXT_MODEL, first);
-    console.log("video motion:", motion);
+    const glam = job.video_style === "glam";
+    let prompt: string;
+    if (glam) {
+      // Slow-motion Glam: хүмүүс байрлалаа хадгалж, камер аажим хөдөлнө (AI хөдөлгөөн сонгохгүй)
+      prompt = glamVideoPrompt(BOOTH_GLAM_ACTION, GLAM_SECONDS);
+    } else {
+      // Зурагт тохирох хөдөлгөөнийг AI сонгоно (бүжиглэх, хөөс оргилох, цас бууж эргэлдэх…)
+      const motion = await suggestMotion(GEMINI_API_KEY, TEXT_MODEL, first);
+      console.log("video motion:", motion);
+      prompt = motionVideoPrompt(motion);
+    }
     const op = await startVeo({
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
       image: first,
-      prompt: motionVideoPrompt(motion),
-      durationSeconds: VIDEO_SECONDS,
+      prompt,
+      durationSeconds: glam ? GLAM_SECONDS : VIDEO_SECONDS,
     });
     await db.from("ai_jobs").update({ video_op: op, video_attempts: attempts, error: "", updated_at: now() }).eq("id", job.id);
     return { ...job, video_op: op, video_attempts: attempts };
@@ -688,7 +701,7 @@ async function finalize(body: Record<string, unknown>) {
 async function getResult(resultToken: string) {
   if (!/^[a-f0-9]{16,64}$/i.test(resultToken)) throw new HttpError(404, "Зураг олдсонгүй");
   const { data: found } = await db.from("ai_jobs")
-    .select("id, album_id, template_id, status, final_path, expires_at, created_at, kind, video_path, video_op, video_attempts, raw_path, result_token, updated_at")
+    .select("id, album_id, template_id, status, final_path, expires_at, created_at, kind, video_style, video_path, video_op, video_attempts, raw_path, result_token, updated_at")
     .eq("result_token", resultToken).maybeSingle();
   let job = found as unknown as Job | null;
   if (job?.status === "video_processing") job = await advanceVideo(job);

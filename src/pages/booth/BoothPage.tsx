@@ -6,7 +6,7 @@ import {
   Users, RotateCcw, Download, RefreshCw, Share2, Video, ImageIcon, Lock,
 } from 'lucide-react';
 import {
-  boothApi, BoothInfo, BoothKind, BoothTemplate, StartResult, MAX_PEOPLE,
+  boothApi, BoothInfo, BoothKind, BoothTemplate, BoothVideoStyle, StartResult, MAX_PEOPLE,
   composeFinal, canvasToDataUrl, canvasToBlob, scaleCanvas, makeAlbumPreview, makeStrongPreview,
   saveImageToDevice, saveHint, rememberJob, recallJob, forgetJob,
 } from '../../lib/aiBooth';
@@ -44,6 +44,7 @@ export default function BoothPage() {
   // Цомогт оруулах эсэхийг зочин өөрөө сонгоно (null = сонгоогүй)
   const [addToAlbum, setAddToAlbum] = useState<boolean | null>(null);
   const [kind, setKind] = useState<BoothKind>('photo');
+  const [videoStyle, setVideoStyle] = useState<BoothVideoStyle>('motion');
   const [videoToken, setVideoToken] = useState('');
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const [final, setFinal] = useState<{ url: string; blob: Blob; resultToken: string } | null>(null);
@@ -63,6 +64,7 @@ export default function BoothPage() {
     setTemplate(null);
     setStart(null);
     setKind('photo');
+    setVideoStyle('motion');
     setVideoToken('');
     setAddToAlbum(null);
     setCaptured(null);
@@ -142,12 +144,13 @@ export default function BoothPage() {
     await startWith(tpl, 'photo');
   }
 
-  async function startWith(tpl: BoothTemplate, k: BoothKind) {
+  async function startWith(tpl: BoothTemplate, k: BoothKind, style: BoothVideoStyle = 'motion') {
     setKind(k);
+    setVideoStyle(style);
     setBusy(true);
     setErrorMsg('');
     try {
-      const res = await boothApi.start(token, tpl.id, kiosk, k);
+      const res = await boothApi.start(token, tpl.id, kiosk, k, style);
       setStart(res);
       rememberJob({ boothToken: token, jobId: res.jobId, key: res.key, templateId: tpl.id });
       try { sessionStorage.setItem(SESSION_START, JSON.stringify(res)); } catch { /* ignore */ }
@@ -336,11 +339,11 @@ export default function BoothPage() {
 
         {step === 'kind' && template && info && (
           <KindStep template={template} info={info} kiosk={kiosk} busy={busy} error={errorMsg}
-            onPick={k => startWith(template, k)} />
+            onPick={(k, style) => startWith(template, k, style)} />
         )}
 
         {step === 'pay' && start && template && (
-          <PayStep start={start} template={template} kiosk={kiosk} kind={kind} />
+          <PayStep start={start} template={template} kiosk={kiosk} kind={kind} glam={kind === 'video' && videoStyle === 'glam'} />
         )}
 
         {step === 'camera' && info && (
@@ -440,7 +443,7 @@ export default function BoothPage() {
 }
 
 // ── Төлбөрийн алхам ──────────────────────────────────────────────────────────
-function PayStep({ start, template, kiosk, kind = 'photo' }: { start: StartResult; template: BoothTemplate; kiosk: boolean; kind?: BoothKind }) {
+function PayStep({ start, template, kiosk, kind = 'photo', glam = false }: { start: StartResult; template: BoothTemplate; kiosk: boolean; kind?: BoothKind; glam?: boolean }) {
   const isMobile = !kiosk && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   return (
     <div className="text-center">
@@ -448,7 +451,7 @@ function PayStep({ start, template, kiosk, kind = 'photo' }: { start: StartResul
         <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Төлбөр хүлээж байна…
       </div>
       <h2 className={`${kiosk ? 'text-3xl' : 'text-xl'} font-bold mb-1`}>₮{start.amount.toLocaleString()}</h2>
-      <p className="text-stone-400 text-sm mb-5">{template.name} · {kind === 'video' ? 'AI хөдөлгөөнт видео' : '1 AI зураг'}</p>
+      <p className="text-stone-400 text-sm mb-5">{template.name} · {kind === 'video' ? (glam ? '✨ Slow-motion Glam видео' : 'AI хөдөлгөөнт видео') : '1 AI зураг'}</p>
 
       {/* Утсан дээр банкны апп руу шууд */}
       {isMobile && start.urls && start.urls.length > 0 && (
@@ -733,7 +736,7 @@ function ResultStep({
 // ── Зураг уу, видео юу ─────────────────────────────────────────────────
 function KindStep({ template, info, kiosk, busy, error, onPick }: {
   template: BoothTemplate; info: BoothInfo; kiosk: boolean; busy: boolean; error: string;
-  onPick: (k: BoothKind) => void;
+  onPick: (k: BoothKind, style?: BoothVideoStyle) => void;
 }) {
   const card = `group relative text-left rounded-2xl overflow-hidden border border-white/10 hover:border-amber-500/60 bg-white/5 transition-all disabled:opacity-50`;
   return (
@@ -753,7 +756,7 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
             <p className="text-amber-400 font-semibold mt-0.5">₮{info.booth.price_mnt.toLocaleString()}</p>
           </div>
         </button>
-        <button disabled={busy} onClick={() => onPick('video')} className={card}>
+        <button disabled={busy} onClick={() => onPick('video', 'motion')} className={card}>
           <div className="aspect-[3/4] bg-stone-900 overflow-hidden relative">
             {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover brightness-75" />}
             {/* Жишээ зураг хөдлөхгүй — видео сэлфигийн дараа AI-аар бүтнэ */}
@@ -767,10 +770,27 @@ function KindStep({ template, info, kiosk, busy, error, onPick }: {
             <p className="text-amber-400 font-semibold mt-0.5">₮{(info.video?.price ?? 0).toLocaleString()}</p>
           </div>
         </button>
+        <button disabled={busy} onClick={() => onPick('video', 'glam')} className={`${card} col-span-2`}>
+          <div className="flex items-stretch">
+            <div className="w-28 sm:w-36 aspect-[3/4] bg-stone-900 overflow-hidden relative flex-shrink-0">
+              {template.preview_url && <img src={template.preview_url} alt="" className="w-full h-full object-cover brightness-90 scale-110" />}
+              <span className="absolute top-2 left-2 bg-gradient-to-r from-fuchsia-500 to-amber-500 text-stone-950 text-[11px] font-bold px-2 py-0.5 rounded-full">SLOW-MO</span>
+            </div>
+            <div className="p-3 flex flex-col justify-center">
+              <p className="flex items-center gap-1.5 font-bold">✨ Slow-motion Glam видео</p>
+              <p className="text-stone-400 text-xs mt-1 leading-snug">
+                Glambot маягийн кино камер: камер аажим ойртож, үс, хувцас удаашралтай намирна. Царай, байрлал хэвээрээ.
+              </p>
+              <p className="text-amber-400 font-semibold mt-1.5">₮{(info.video?.price ?? 0).toLocaleString()}</p>
+            </div>
+          </div>
+        </button>
       </div>
       <p className="text-xs text-stone-500 leading-relaxed">
         Хөдөлгөөнт видео: сэлфигээр тань AI зураг бүтээгээд, тухайн зурагт тохирох хөдөлгөөнийг AI өөрөө сонгож
         (бүжиглэх, оргилуун дарс оргилох, цас бууж эргэлдэх гэх мэт) ≈6 секундын видео (MP4) болгоно. 1–3 минутад бэлэн болно.
+        Slow-motion Glam: хүмүүс хөдлөхгүй, харин камер болон үс, хувцас, гялбаа удаашралтай хөдөлнө — гоёлын,
+        тансаг темплетэд хамгийн сайхан харагдана.
         Дээрх зураг зөвхөн загварын жишээ. Видео авсан бол зургийг тусад нь авч болно.
       </p>
       {busy && <div className="flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-amber-400" /></div>}

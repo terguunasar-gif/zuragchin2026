@@ -23,7 +23,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { downloadVeo, pollVeo, startVeo, usingFal } from "../ai-booth/veo.ts";
+import { downloadVeo, glamVideoPrompt, pollVeo, startVeo, usingFal } from "../ai-booth/veo.ts";
 import { generateImage } from "../ai-booth/gemini.ts";
 
 const corsHeaders = {
@@ -272,18 +272,8 @@ async function reload(id: string): Promise<Video | null> {
 }
 
 // ── Видео: эхлүүлэх / ахиулах ────────────────────────────────────────────────
-/** «✨ Glam Motion» — Glambot маягийн удаашруулсан кино камер. action = камерын хөдөлгөөн + эффект */
 function glamPrompt(action: string): string {
-  return [
-    `A ${GLAM_SECONDS}-second cinematic slow-motion video that starts from this exact photo,`,
-    "filmed like a high-speed robotic 'glam cam' at 120 frames per second played back in smooth slow motion.",
-    `Camera and effect: ${action.trim()}`,
-    "The people hold their pose with only small, graceful natural movements in slow motion: hair and clothing flowing softly, a gentle smile, a blink.",
-    "Rich depth and parallax between foreground, people and background; shallow depth of field; luxurious warm cinematic lighting.",
-    "Every person keeps exactly the same face, identity, hairstyle and clothing as in the photo; each person appears exactly once; no new people; no morphing.",
-    "Sharp, stable, photorealistic. No text, captions, subtitles or logos.",
-    "Elegant cinematic music swell with soft whoosh, no speech.",
-  ].join(" ");
+  return glamVideoPrompt(action, GLAM_SECONDS);
 }
 
 function videoPrompt(action: string): string {

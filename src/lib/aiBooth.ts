@@ -62,6 +62,8 @@ export interface BoothInfo {
 }
 
 export type BoothKind = 'photo' | 'video';
+/** update-86: видеоны төрөл — 'motion' AI хөдөлгөөн сонгоно, 'glam' slow-motion кино камер */
+export type BoothVideoStyle = 'motion' | 'glam';
 
 export interface StartResult {
   jobId: string;
@@ -95,8 +97,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const boothApi = {
   info: (boothToken: string) => call<BoothInfo>(`/booth/${encodeURIComponent(boothToken)}`),
-  start: (boothToken: string, templateId: string, kiosk: boolean, kind: BoothKind = 'photo') =>
-    call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ boothToken, templateId, kiosk, kind }) }),
+  start: (boothToken: string, templateId: string, kiosk: boolean, kind: BoothKind = 'photo', videoStyle: BoothVideoStyle = 'motion') =>
+    call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ boothToken, templateId, kiosk, kind, videoStyle }) }),
   /** Видеоны зургийг худалдаж авах нэхэмжлэх */
   startPhotoFromVideo: (resultToken: string) =>
     call<StartResult>('/start', { method: 'POST', body: JSON.stringify({ fromResult: resultToken }) }),
