@@ -69,7 +69,7 @@ export default function AdminVideoTemplatesTab() {
         <button onClick={generateMissing} disabled={!!bulk && bulk.done < bulk.total}
           className="flex items-center gap-1.5 bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border border-fuchsia-500/40 text-fuchsia-200 disabled:opacity-60 font-semibold px-4 py-2 rounded-xl text-sm">
           {bulk && bulk.done < bulk.total ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-          {bulk && bulk.done < bulk.total ? `AI зураг ${bulk.done}/${bulk.total}…` : 'Зураггүйд AI зураг үүсгэх'}
+          {bulk && bulk.done < bulk.total ? `AI зураг ${bulk.done}/${bulk.total}…` : `Зураггүйд AI зураг үүсгэх${list.some(t => !t.preview_url) ? ` (${list.filter(t => !t.preview_url).length})` : ''}`}
         </button>
         <button onClick={add} className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl text-sm">
           <Plus className="w-4 h-4" /> Загвар нэмэх

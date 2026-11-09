@@ -478,16 +478,30 @@ async function adminPreview(req: Request, body: Record<string, unknown>) {
   if (!GEMINI_API_KEY) throw new HttpError(500, "GEMINI_API_KEY тохируулаагүй байна");
   const id = str(body.templateId);
   if (!isUuid(id)) throw new HttpError(400, "Загвар буруу");
-  const { data: tpl } = await db.from("ai_video_templates").select("id, slug, prompt, preview_url").eq("id", id).maybeSingle();
+  // style багана (update-84) байхгүй хуучин DB-д ч ажиллана
+  let { data: tpl, error: tplErr } = await db.from("ai_video_templates").select("id, slug, prompt, preview_url, style").eq("id", id).maybeSingle();
+  if (tplErr) ({ data: tpl } = await db.from("ai_video_templates").select("id, slug, prompt, preview_url").eq("id", id).maybeSingle());
   if (!tpl) throw new HttpError(404, "Загвар олдсонгүй");
 
-  const prompt = [
-    "Create one photorealistic, vibrant, cinematic still image that shows the most exciting moment of this short fun video idea:",
-    tpl.prompt,
-    "Show two or three cheerful adult Mongolian people (around 25–40 years old) at a festive indoor event, clearly enjoying the moment.",
-    "Dynamic, eye-catching composition for a thumbnail, rich colours, sharp focus, professional event photography look.",
-    "No text, no letters, no captions, no logos, no watermarks. No children.",
-  ].join(" ");
+  const prompt = (tpl as { style?: string }).style === "glam"
+    // update-89: Glam Motion — тансаг гала, кино гэрэлтүүлэг, Glambot-ын агшин
+    ? [
+      "Create one photorealistic, luxurious, cinematic still frame from a slow-motion 'glam cam' video of this moment:",
+      tpl.prompt,
+      "Show one to three elegant, attractive adult Mongolian people (around 25–40 years old) in glamorous evening wear —",
+      "sequined gowns, satin dresses, tailored tuxedos or modern silk deel — posing confidently at a high-end gala, red carpet or ballroom.",
+      "Frozen-in-motion details: hair and fabric flowing, sparkles or particles suspended in the air.",
+      "Warm golden key light with rim light, shallow depth of field, creamy bokeh, rich deep colours, high-fashion magazine look.",
+      "People centered in the frame so the image also works as a vertical crop.",
+      "No text, no letters, no captions, no logos, no watermarks. No children.",
+    ].join(" ")
+    : [
+      "Create one photorealistic, vibrant, cinematic still image that shows the most exciting moment of this short fun video idea:",
+      tpl.prompt,
+      "Show two or three cheerful adult Mongolian people (around 25–40 years old) at a festive indoor event, clearly enjoying the moment.",
+      "Dynamic, eye-catching composition for a thumbnail, rich colours, sharp focus, professional event photography look.",
+      "No text, no letters, no captions, no logos, no watermarks. No children.",
+    ].join(" ");
 
   let result;
   try {
