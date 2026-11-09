@@ -43,8 +43,22 @@ jobs:
         with:
           version: latest
 
+      # Docker-оор GitHub дээр багцлаад бэлэн багцыг илгээнэ (Supabase-ийн серверт багцлах --use-api
+      # заримдаа 504 timeout өгдөг). Түр алдаанд 3 хүртэл оролдоно.
       - name: Deploy album-video
-        run: supabase functions deploy album-video --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+        run: |
+          for i in 1 2 3; do
+            supabase functions deploy album-video --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker && exit 0
+            echo "::warning::album-video deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
+            sleep 20
+          done
+          exit 1
 
       - name: Deploy ai-booth
-        run: supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+        run: |
+          for i in 1 2 3; do
+            supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker && exit 0
+            echo "::warning::ai-booth deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
+            sleep 20
+          done
+          exit 1
