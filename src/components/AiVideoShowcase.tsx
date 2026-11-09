@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import YouTubeAutoplay from './YouTubeAutoplay';
 import { useHomeVideo } from '../lib/homeVideo';
 
-interface Tpl { id: string; name: string; description: string; emoji: string; sample_video_url: string; preview_url: string; tags: string }
+interface Tpl { id: string; slug: string; name: string; description: string; emoji: string; sample_video_url: string; preview_url: string; tags: string }
 
 /** Нүүр хуудас: зургаас хөдөлгөөнт видео — алхам, урьдчилан харалт, загвар, CTA */
 export default function AiVideoShowcase() {
@@ -15,11 +15,10 @@ export default function AiVideoShowcase() {
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [price, setPrice] = useState(10000);
   const [enabled, setEnabled] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const introVideo = useHomeVideo('home_ai_video_youtube');
 
   useEffect(() => {
-    publicDb.from('ai_video_templates').select('id, name, description, emoji, sample_video_url, preview_url, tags')
+    publicDb.from('ai_video_templates').select('id, slug, name, description, emoji, sample_video_url, preview_url, tags')
       .eq('is_active', true).order('sort_order', { ascending: true })
       .then(({ data }) => setTemplates((data ?? []) as Tpl[]));
     publicDb.from('platform_settings').select('key, value').in('key', ['album_video_price', 'album_video_enabled'])
@@ -32,7 +31,9 @@ export default function AiVideoShowcase() {
   }, []);
 
   const shown = [...templates].sort((a, b) => Number(!!b.sample_video_url) - Number(!!a.sample_video_url)).slice(0, 8);
-  const active = shown.find(t => t.id === activeId) ?? shown[0] ?? null;
+  const active = shown[0] ?? null;
+  // Загвар дээр дарахад бүх загварын хуудас руу шилжиж, тэр загварыг шууд нээнэ
+  const openTemplate = (t: Tpl) => navigate(`/ai-video?t=${encodeURIComponent(t.slug || t.id)}`);
   const start = () => navigate(profile ? '/dashboard' : '/auth/login');
 
   const steps = [
@@ -100,13 +101,30 @@ export default function AiVideoShowcase() {
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setActiveId(t.id)}
-                className={`w-20 sm:w-24 flex-shrink-0 rounded-xl ${t.id === active?.id ? 'ring-2 ring-fuchsia-400' : ''}`}
+                onClick={() => openTemplate(t)}
+                title={`${t.name} — дэлгэрэнгүй`}
+                className="w-20 sm:w-24 flex-shrink-0 rounded-xl hover:ring-2 hover:ring-fuchsia-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
               >
                 <TemplateTile t={t} />
               </button>
             ))}
+            {templates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('/ai-video')}
+                className="w-20 sm:w-24 flex-shrink-0 aspect-square rounded-xl border border-dashed border-fuchsia-400/40 bg-fuchsia-500/5 hover:bg-fuchsia-500/10 flex flex-col items-center justify-center gap-1 text-fuchsia-200"
+              >
+                <ArrowRight className="w-5 h-5" />
+                <span className="text-[10px] font-semibold leading-tight text-center px-1">Бүгдийг харах<br />{templates.length}</span>
+              </button>
+            )}
           </div>
+        )}
+        {templates.length > 0 && (
+          <button type="button" onClick={() => navigate('/ai-video')}
+            className="mt-2 inline-flex items-center gap-1 text-fuchsia-300 hover:text-fuchsia-200 text-sm font-semibold">
+            Бүх {templates.length} загварыг харах <ArrowRight className="w-4 h-4" />
+          </button>
         )}
 
         <div className="flex flex-col items-start gap-2 mt-6">
