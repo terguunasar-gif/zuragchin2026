@@ -36,6 +36,7 @@ const ExploreAlbumsPage = lazy(() => import('./pages/ExploreAlbumsPage'));
 const WalletPage = lazy(() => import('./pages/wallet/WalletPage'));
 const OfferPage = lazy(() => import('./pages/OfferPage'));
 const AiBoothGalleryPage = lazy(() => import('./pages/AiBoothGalleryPage'));
+const AiVideoTemplatesPage = lazy(() => import('./pages/AiVideoTemplatesPage'));
 const PriceOffersPage = lazy(() => import('./pages/photographer/PriceOffersPage'));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
@@ -141,6 +142,7 @@ export default function App() {
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
           <Route path="/offer/:token" element={<OfferPage />} />
           <Route path="/ai-booth" element={<AiBoothGalleryPage />} />
+          <Route path="/ai-video" element={<AiVideoTemplatesPage />} />
           <Route path="/my-purchases" element={<MyPurchasesPage />} />
           <Route path="/booth/r/:resultToken" element={<BoothResultPage />} />
           <Route path="/booth/:token" element={<BoothPage />} />
