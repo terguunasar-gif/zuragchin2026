@@ -4,7 +4,7 @@ import BankLinks, { canOpenBankApps } from './BankLinks';
 import {
   albumVideoApi, aspectForImage, VideoInvoice, VideoState, VideoTemplate, VideoTemplatesInfo,
 } from '../lib/albumVideo';
-import { saveImageToDevice } from '../lib/browserEnv';
+import { saveVideoToDevice } from '../lib/browserEnv';
 
 type Step = 'pick' | 'confirm' | 'pay' | 'processing' | 'done' | 'failed';
 
@@ -98,7 +98,7 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
   async function download() {
     if (!state?.videoUrl) return;
     setSaving(true);
-    try { await saveImageToDevice(state.videoUrl, `zuragchin-ai-video-${videoId.slice(0, 6)}.mp4`); }
+    try { await saveVideoToDevice(state.videoUrl, `zuragchin-ai-video-${videoId.slice(0, 6)}.mp4`); }
     catch { window.open(state.videoUrl, '_blank'); }
     finally { setSaving(false); }
   }

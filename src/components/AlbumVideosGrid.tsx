@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Clapperboard, Download, Eye, EyeOff, Loader2, Monitor, MonitorOff, Trash2 } from 'lucide-react';
 import { albumVideoApi, AlbumVideo, OwnerVideo, setVideoFlags } from '../lib/albumVideo';
-import { saveImageToDevice } from '../lib/browserEnv';
+import { saveVideoToDevice } from '../lib/browserEnv';
 import { useI18n } from '../lib/i18n';
 
 /** Цомгийн «🎬 AI видео» хавтас. Эзэнд боловсруулж буй видео болон нуух/дэлгэцийн тохиргоо харагдана. */
@@ -98,7 +98,13 @@ function VideoCard({ v, isOwner, onRefresh }: { v: AlbumVideo & Partial<OwnerVid
       {(isOwner || status === 'done') && (
         <div className="p-2.5 flex items-center gap-1.5 flex-wrap">
           {status === 'done' && (
-            <button onClick={() => act('dl', () => saveImageToDevice(v.video_url, `zuragchin-ai-video-${v.id.slice(0, 6)}.mp4`))}
+            <button onClick={async () => {
+              // act() нь onRefresh дууддаг — татахад жагсаалтыг дахин ачаалах шаардлагагүй
+              setBusy('dl');
+              try { await saveVideoToDevice(v.video_url, `zuragchin-ai-video-${v.id.slice(0, 6)}.mp4`); }
+              catch { window.open(v.video_url, '_blank'); }
+              finally { setBusy(null); }
+            }}
               className="flex items-center gap-1.5 text-xs text-stone-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-2.5 py-1.5">
               {busy === 'dl' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} {t('Татах')}
             </button>
