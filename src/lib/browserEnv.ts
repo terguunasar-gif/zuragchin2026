@@ -71,6 +71,54 @@ export async function saveImageToDevice(url: string, filename: string): Promise<
   return { result: 'downloaded', blobUrl };
 }
 
+/**
+ * Видеог (MP4) утас / компьютерт хадгална.
+ *  - iPhone: хуваалцах цонх → «Save Video / Видео хадгалах» → Photos
+ *  - Android, компьютер: .mp4 файлаар татна
+ *  - Messenger/Facebook доторх хөтөч эсвэл татаж чадаагүй үед: видеог шинэ табд нээнэ (⋮ → Татах / удаан дарж хадгалах)
+ * Анхаар: saveImageToDevice-ийг видеонд бүү ашигла — файлын нэрийг .jpg болгож эвдэрдэг байсан.
+ */
+export async function saveVideoToDevice(url: string, filename: string): Promise<SaveResult> {
+  const name = /\.mp4$/i.test(filename) ? filename : `${filename}.mp4`;
+  if (inAppBrowserName()) {
+    window.open(url, '_blank');
+    return 'manual';
+  }
+  let blob: Blob;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    blob = await res.blob();
+  } catch {
+    // CORS / сүлжээний алдаа — видеог шууд нээж хэрэглэгч өөрөө хадгална
+    window.open(url, '_blank');
+    return 'manual';
+  }
+  const file = new File([blob], name, { type: 'video/mp4' });
+
+  if (isIOS) {
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    try {
+      if (nav.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return 'shared';
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return 'shared';
+    }
+  }
+
+  const blobUrl = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  return 'downloaded';
+}
+
 /** iPhone (iOS 17+): апп доторх хөтчөөс Safari-г нээх холбоос */
 export function openInSafariUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
   return href.replace(/^https:\/\//, 'x-safari-https://').replace(/^http:\/\//, 'x-safari-http://');
