@@ -48,7 +48,7 @@ jobs:
       - name: Deploy album-video
         run: |
           for i in 1 2 3; do
-            supabase functions deploy album-video --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker && exit 0
+            supabase functions deploy album-video --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker --yes && exit 0
             echo "::warning::album-video deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
             sleep 20
           done
@@ -57,7 +57,7 @@ jobs:
       - name: Deploy ai-booth
         run: |
           for i in 1 2 3; do
-            supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker && exit 0
+            supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker --yes && exit 0
             echo "::warning::ai-booth deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
             sleep 20
           done
