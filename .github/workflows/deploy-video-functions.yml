@@ -1,0 +1,50 @@
+# AI видео Edge Function-уудыг (album-video, ai-booth) Supabase руу автоматаар deploy хийнэ.
+#
+# Хэзээ ажиллах вэ:
+#   • main салбарт supabase/functions/ai-booth/** эсвэл album-video/** өөрчлөгдөхөд (PR merge)
+#   • GitHub → Actions → «Deploy video functions» → «Run workflow» товчоор гараар
+#
+# Нэг удаа тохируулах: GitHub → Settings → Secrets and variables → Actions → New repository secret
+#   Name: SUPABASE_ACCESS_TOKEN   Value: supabase.com/dashboard/account/tokens-оос авсан sbp_… түлхүүр
+#
+# qpay функцэд хүрэхгүй (түүний JWT тохиргоог өөрчлөхгүйн тулд).
+
+name: Deploy video functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/ai-booth/**"
+      - "supabase/functions/album-video/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-video-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: srmnkrhaqpghukmygymz # Zuragchin 2026
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check token
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN secret тохируулаагүй байна (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy album-video
+        run: supabase functions deploy album-video --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+
+      - name: Deploy ai-booth
+        run: supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
