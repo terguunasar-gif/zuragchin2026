@@ -1,13 +1,13 @@
-# AI видео Edge Function-уудыг (album-video, ai-booth) Supabase руу автоматаар deploy хийнэ.
+# Edge Function-уудыг (album-video, ai-booth, qpay) Supabase руу автоматаар deploy хийнэ.
 #
 # Хэзээ ажиллах вэ:
-#   • main салбарт supabase/functions/ai-booth/** эсвэл album-video/** өөрчлөгдөхөд (PR merge)
+#   • main салбарт supabase/functions/** өөрчлөгдөхөд (PR merge) — зөвхөн өөрчлөгдсөн функц биш, гурвууланг нь
 #   • GitHub → Actions → «Deploy video functions» → «Run workflow» товчоор гараар
 #
 # Нэг удаа тохируулах: GitHub → Settings → Secrets and variables → Actions → New repository secret
 #   Name: SUPABASE_ACCESS_TOKEN   Value: supabase.com/dashboard/account/tokens-оос авсан sbp_… түлхүүр
 #
-# qpay функцэд хүрэхгүй (түүний JWT тохиргоог өөрчлөхгүйн тулд).
+# Бүгд --no-verify-jwt: QPay callback, нэвтрээгүй зочид дуудна; эрхийг функц өөрөө токеноор шалгадаг.
 
 name: Deploy video functions
 
@@ -15,8 +15,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "supabase/functions/ai-booth/**"
-      - "supabase/functions/album-video/**"
+      - "supabase/functions/**"
   workflow_dispatch:
 
 concurrency:
@@ -59,6 +58,15 @@ jobs:
           for i in 1 2 3; do
             supabase functions deploy ai-booth --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker --yes && exit 0
             echo "::warning::ai-booth deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
+            sleep 20
+          done
+          exit 1
+
+      - name: Deploy qpay
+        run: |
+          for i in 1 2 3; do
+            supabase functions deploy qpay --project-ref "$PROJECT_REF" --no-verify-jwt --use-docker --yes && exit 0
+            echo "::warning::qpay deploy оролдлого $i бүтсэнгүй — 20 сек хүлээгээд дахин"
             sleep 20
           done
           exit 1
