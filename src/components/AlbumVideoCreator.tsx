@@ -24,6 +24,9 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
   const [loadErr, setLoadErr] = useState('');
   const [picked, setPicked] = useState<VideoTemplate | null>(null);
   const [aspect, setAspect] = useState<'16:9' | '9:16'>('16:9');
+  const [people, setPeople] = useState<number | null>(null);
+  const [aspectAuto, setAspectAuto] = useState(true);
+  const aspectTouched = useRef(false);
   const [free, setFree] = useState(false);
   const [step, setStep] = useState<Step>('pick');
   const [busy, setBusy] = useState(false);
@@ -37,11 +40,21 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
 
   useEffect(() => {
     albumVideoApi.templates().then(setInfo).catch(e => setLoadErr(e instanceof Error ? e.message : 'Алдаа'));
+    // Эхлээд зургийн хэлбэрээр, дараа нь AI хүн тоолоод санал болгоно (1–2 хүн → босоо утсанд)
     const img = new Image();
-    img.onload = () => setAspect(aspectForImage(img.naturalWidth, img.naturalHeight));
+    img.onload = () => { if (!aspectTouched.current) setAspect(aspectForImage(img.naturalWidth, img.naturalHeight)); };
     img.src = photo.url;
+    albumVideoApi.aspect(photo.id)
+      .then(r => { setPeople(r.people); if (!aspectTouched.current) setAspect(r.aspect); })
+      .catch(() => { /* хуучин функц эсвэл алдаа — зургийн хэлбэрээр үлдэнэ */ });
     return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [photo.url]);
+  }, [photo.url, photo.id]);
+
+  function chooseAspect(a: '16:9' | '9:16') {
+    aspectTouched.current = true;
+    setAspectAuto(false);
+    setAspect(a);
+  }
 
   // Төлбөр/видеог шалгах
   useEffect(() => {
@@ -235,6 +248,22 @@ export default function AlbumVideoCreator({ albumId, photo, isAdmin, onClose, on
 
         {step === 'pick' && info?.enabled && (
           <div className="border-t border-white/10 p-4 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-stone-400 text-xs">Формат:</span>
+              {(['9:16', '16:9'] as const).map(a => (
+                <button key={a} type="button" onClick={() => chooseAspect(a)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${aspect === a ? 'bg-white text-stone-950 border-white font-semibold' : 'border-white/15 text-stone-300 hover:bg-white/5'}`}>
+                  {a === '9:16' ? '📱 Босоо (утас)' : '🖥️ Хэвтээ (ТВ)'}
+                </button>
+              ))}
+              <span className="text-stone-500 text-[11px]">
+                {aspectAuto
+                  ? people !== null && people > 0
+                    ? `Автомат: ${people} хүн → ${aspect === '9:16' ? 'босоо' : 'хэвтээ'}`
+                    : 'Автомат: зургийн хэлбэрээр'
+                  : '1–2 хүн бол босоо, олон хүн бол хэвтээ тохиромжтой'}
+              </span>
+            </div>
             <p className="text-red-300/90 text-[11px] leading-snug">⚠️ Хүүхэд орсон зурагнаас видео үүсэхгүй.</p>
             {isAdmin && (
               <label className="flex items-center gap-2 text-xs text-stone-300">
