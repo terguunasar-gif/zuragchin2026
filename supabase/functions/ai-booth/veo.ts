@@ -83,6 +83,79 @@ export async function suggestMotion(apiKey: string, model: string, image: { mime
   }
 }
 
+// ── update-91: видеоны формат (босоо/хэвтээ) хүний тоогоор ─────────────────────
+// 1–2 хүн → босоо 9:16 (утсанд үзэх); 3+ хүн → зургийн хэлбэрээр (хэвтээ зураг бол 16:9).
+
+/** Зургийн өргөн/өндрийг толгой хэсгээс уншина (PNG, JPEG, WebP). Танихгүй бол null. */
+export function imageDims(b: Uint8Array): { w: number; h: number } | null {
+  try {
+    if (b[0] === 0x89 && b[1] === 0x50) { // PNG IHDR
+      const dv = new DataView(b.buffer, b.byteOffset);
+      return { w: dv.getUint32(16), h: dv.getUint32(20) };
+    }
+    if (b[0] === 0xff && b[1] === 0xd8) { // JPEG — SOFn маркер хайна
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xff) { i++; continue; }
+        const m = b[i + 1];
+        const len = (b[i + 2] << 8) | b[i + 3];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+          return { h: (b[i + 5] << 8) | b[i + 6], w: (b[i + 7] << 8) | b[i + 8] };
+        }
+        i += 2 + len;
+      }
+      return null;
+    }
+    if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) { // RIFF....WEBP
+      const fourcc = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (fourcc === "VP8X") return { w: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), h: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) };
+      if (fourcc === "VP8 ") return { w: ((b[27] << 8) | b[26]) & 0x3fff, h: ((b[29] << 8) | b[28]) & 0x3fff };
+      if (fourcc === "VP8L") {
+        const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+        return { w: (v & 0x3fff) + 1, h: ((v >> 14) & 0x3fff) + 1 };
+      }
+    }
+  } catch { /* эвдэрсэн толгой */ }
+  return null;
+}
+
+/** 1–2 хүн → 9:16; бусад үед (эсвэл тоо мэдэгдэхгүй) зургийн хэлбэрээр */
+export function videoAspectFor(people: number | null, dims: { w: number; h: number } | null): "9:16" | "16:9" {
+  if (people !== null && people >= 1 && people <= 2) return "9:16";
+  if (!dims) return "16:9";
+  return dims.h > dims.w * 1.05 ? "9:16" : "16:9";
+}
+
+/** Хэвтээ зургаас босоо видео гаргахад хүмүүс таслагдахгүй байх заавар */
+export const VERTICAL_FRAMING =
+  "Vertical 9:16 phone framing: keep every person fully inside the frame and centered, never crop anyone out.";
+
+/** Зурагт хэдэн хүн байгааг Gemini-ээр тоолно (царай нь тод харагдах). Алдаа гарвал null. */
+export async function countPeople(apiKey: string, model: string, image: { mimeType: string; data: string }): Promise<number | null> {
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [
+          { inlineData: { mimeType: image.mimeType, data: image.data } },
+          { text: "How many people are the main subjects of this photo (faces clearly visible, ignore tiny background crowd)? Reply with only one integer." },
+        ] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 8, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+    });
+    if (!res.ok) throw new Error(`count ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    const text = (data?.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join(" ");
+    const n = parseInt(text.match(/\d+/)?.[0] ?? "", 10);
+    return Number.isFinite(n) && n >= 0 && n < 200 ? n : null;
+  } catch (e) {
+    console.error("countPeople failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 export interface VeoStartOptions {
   apiKey: string;
   model: string;

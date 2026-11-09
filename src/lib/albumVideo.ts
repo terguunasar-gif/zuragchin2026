@@ -87,6 +87,8 @@ export const albumVideoApi = {
   status: (videoId: string) => call<VideoState>(`/status/${videoId}`, {}, true),
   retry: (videoId: string) => call<VideoState>('/retry', { method: 'POST', body: JSON.stringify({ videoId }) }, true),
   remove: (videoId: string) => call<{ ok: boolean }>('/delete', { method: 'POST', body: JSON.stringify({ videoId }) }, true),
+  /** update-91: зургийн хүний тоогоор видеоны формат санал болгоно (1–2 хүн → босоо) */
+  aspect: (photoId: string) => call<{ people: number | null; aspect: '16:9' | '9:16' }>('/aspect', { method: 'POST', body: JSON.stringify({ photoId }) }, true),
   /** Админ: загварын жишээ зургийг AI-аар үүсгэнэ */
   adminPreview: (templateId: string) => call<{ previewUrl: string }>('/admin/preview', { method: 'POST', body: JSON.stringify({ templateId }) }, true),
   /** Цомог нээгдэхэд боловсруулж буй видеог ахиулна (алдааг үл тооно) */

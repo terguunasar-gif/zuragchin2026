@@ -23,7 +23,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { downloadVeo, glamVideoPrompt, pollVeo, startVeo, usingFal } from "../ai-booth/veo.ts";
+import { countPeople, downloadVeo, glamVideoPrompt, imageDims, pollVeo, startVeo, usingFal, VERTICAL_FRAMING, videoAspectFor } from "../ai-booth/veo.ts";
 import { generateImage } from "../ai-booth/gemini.ts";
 
 const corsHeaders = {
@@ -37,6 +37,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const VIDEO_MODEL = Deno.env.get("ALBUM_VIDEO_MODEL") || "veo-3.1-fast-generate-preview";
 const IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
+const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") || "gemini-2.5-flash";
 const VIDEO_SECONDS = Number(Deno.env.get("ALBUM_VIDEO_SECONDS") || 8);
 const GLAM_SECONDS = Number(Deno.env.get("GLAM_VIDEO_SECONDS") || 6);
 const AUTO_ATTEMPTS = 3;   // автоматаар дахин оролдох
@@ -93,6 +94,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET" && path.startsWith("/status/")) return json(await status(req, path.slice("/status/".length)));
     if (req.method === "POST" && path === "/retry") return json(await retry(req, await readJson(req)));
     if (req.method === "POST" && path === "/delete") return json(await remove(req, await readJson(req)));
+    if (req.method === "POST" && path === "/aspect") return json(await suggestAspect(req, await readJson(req)));
     if (req.method === "POST" && path === "/admin/preview") return json(await adminPreview(req, await readJson(req)));
     if (req.method === "POST" && path === "/advance") return json(await advanceAlbum(await readJson(req)));
     if (req.method === "POST" && path === "/fal-webhook") {
@@ -340,7 +342,7 @@ async function beginVideo(v: Video): Promise<Video> {
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
       image: { mimeType: src.mimeType, data: bytesToBase64(src.bytes) },
-      prompt: glam ? glamPrompt(tpl.prompt) : videoPrompt(tpl.prompt),
+      prompt: (glam ? glamPrompt(tpl.prompt) : videoPrompt(tpl.prompt)) + (v.aspect_ratio === "9:16" ? ` ${VERTICAL_FRAMING}` : ""),
       durationSeconds: glam ? GLAM_SECONDS : VIDEO_SECONDS,
       aspectRatio: v.aspect_ratio,
       resolution: "720p",
@@ -469,6 +471,33 @@ async function remove(req: Request, body: Record<string, unknown>) {
   await db.storage.from(BUCKET).remove(paths).catch(() => undefined);
   await db.from("album_ai_videos").update({ status: "deleted", video_url: "", poster_url: "", video_op: "", updated_at: now() }).eq("id", v.id);
   return { ok: true };
+}
+
+// ── update-91: видеоны формат санал болгох (1–2 хүн → босоо) ─────────────────
+// Видео үүсгэх цонх нээгдэхэд дуудна. Тамгатай жижиг preview-ээр хүн тоолно (≈0.1₮).
+async function suggestAspect(req: Request, body: Record<string, unknown>) {
+  const user = await currentUser(req);
+  const photoId = str(body.photoId);
+  if (!isUuid(photoId)) throw new HttpError(400, "Зураг буруу");
+  const { data: photo } = await db.from("photo_uploads").select("id, album_id, preview_url").eq("id", photoId).maybeSingle();
+  if (!photo) throw new HttpError(404, "Зураг олдсонгүй");
+  if (!user.admin) {
+    const { data: album } = await db.from("albums").select("owner_id").eq("id", photo.album_id).maybeSingle();
+    if (album?.owner_id !== user.id) throw new HttpError(403, "Зөвхөн цомгийн эзэн");
+  }
+  let people: number | null = null;
+  let dims: { w: number; h: number } | null = null;
+  try {
+    const res = await fetch(String(photo.preview_url ?? ""));
+    if (res.ok) {
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      dims = imageDims(bytes);
+      people = await countPeople(GEMINI_API_KEY, TEXT_MODEL, { mimeType: sniffMime(bytes), data: bytesToBase64(bytes) });
+    }
+  } catch (e) {
+    console.error("suggestAspect failed:", e instanceof Error ? e.message : e);
+  }
+  return { people, aspect: videoAspectFor(people, dims) };
 }
 
 // ── Админ: загварын жишээ зургийг AI-аар үүсгэх ─────────────────────────────

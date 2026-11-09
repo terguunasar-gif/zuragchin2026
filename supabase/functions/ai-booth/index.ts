@@ -22,7 +22,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildPreviewPrompt, buildPrompt, clampPeople, imageSizeFor, MAX_PEOPLE } from "./prompt.ts";
 import { GeminiError, generateImage, InlineImage } from "./gemini.ts";
-import { BOOTH_GLAM_ACTION, downloadVeo, glamVideoPrompt, motionVideoPrompt, pollVeo, startVeo, suggestMotion } from "./veo.ts";
+import { BOOTH_GLAM_ACTION, downloadVeo, glamVideoPrompt, imageDims, motionVideoPrompt, pollVeo, startVeo, suggestMotion } from "./veo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -378,12 +378,16 @@ async function startVideoFor(job: Job): Promise<Job> {
       console.log("video motion:", motion);
       prompt = motionVideoPrompt(motion);
     }
+    // Үүсгэсэн зургийн хэлбэрийг дагана (3–4 хүн бол 16:9, бусад үед 9:16)
+    const dims = imageDims(bytes);
+    const aspectRatio: "9:16" | "16:9" = dims && dims.w > dims.h * 1.05 ? "16:9" : "9:16";
     const op = await startVeo({
       apiKey: GEMINI_API_KEY,
       model: VIDEO_MODEL,
       image: first,
       prompt,
       durationSeconds: glam ? GLAM_SECONDS : VIDEO_SECONDS,
+      aspectRatio,
     });
     await db.from("ai_jobs").update({ video_op: op, video_attempts: attempts, error: "", updated_at: now() }).eq("id", job.id);
     return { ...job, video_op: op, video_attempts: attempts };
@@ -573,8 +577,9 @@ async function generate(body: Record<string, unknown>) {
       allowText: tpl.allow_text === true,
     });
 
-    // Видео нь 9:16 тул зургийг шууд 9:16 харьцаагаар бүтээнэ (хар зурвас гарахгүй)
-    const imageAspect = job.kind === "video" ? "9:16" : (tpl.aspect_ratio || "3:4");
+    // update-91: видеоны формат хүний тоогоор — 1–2 хүн босоо 9:16 (утсанд), 3–4 хүн хэвтээ 16:9.
+    // Зургийг шууд тэр харьцаагаар бүтээнэ (хар зурвас гарахгүй); видео нь зургийн хэмжээгээр тодорхойлогдоно.
+    const imageAspect = job.kind === "video" ? (people >= 3 ? "16:9" : "9:16") : (tpl.aspect_ratio || "3:4");
     // Түр зуурын алдаанд нэг удаа дахин оролдоно
     let result;
     try {
