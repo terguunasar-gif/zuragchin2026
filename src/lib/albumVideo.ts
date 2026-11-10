@@ -91,6 +91,10 @@ export const albumVideoApi = {
   aspect: (photoId: string) => call<{ people: number | null; aspect: '16:9' | '9:16' }>('/aspect', { method: 'POST', body: JSON.stringify({ photoId }) }, true),
   /** Админ: загварын жишээ зургийг AI-аар үүсгэнэ */
   adminPreview: (templateId: string) => call<{ previewUrl: string }>('/admin/preview', { method: 'POST', body: JSON.stringify({ templateId }) }, true),
+  /** Админ (update-90): загварын AI зургаас жишээ видео үүсгэж эхлэх / шалгах */
+  adminSampleStart: (templateId: string) => call<{ status: string }>('/admin/sample-video', { method: 'POST', body: JSON.stringify({ templateId }) }, true),
+  adminSampleStatus: (templateId: string) =>
+    call<{ status: 'none' | 'processing' | 'done' | 'failed'; sampleVideoUrl?: string; error?: string }>('/admin/sample-status', { method: 'POST', body: JSON.stringify({ templateId }) }, true),
   /** Цомог нээгдэхэд боловсруулж буй видеог ахиулна (алдааг үл тооно) */
   advance: (albumId: string) => call<{ done: number }>('/advance', { method: 'POST', body: JSON.stringify({ albumId }) }).catch(() => ({ done: 0 })),
 };

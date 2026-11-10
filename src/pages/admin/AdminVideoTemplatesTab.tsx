@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Clapperboard, ImagePlus, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Clapperboard, Film, ImagePlus, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import { albumVideoApi } from '../../lib/albumVideo';
 import { supabase } from '../../lib/supabase';
 
@@ -7,6 +7,26 @@ interface Tpl {
   id: string; slug: string; name: string; description: string; emoji: string; prompt: string;
   sample_video_url: string; preview_url: string; tags: string; sort_order: number; is_active: boolean;
   style: 'action' | 'glam';
+  sample_op?: string;
+}
+
+/** fal.ai зардлын тооцоо (Gemini Omni Flash 720p ≈ $0.0819/сек, 1$ ≈ 3,500₮) */
+const FAL_PER_SEC_USD = 0.0819;
+const USD_MNT = 3500;
+const sampleSecs = (t: Pick<Tpl, 'style'>) => (t.style === 'glam' ? 6 : 8);
+const fmtCost = (secs: number) => `≈ $${(secs * FAL_PER_SEC_USD).toFixed(2)} (${Math.round(secs * FAL_PER_SEC_USD * USD_MNT / 100) * 100}₮)`;
+
+/** Жишээ видеог эхлүүлээд дуустал 8 сек тутам шалгана */
+async function makeSampleVideo(id: string, onTick?: () => void): Promise<string> {
+  await albumVideoApi.adminSampleStart(id);
+  for (let i = 0; i < 60; i++) {           // ≈ 8 минут хүртэл
+    await new Promise(r => setTimeout(r, 8000));
+    onTick?.();
+    const s = await albumVideoApi.adminSampleStatus(id);
+    if (s.status === 'done' && s.sampleVideoUrl) return s.sampleVideoUrl;
+    if (s.status === 'failed') throw new Error(s.error || 'Бүтээж чадсангүй');
+  }
+  throw new Error('Хугацаа хэтэрлээ — хуудсаа шинэчлээд дахин шалгана уу');
 }
 
 /** Сайтын админ: цомгийн AI видео загварууд + үнэ, орлогын хуваарь */
@@ -16,6 +36,31 @@ export default function AdminVideoTemplatesTab() {
   const [error, setError] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{ done: number; total: number; failed: number } | null>(null);
+  const [vbulk, setVbulk] = useState<{ done: number; total: number; failed: number } | null>(null);
+
+  /** AI зурагтай боловч жишээ видеогүй бүх загварт видео үүсгэнэ (3-аар зэрэг) */
+  async function generateMissingVideos() {
+    const todo = list.filter(t => t.preview_url && !t.sample_video_url);
+    if (!todo.length) { window.alert(list.some(t => !t.preview_url) ? 'Эхлээд «Зураггүйд AI зураг үүсгэх»-ийг дарна уу.' : 'Бүх загвар жишээ видеотой байна.'); return; }
+    const secs = todo.reduce((n, t) => n + sampleSecs(t), 0);
+    if (!window.confirm(`${todo.length} загварт fal.ai-аар жишээ видео үүсгэх үү?\n\nНийт ${secs} секунд видео · ${fmtCost(secs)}\nНэг нь 1–3 минут. Дуустал хуудсаа бүү хаагаарай.`)) return;
+    setVbulk({ done: 0, total: todo.length, failed: 0 });
+    const queue = [...todo];
+    const worker = async () => {
+      for (let t = queue.shift(); t; t = queue.shift()) {
+        const tpl = t;
+        try {
+          const url = await makeSampleVideo(tpl.id);
+          setList(l => l.map(x => (x.id === tpl.id ? { ...x, sample_video_url: url } : x)));
+          setVbulk(b => b && { ...b, done: b.done + 1 });
+        } catch (e) {
+          console.error(tpl.name, e);
+          setVbulk(b => b && { ...b, done: b.done + 1, failed: b.failed + 1 });
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+  }
 
   /** Жишээ зураггүй бүх загварт AI зураг үүсгэнэ (нэг нэгээр) */
   async function generateMissing() {
@@ -71,11 +116,24 @@ export default function AdminVideoTemplatesTab() {
           {bulk && bulk.done < bulk.total ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
           {bulk && bulk.done < bulk.total ? `AI зураг ${bulk.done}/${bulk.total}…` : `Зураггүйд AI зураг үүсгэх${list.some(t => !t.preview_url) ? ` (${list.filter(t => !t.preview_url).length})` : ''}`}
         </button>
+        <button onClick={generateMissingVideos} disabled={!!vbulk && vbulk.done < vbulk.total}
+          title="AI жишээ зургаас fal.ai-аар хөдөлгөөнт жишээ видео үүсгэнэ — загвар дээр хулгана аваачихад тоглоно"
+          className="flex items-center gap-1.5 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-200 disabled:opacity-60 font-semibold px-4 py-2 rounded-xl text-sm">
+          {vbulk && vbulk.done < vbulk.total ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
+          {vbulk && vbulk.done < vbulk.total
+            ? `Жишээ видео ${vbulk.done}/${vbulk.total}…`
+            : `Видеогүйд жишээ видео үүсгэх${list.some(t => t.preview_url && !t.sample_video_url) ? ` (${list.filter(t => t.preview_url && !t.sample_video_url).length})` : ''}`}
+        </button>
         <button onClick={add} className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl text-sm">
           <Plus className="w-4 h-4" /> Загвар нэмэх
         </button>
         </div>
       </div>
+      {vbulk && vbulk.done >= vbulk.total && (
+        <p className={`text-sm ${vbulk.failed ? 'text-amber-300' : 'text-green-400'}`}>
+          Жишээ видео үүсгэж дууслаа: {vbulk.total - vbulk.failed} амжилттай{vbulk.failed ? `, ${vbulk.failed} бүтэлгүй (тухайн загварыг нээж дахин оролдоно уу)` : ''}.
+        </p>
+      )}
       {bulk && bulk.done >= bulk.total && (
         <p className={`text-sm ${bulk.failed ? 'text-amber-300' : 'text-green-400'}`}>
           AI зураг үүсгэж дууслаа: {bulk.total - bulk.failed} амжилттай{bulk.failed ? `, ${bulk.failed} бүтсэнгүй (дахин дарна уу)` : ''}.
@@ -110,6 +168,19 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
       .order('created_at', { ascending: false }).limit(12)
       .then(({ data }) => setMade((data ?? []) as { id: string; video_url: string; poster_url: string }[]));
   }, [open, tpl.id]);
+
+  const [vidBusy, setVidBusy] = useState(false);
+  async function genSampleVideo() {
+    if (!window.confirm(`«${f.name}»-д AI жишээ зургаас ${sampleSecs(f)} секундын жишээ видео үүсгэх үү? ${fmtCost(sampleSecs(f))}`)) return;
+    setVidBusy(true);
+    try {
+      const url = await makeSampleVideo(tpl.id);
+      const next = { ...f, sample_video_url: url };
+      setF(next); onSaved(next);
+    } catch (e) {
+      window.alert('Жишээ видео үүсгэж чадсангүй: ' + (e instanceof Error ? e.message : ''));
+    } finally { setVidBusy(false); }
+  }
 
   const [genBusy, setGenBusy] = useState(false);
   async function genPreview() {
@@ -218,10 +289,20 @@ function TemplateRow({ tpl, open, onToggle, onSaved, onDeleted }: {
                 {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} MP4 байршуулах
                 <input type="file" accept="video/mp4" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) upload(file); e.target.value = ''; }} />
               </label>
+              <button onClick={genSampleVideo} disabled={vidBusy || !f.preview_url}
+                title={f.preview_url ? '' : 'Эхлээд AI жишээ зураг үүсгэнэ үү'}
+                className="flex items-center gap-1.5 text-xs bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-200 rounded-lg px-3 py-2 disabled:opacity-50">
+                {vidBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
+                {vidBusy ? 'Видео бүтээж байна… (1–3 мин)' : `${f.sample_video_url ? 'AI жишээ видеог дахин' : 'AI зургаас жишээ видео'} үүсгэх · ${fmtCost(sampleSecs(f))}`}
+              </button>
               {f.sample_video_url && (
                 <button onClick={() => save({ sample_video_url: '' })} className="text-xs text-stone-400 hover:text-red-400">Жишээг хасах</button>
               )}
             </div>
+            {f.sample_video_url && (
+              <video src={f.sample_video_url} poster={f.preview_url || undefined} muted loop playsInline controls
+                className="w-64 aspect-video object-cover rounded-lg border border-white/10 bg-black" />
+            )}
             {made.length > 0 && (
               <div>
                 <p className="text-stone-500 text-[11px] mb-1">Энэ загвараар бүтээгдсэн видеоноос жишээ болгох:</p>
@@ -306,7 +387,7 @@ function VideoPriceSetting() {
         <div>
           <p className="text-white font-semibold">Цомгийн AI видео — үнэ</p>
           <p className="text-stone-500 text-xs mt-0.5">
-            Цомгийн эзэн зургаа сонгоод загвараар 8 секундын видео бүтээнэ (Google Veo Fast 720p, ≈2,800₮ өртөгтэй).
+            Цомгийн эзэн зургаа сонгоод загвараар видео бүтээнэ (fal.ai · Gemini Omni Flash 720p: Glam 6 сек ≈1,700₮, үйлдэл 8 сек ≈2,300₮ өртөгтэй).
             Цомгийн эзэнд {ownerAmt.toLocaleString()}₮, сайтад {(n - ownerAmt).toLocaleString()}₮ орно.
           </p>
         </div>
