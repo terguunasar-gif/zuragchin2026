@@ -46,6 +46,8 @@ const StudiosPage = lazy(() => import('./pages/StudiosPage'));
 const StudioDetailPage = lazy(() => import('./pages/StudioDetailPage'));
 const StudioFormPage = lazy(() => import('./pages/StudioFormPage'));
 const MyStudiosPage = lazy(() => import('./pages/MyStudiosPage'));
+// Сайтын ухаалаг туслах (update-92) — тусдаа chunk-аар ачаална
+const HelpChat = lazy(() => import('./components/HelpChat'));
 
 function PageFallback() {
   return (
@@ -152,6 +154,7 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </Suspense>
+        <Suspense fallback={null}><HelpChat /></Suspense>
       </I18nProvider>
       </AuthProvider>
     </BrowserRouter>
