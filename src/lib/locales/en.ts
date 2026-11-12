@@ -266,6 +266,25 @@ const EN: Record<string, string> = {
 
   'Үйлчилгээний нөхцөл': 'Terms of Service',
   'Нууцлалын бодлого': 'Privacy Policy',
+  // help-bot (update-92)
+  "Туслах": "Help",
+  "Zuragchin туслах": "Zuragchin assistant",
+  "Сайтыг ашиглах заавар — хаана, яаж": "How to use the site — where and how",
+  "Шинэ яриа": "New chat",
+  "Сайн байна уу! Би Zuragchin.mn-ийн туслах. Сайт дээр юу хийх гэж байгаагаа асуугаарай — аль хуудас, аль товчийг дарахыг зааж өгье.": "Hi! I'm the Zuragchin.mn assistant. Tell me what you want to do on the site and I'll show you which page and button to use.",
+  "Тус болсон уу?": "Helpful?",
+  "Тийм": "Yes",
+  "Үгүй": "No",
+  "Баярлалаа!": "Thanks!",
+  "Баярлалаа — сайжруулахад ашиглана.": "Thanks — we'll use this to improve.",
+  "Бодож байна…": "Thinking…",
+  "Асуултаа бичнэ үү…": "Type your question…",
+  "Илгээх": "Send",
+  "Уучлаарай, яг одоо хариулж чадсангүй. Дахин оролдоно уу.": "Sorry, I couldn't answer right now. Please try again.",
+  "Өөрийн зургийг цомгоос яаж олох вэ?": "How do I find my photos in an album?",
+  "Зураг яаж худалдаж авах вэ?": "How do I buy a photo?",
+  "Худалдаж авсан зургаа хаанаас татах вэ?": "Where do I download photos I bought?",
+  "Зурагчин болж цомог үүсгэх вэ?": "How do I become a photographer and create an album?",
 };
 
 export default EN;
