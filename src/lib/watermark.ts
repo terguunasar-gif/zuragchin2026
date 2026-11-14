@@ -157,8 +157,9 @@ function applyTextWatermarkPositioned(
   offsetX?: number,
   offsetY?: number,
 ): Rect {
-  const fontSize = Math.max(12, Math.round(w * (fontSizePx / 1000)));
-  const padding  = Math.round(w * 0.02);
+  const short    = Math.min(w, h); // богино тал — хөндлөн зурагт текст хэт томрохгүй
+  const fontSize = Math.max(12, Math.round(short * (fontSizePx / 1000)));
+  const padding  = Math.round(short * 0.02);
 
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -195,10 +196,12 @@ async function applyImageWatermarkPositioned(
 ): Promise<Rect | null> {
   try {
     const wmImg = await loadImageFromUrl(url);
-    const wmW   = Math.round(w * (imageSizePct / 100));
+    // Хэмжээг богино талаас тооцно — хөндлөн зурагт лого хэт томрохгүй, босоо зурагт өмнөх шигээ
+    const base  = Math.min(w, h);
+    const wmW   = Math.round(base * (imageSizePct / 100));
     const scale = wmW / wmImg.naturalWidth;
     const wmH   = Math.round(wmImg.naturalHeight * scale);
-    const padding = Math.round(w * 0.02);
+    const padding = Math.round(base * 0.02);
 
     // getPositionXY нь текстийн суурь шугамаар (доод ирмэг) тооцдог; drawImage дээд ирмэгээр зурдаг тул
     // wmH-ийг хасна. Үгүй бол доод булангийн лого зургаас гарч таслагдаж байсан (update-87 засвар).
@@ -343,8 +346,8 @@ async function applyTextWatermarkTiled(
   dense = false,
 ) {
   const fontSize = fontSizePx
-    ? Math.max(12, Math.round(w * (fontSizePx / 1000)))
-    : Math.max(16, Math.round(w * 0.025));
+    ? Math.max(12, Math.round(Math.min(w, h) * (fontSizePx / 1000)))
+    : Math.max(16, Math.round(Math.min(w, h) * 0.025));
 
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -383,7 +386,7 @@ async function applyImageWatermarkTiled(
 ) {
   try {
     const wmImg   = await loadImageFromUrl(url);
-    const wmW     = Math.round(w * (imageSizePct / 100));
+    const wmW     = Math.round(Math.min(w, h) * (imageSizePct / 100));
     const scale   = wmW / wmImg.naturalWidth;
     const wmH     = Math.round(wmImg.naturalHeight * scale);
     const spacingX = wmW + Math.round(w * 0.08);
