@@ -90,14 +90,19 @@ function fmtDate(iso: string) {
 }
 
 export default function SalesPanel({
-  mode, sales,
+  mode, sales, initialFilter = 'all', initialAlbumId = null, bigThumbs = false, hideSummary = false,
 }: {
   mode: 'photographer' | 'organizer';
   sales: ReturnType<typeof useMySales>;
+  initialFilter?: 'all' | 'print' | 'download';
+  initialAlbumId?: string | null;
+  /** Угаалгах захиалгын хуудас: зургийг томоор */
+  bigThumbs?: boolean;
+  hideSummary?: boolean;
 }) {
   const { rows, setRows, loading, error, reload } = sales;
-  const [filter, setFilter] = useState<'all' | 'print' | 'download'>('all');
-  const [albumFilter, setAlbumFilter] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'print' | 'download'>(initialFilter);
+  const [albumFilter, setAlbumFilter] = useState<string | null>(initialAlbumId);
   // Цомгийн карт / статистикийн картаас «угаалгах захиалга» руу шилжих
   useEffect(() => {
     const on = (e: Event) => {
@@ -168,6 +173,7 @@ export default function SalesPanel({
         </div>
       </div>
 
+      {!hideSummary && <>
       <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-xs text-stone-400 leading-relaxed">
         <p><span className="text-white">Төлбөрийн хуваарилалт:</span> QPay шимтгэл 1% · Платформ 3% · Зохион байгуулагч 10% · үлдсэн нь зурагчинд.
           AI бүүтийн зураг: QPay 1% · Зохион байгуулагч 10% · үлдсэн нь платформд.</p>
@@ -188,6 +194,7 @@ export default function SalesPanel({
           <p className="text-amber-400 text-xl font-bold mt-1">{sum.openPrints}</p>
         </div>
       </div>
+      </>}
 
       {albumFilter && (
         <div className="flex items-center gap-2 mb-3 text-xs">
@@ -211,8 +218,10 @@ export default function SalesPanel({
             <div key={r.id} className={`border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3 ${r.type === 'print' && r.print_status === 'pending' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white/5 border-white/10'}`}>
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 {r.preview_url
-                  ? <img src={r.preview_url} alt="" className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
-                  : <div className="w-14 h-14 rounded-lg bg-stone-800 flex-shrink-0" />}
+                  ? <a href={r.preview_url} target="_blank" rel="noreferrer" className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <img src={r.preview_url} alt="" className={`${bigThumbs ? 'w-28 h-28 sm:w-32 sm:h-32' : 'w-14 h-14'} object-cover rounded-lg`} />
+                    </a>
+                  : <div className={`${bigThumbs ? 'w-28 h-28 sm:w-32 sm:h-32' : 'w-14 h-14'} rounded-lg bg-stone-800 flex-shrink-0`} />}
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium flex items-center gap-1.5">
                     {r.type === 'print'

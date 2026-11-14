@@ -31,6 +31,7 @@ const AiBoothSettingsPage = lazy(() => import('./pages/booth/AiBoothSettingsPage
 const OrganizerRequestsPage = lazy(() => import('./pages/organizer/OrganizerRequestsPage'));
 const AlbumActivatePage = lazy(() => import('./pages/albums/AlbumActivatePage'));
 const PrintRequestsPage = lazy(() => import('./pages/organizer/PrintRequestsPage'));
+const PrintOrdersPage = lazy(() => import('./pages/PrintOrdersPage'));
 const AlbumListingPage = lazy(() => import('./pages/albums/AlbumListingPage'));
 const ExploreAlbumsPage = lazy(() => import('./pages/ExploreAlbumsPage'));
 const WalletPage = lazy(() => import('./pages/wallet/WalletPage'));
@@ -73,6 +74,10 @@ export default function App() {
           <Route
             path="/dashboard"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/dashboard/print-orders"
+            element={<ProtectedRoute><PrintOrdersPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/print-requests"

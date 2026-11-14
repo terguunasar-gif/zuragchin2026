@@ -221,8 +221,9 @@ export default function DashboardPage() {
   }
   /** Угаалгах захиалгууд руу (шүүлтүүр «Угаалгах», сонгосон цомгоор) */
   function showPrintOrders(albumId?: string) {
-    window.dispatchEvent(new CustomEvent('sales-filter', { detail: { type: 'print', albumId } }));
-    setTimeout(scrollToSales, 50);
+    const q = new URLSearchParams({ as: activeRole === 'photographer' ? 'photographer' : 'organizer' });
+    if (albumId) q.set('album', albumId);
+    navigate(`/dashboard/print-orders?${q}`);
   }
 
   function albumExpiryDays(album: Album): number {
