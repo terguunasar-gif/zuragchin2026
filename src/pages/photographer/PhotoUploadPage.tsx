@@ -48,8 +48,9 @@ const defaultPrintPrices = (): PrintPrices =>
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 20 * 1024 * 1024;
 /** Эх файлыг хадгалахын өмнө шахах: урт тал 4000px, JPEG 90% — утас, A4 хэвлэлд ялгаагүй, 3–4 дахин бага зай */
-const ORIGINAL_MAX_EDGE = 4000;
-const ORIGINAL_QUALITY = 0.9;
+// A4 (300 dpi) = 2480×3508 px → 3600 px хангалттай, storage/траффик хэмнэнэ
+const ORIGINAL_MAX_EDGE = 3600;
+const ORIGINAL_QUALITY = 0.85;
 
 interface PhotoQuota { applies: boolean; used: number; free_quota: number; extra: number; quota: number }
 
@@ -261,13 +262,13 @@ export default function PhotoUploadPage() {
           originalBlob = await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
           compressed = true;
         } else {
-          // Эх файлыг шахна — илт багасах үед л (аль хэдийн жижиг файлыг хөндөхгүй)
+          // Эх файлыг A4-д хангалттай 3600 px / 85% болгож шахна (шахсан нь том болбол эхээр нь үлдээнэ)
           try {
             // Худалдах цомгийн эх файл = худалдан авагчийн төлсөн зураг → сайтын тэмдэггүй.
             // Үнэгүй цомгийн эх файлыг зочид чөлөөтэй татаж хуваалцдаг → жижиг Zuragchin.mn тэмдэгтэй (сурталчилгаа).
             const c = await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE, siteBadge: !!album.is_free });
-            // Үнэгүй цомогт тэмдэгтэй хувилбарыг заавал ашиглана; бусад үед илт багассан бол л
-            if (album.is_free || c.size < entry.file.size * 0.9) { originalBlob = c; compressed = true; }
+            // Үнэгүй цомогт тэмдэгтэй хувилбарыг заавал ашиглана; бусад үед шахсан нь жижиг бол үргэлж шахсаныг ашиглана
+            if (album.is_free || c.size < entry.file.size) { originalBlob = c; compressed = true; }
           } catch { /* шахаж чадаагүй бол эх файлаар нь */ }
         }
         const previewBlob = album.is_free
