@@ -531,6 +531,29 @@ export default function PublicAlbumPage() {
   }, [cart]);
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
+
+  /** Сагсан дахь зургийн сонголтыг солих: Татах ↔ Угаалгах (хэмжээ). Ижил сонголт аль хэдийн байвал давхардуулахгүй. */
+  const changeCartItem = (id: string, type: 'download' | 'print', printSize: string | undefined, price: number) =>
+    setCart(prev => {
+      const cur = prev.find(c => c.id === id);
+      if (!cur) return prev;
+      const dup = prev.some(c => c.id !== id && c.photoId === cur.photoId && c.type === type && (type === 'download' || c.printSize === printSize));
+      if (dup) return prev.filter(c => c.id !== id);
+      return prev.map(c => (c.id === id ? { ...c, type, printSize: type === 'print' ? printSize : undefined, price } : c));
+    });
+
+  /** Сагсан дахь зургийн боломжит сонголтууд (татах үнэ + угаалгах хэмжээ/үнэ) */
+  const cartOptions = (photoId: string): { type: 'download' | 'print'; size?: string; price: number }[] => {
+    const ph = photos.find(p => p.id === photoId);
+    if (!ph || !album) return [];
+    const opts: { type: 'download' | 'print'; size?: string; price: number }[] = [];
+    const dl = photoDownloadPrice(ph, album, aiPrice);
+    if (dl > 0) opts.push({ type: 'download', price: dl });
+    if (allowPrint) for (const [size, price] of Object.entries(ph.print_prices || {})) {
+      if (Number(price) > 0) opts.push({ type: 'print', size, price: Number(price) });
+    }
+    return opts;
+  };
   const cartTotal = cart.reduce((s, i) => s + i.price, 0);
 
   // ── Хавтаснууд: AI бүүтийн зургууд автоматаар «AI бүүт»-д, хавтасгүй нь «Бусад»-д ──
@@ -1038,6 +1061,8 @@ export default function PublicAlbumPage() {
         <CartSidebar
           cart={cart} total={cartTotal}
           onRemove={removeFromCart}
+          onChange={changeCartItem}
+          options={cartOptions}
           onClose={() => setCartOpen(false)}
           onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }}
         />
@@ -1302,13 +1327,16 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
   );
 }
 
-function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
+function CartSidebar({ cart, total, onRemove, onChange, options, onClose, onCheckout }: {
   cart: CartItem[]; total: number;
   onRemove: (id: string) => void;
+  onChange: (id: string, type: 'download' | 'print', printSize: string | undefined, price: number) => void;
+  options: (photoId: string) => { type: 'download' | 'print'; size?: string; price: number }[];
   onClose: () => void;
   onCheckout: () => void;
 }) {
   const { t } = useI18n();
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <>
       <div className="fixed inset-0 bg-stone-950/60 z-40 backdrop-blur-sm" onClick={onClose} />
@@ -1328,8 +1356,12 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
               <p className="text-stone-500 text-sm">{t('Сагс хоосон байна')}</p>
             </div>
           ) : (
-            cart.map(item => (
-              <div key={item.id} className="flex items-center gap-3 bg-white/5 rounded-xl p-3">
+            cart.map(item => {
+              const opts = options(item.photoId);
+              const isOpen = editing === item.id;
+              return (
+              <div key={item.id} className="bg-white/5 rounded-xl p-3">
+                <div className="flex items-center gap-3">
                 <img src={item.previewUrl} alt={item.filename} className="w-12 h-12 object-cover rounded-lg flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm truncate">{item.filename}</p>
@@ -1340,11 +1372,39 @@ function CartSidebar({ cart, total, onRemove, onClose, onCheckout }: {
                     {item.price === 0 ? t('Үнэгүй') : `₮${item.price.toLocaleString()}`}
                   </p>
                 </div>
+                {opts.length > 1 && (
+                  <button onClick={() => setEditing(isOpen ? null : item.id)}
+                    className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex-shrink-0 transition-colors ${
+                      isOpen ? 'bg-amber-500 text-stone-950 border-amber-500' : 'border-white/15 text-stone-200 hover:bg-white/10'}`}>
+                    {t('Өөрчлөх')}
+                  </button>
+                )}
                 <button onClick={() => onRemove(item.id)} className="text-stone-600 hover:text-red-400 transition-colors flex-shrink-0">
                   <X className="w-4 h-4" />
                 </button>
+                </div>
+                {isOpen && (
+                  <div className="mt-3 grid grid-cols-2 gap-1.5">
+                    {opts.map(o => {
+                      const active = o.type === item.type && (o.type === 'download' || o.size === item.printSize);
+                      return (
+                        <button key={o.type + (o.size ?? '')}
+                          onClick={() => { if (!active) onChange(item.id, o.type, o.size, o.price); setEditing(null); }}
+                          className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs border transition-colors ${
+                            active ? 'border-amber-400 bg-amber-500/15 text-amber-200' : 'border-white/10 text-stone-300 hover:bg-white/10 hover:text-white'}`}>
+                          <span className="flex items-center gap-1.5 truncate">
+                            {o.type === 'download' ? <Download className="w-3.5 h-3.5 flex-shrink-0" /> : <Printer className="w-3.5 h-3.5 flex-shrink-0" />}
+                            {o.type === 'download' ? t('Татах') : (PRINT_SIZE_LABELS[o.size!] ?? o.size)}
+                          </span>
+                          <span className="font-semibold">₮{o.price.toLocaleString()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            ))
+              );
+            })
           )}
         </div>
         {cart.length > 0 && (
