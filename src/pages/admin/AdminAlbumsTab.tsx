@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay } from 'lucide-react';
+import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay, Images } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 interface AdminAlbum {
@@ -255,6 +256,16 @@ export default function AdminAlbumsTab() {
                         <MonitorPlay className="w-3.5 h-3.5 text-amber-400" />
                         Томоор
                       </a>
+                    ) : null}
+                    {a.id ? (
+                      <Link
+                        to={`/dashboard/albums/${a.id}/photos`}
+                        title="Цомгийн зургуудыг удирдах, устгах"
+                        className="ml-1.5 inline-flex items-center gap-1.5 text-xs text-red-200 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <Images className="w-3.5 h-3.5" />
+                        Зураг удирдах
+                      </Link>
                     ) : (
                       <span className="text-stone-600 text-xs">Линк байхгүй</span>
                     )}
