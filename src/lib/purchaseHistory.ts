@@ -52,6 +52,20 @@ export function setPendingInvoice(albumId: string, invoiceId: string | null) {
   write(PENDING_PREFIX + albumId, invoiceId);
 }
 
+/** Энэ хөтөчид үлдсэн бүх төлөгдөж амжаагүй (эсвэл төлөгдсөн ч баримт нь нээгдээгүй) нэхэмжлэх */
+export function listPendingInvoices(): { albumId: string; invoiceId: string }[] {
+  const out: { albumId: string; invoiceId: string }[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(PENDING_PREFIX)) continue;
+      const v = read<string | null>(k, null);
+      if (v) out.push({ albumId: k.slice(PENDING_PREFIX.length), invoiceId: v });
+    }
+  } catch { /* */ }
+  return out;
+}
+
 // ── Төлсөн захиалгын түүх ───────────────────────────────────────────────────
 export function listPurchaseHistory(): PurchaseHistoryEntry[] {
   const v = read<PurchaseHistoryEntry[]>(HISTORY_KEY, []);
