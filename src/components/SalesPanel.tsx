@@ -97,6 +97,17 @@ export default function SalesPanel({
 }) {
   const { rows, setRows, loading, error, reload } = sales;
   const [filter, setFilter] = useState<'all' | 'print' | 'download'>('all');
+  const [albumFilter, setAlbumFilter] = useState<string | null>(null);
+  // Цомгийн карт / статистикийн картаас «угаалгах захиалга» руу шилжих
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ type?: 'print'; albumId?: string }>).detail ?? {};
+      setFilter(d.type ?? 'all');
+      setAlbumFilter(d.albumId ?? null);
+    };
+    window.addEventListener('sales-filter', on);
+    return () => window.removeEventListener('sales-filter', on);
+  }, []);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [smsInfo, setSmsInfo] = useState<Record<string, PrintJobResult>>({});
@@ -121,7 +132,10 @@ export default function SalesPanel({
     () => rows.filter(r => (mode === 'photographer' ? r.is_my_photo : r.is_my_album)),
     [rows, mode],
   );
-  const visible = scoped.filter(r => filter === 'all' || r.type === filter);
+  const visible = scoped
+    .filter(r => (filter === 'all' || r.type === filter) && (!albumFilter || r.album_id === albumFilter))
+    // Хэвлээгүй угаалгах захиалгыг дээр нь
+    .sort((a, b) => Number(b.type === 'print' && b.print_status === 'pending') - Number(a.type === 'print' && a.print_status === 'pending'));
   const sum = summarize(scoped);
 
   async function changeStatus(r: SaleRow, status: SaleRow['print_status']) {
@@ -141,7 +155,7 @@ export default function SalesPanel({
         </h2>
         <div className="flex items-center gap-2">
           {(['all', 'print', 'download'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
+            <button key={f} onClick={() => { setFilter(f); setAlbumFilter(null); }}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 filter === f ? 'bg-amber-500 text-stone-950 border-amber-500' : 'text-stone-400 border-white/10 hover:text-white'}`}>
               {f === 'all' ? 'Бүгд' : f === 'print' ? 'Угаалгах' : 'Татах'}
@@ -175,6 +189,13 @@ export default function SalesPanel({
         </div>
       </div>
 
+      {albumFilter && (
+        <div className="flex items-center gap-2 mb-3 text-xs">
+          <span className="text-stone-400">Цомог:</span>
+          <span className="text-white font-medium">{scoped.find(r => r.album_id === albumFilter)?.album_name ?? '—'}</span>
+          <button onClick={() => setAlbumFilter(null)} className="text-amber-400 hover:underline">Бүх цомог</button>
+        </div>
+      )}
       {error && <p className="text-red-400 text-sm mb-3">Ачааллахад алдаа гарлаа: {error}</p>}
 
       {loading && rows.length === 0 ? (
@@ -187,7 +208,7 @@ export default function SalesPanel({
       ) : (
         <div className="space-y-2">
           {visible.map(r => (
-            <div key={r.id} className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div key={r.id} className={`border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3 ${r.type === 'print' && r.print_status === 'pending' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white/5 border-white/10'}`}>
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 {r.preview_url
                   ? <img src={r.preview_url} alt="" className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />

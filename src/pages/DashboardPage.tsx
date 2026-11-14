@@ -62,6 +62,7 @@ export default function DashboardPage() {
   const [pendingCount, setPendingCount] = useState(0);
   // Үнэгүй цомгийн шинэ угаалгах хүсэлт
   const [printReqCount, setPrintReqCount] = useState<number | null>(null);
+  const [printReqByAlbum, setPrintReqByAlbum] = useState<Record<string, number>>({});
   const [offerCount, setOfferCount] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const sales = useMySales();
@@ -152,6 +153,13 @@ export default function DashboardPage() {
   async function loadPrintRequestCount() {
     const { count, error } = await supabase.from('print_requests').select('id', { count: 'exact', head: true }).eq('status', 'new');
     setPrintReqCount(error ? null : (count ?? 0));
+    // Цомог бүрийн шинэ угаалгах хүсэлт (үнэгүй цомог) — картан дээр тэмдэг харуулна
+    if (!error && count) {
+      const { data: reqs } = await supabase.from('print_requests').select('album_id').eq('status', 'new').limit(1000);
+      const m: Record<string, number> = {};
+      for (const r of (reqs ?? []) as { album_id: string }[]) m[r.album_id] = (m[r.album_id] ?? 0) + 1;
+      setPrintReqByAlbum(m);
+    } else setPrintReqByAlbum({});
     // Хариулаагүй үнийн санал (update-40-ийн SQL ажиллаагүй бол картыг нуух)
     const offers = await supabase.rpc('my_pending_offer_count');
     setOfferCount(offers.error ? null : Number(offers.data ?? 0));
@@ -210,6 +218,11 @@ export default function DashboardPage() {
   /** «Миний хувь / Хүлээгдэж буй» картыг дарахад борлуулалтын задаргаа руу гүйлгэнэ */
   function scrollToSales() {
     document.getElementById('sales-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  /** Угаалгах захиалгууд руу (шүүлтүүр «Угаалгах», сонгосон цомгоор) */
+  function showPrintOrders(albumId?: string) {
+    window.dispatchEvent(new CustomEvent('sales-filter', { detail: { type: 'print', albumId } }));
+    setTimeout(scrollToSales, 50);
   }
 
   function albumExpiryDays(album: Album): number {
@@ -345,6 +358,7 @@ export default function DashboardPage() {
           {activeRole === 'photographer' && isPhotographer && (
             <>
               <StatCard icon={<Image className="w-5 h-5 text-blue-400" />} label="Зарагдсан зураг" value={photographerSum.soldCount} />
+              <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах захиалга (хүлээлгэж өгөөгүй)" value={photographerSum.openPrints} onClick={() => showPrintOrders()} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Нийт орлого" value={`₮${photographerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Татах боломжтой · Мөнгө татах →" value={walletStr} onClick={() => navigate('/dashboard/wallet')} />
               {printReqCount !== null && (
@@ -358,6 +372,7 @@ export default function DashboardPage() {
           {activeRole === 'organizer' && isOrganizer && (
             <>
               <StatCard icon={<FolderOpen className="w-5 h-5 text-amber-400" />} label="Нийт цомог" value={albums.length} />
+              <StatCard icon={<Printer className="w-5 h-5 text-amber-400" />} label="Угаалгах захиалга (хүлээлгэж өгөөгүй)" value={organizerSum.openPrints} onClick={() => showPrintOrders()} />
               <StatCard icon={<Users className="w-5 h-5 text-blue-400" />} label="Хүлээгдэж буй хүсэлт" value={pendingCount} onClick={() => navigate('/dashboard/requests')} />
               <StatCard icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} label="Миний хувь" value={`₮${organizerSum.myEarnings.toLocaleString()}`} onClick={scrollToSales} />
               <StatCard icon={<Clock className="w-5 h-5 text-amber-400" />} label="Татах боломжтой · Мөнгө татах →" value={walletStr} onClick={() => navigate('/dashboard/wallet')} />
@@ -417,6 +432,31 @@ export default function DashboardPage() {
                         <Calendar className="w-3.5 h-3.5" />
                         {new Date(album.event_date).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </div>
+                      {/* Угаалгах захиалга ирсэн бол картан дээрээс шууд харагдана */}
+                      {(() => {
+                        const orders = sales.rows.filter(r => r.album_id === album.id && r.is_my_album && r.type === 'print');
+                        const waiting = orders.filter(r => r.print_status === 'pending').length;
+                        const open = orders.filter(r => r.print_status !== 'delivered').length;
+                        const reqs = printReqByAlbum[album.id] ?? 0;
+                        if (!open && !reqs) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {open > 0 && (
+                              <button onClick={e => { e.stopPropagation(); showPrintOrders(album.id); }}
+                                className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border ${waiting ? 'bg-red-500/15 border-red-500/40 text-red-300 animate-pulse' : 'bg-sky-500/10 border-sky-500/30 text-sky-300'}`}>
+                                <Printer className="w-3 h-3" />
+                                {waiting ? `${waiting} шинэ угаалгах захиалга` : `${open} угаалгах · хүлээлгэж өгөөгүй`}
+                              </button>
+                            )}
+                            {reqs > 0 && (
+                              <button onClick={e => { e.stopPropagation(); navigate('/dashboard/print-requests'); }}
+                                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-red-500/15 border-red-500/40 text-red-300">
+                                <Printer className="w-3 h-3" />{reqs} шинэ угаалгах хүсэлт
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* Үнэгүй хуваалцах цомог: багцын төлөв */}
                       {album.is_free && (
                         album.free_activated ? (
