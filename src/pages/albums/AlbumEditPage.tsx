@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Save, AlertCircle, CheckCircle2, Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid, Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2,
+  ArrowLeft, Save, AlertCircle, CheckCircle2, Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid, Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2, Eye,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
@@ -427,11 +427,17 @@ export default function AlbumEditPage() {
               <span className="text-white font-semibold">Цомог засах</span>
             </div>
           </div>
-          <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2 rounded-xl text-sm transition-all">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Хадгалж байна…' : saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
-          </button>
+          <div className="flex items-center gap-2">
+            <a href={`/album/${albumId}`} target="_blank" rel="noreferrer" title="Цомгийг шинэ табд нээх (хадгалсан өөрчлөлт харагдана)"
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-200 font-semibold px-4 py-2 rounded-xl text-sm transition-all">
+              <Eye className="w-4 h-4" /><span className="hidden sm:inline">Цомог харах</span>
+            </a>
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2 rounded-xl text-sm transition-all">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Хадгалж байна…' : saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -771,6 +777,10 @@ export default function AlbumEditPage() {
 
         <div className="flex gap-3 pt-2">
           <button onClick={() => navigate('/dashboard')} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-medium py-3 rounded-xl text-sm transition-all">Буцах</button>
+          <a href={`/album/${albumId}`} target="_blank" rel="noreferrer"
+            className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-amber-500/30 text-amber-300 font-semibold py-3 rounded-xl text-sm transition-all">
+            <Eye className="w-4 h-4" /> Цомог харах
+          </a>
           <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-bold py-3 rounded-xl text-sm transition-all">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Хадгалж байна…' : 'Хадгалах'}
