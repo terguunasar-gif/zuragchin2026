@@ -8,9 +8,22 @@ export interface BankLink { name: string; description?: string; link: string; lo
 /** Банкны апп зөвхөн утсан дээр нээгдэнэ (khanbank:// гэх мэт). Компьютер дээр QR уншуулна. */
 export const canOpenBankApps = isAndroid || isIOS;
 
-export default function BankLinks({ urls }: { urls: BankLink[] }) {
+/** Зөвхөн qPay хэтэвч болон Хаан банкийг харуулна (бусад банкийг хасна). */
+const ALLOWED: RegExp[] = [/qpay/i, /khan|хаан/i];
+function allowedIndex(u: BankLink) {
+  const key = `${u.name} ${u.description ?? ''} ${u.link}`;
+  return ALLOWED.findIndex(re => re.test(key));
+}
+export function filterBankLinks(urls: BankLink[] = []) {
+  return urls
+    .filter(u => allowedIndex(u) >= 0)
+    .sort((a, b) => allowedIndex(a) - allowedIndex(b));
+}
+
+export default function BankLinks({ urls: rawUrls }: { urls: BankLink[] }) {
   const { t } = useI18n();
-  if (!urls?.length) return null;
+  const urls = filterBankLinks(rawUrls);
+  if (!urls.length) return null;
   if (!canOpenBankApps) {
     return (
       <div className="flex items-start gap-2.5 bg-sky-500/10 border border-sky-500/25 rounded-xl p-3 text-left">
