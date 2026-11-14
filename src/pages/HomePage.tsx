@@ -6,6 +6,7 @@ import HomeAlbumsSection from '../components/HomeAlbumsSection';
 import AiBoothShowcase from '../components/AiBoothShowcase';
 import AiVideoShowcase from '../components/AiVideoShowcase';
 import HomeHeader from '../components/home/HomeHeader';
+import ResumeAlbumCard from '../components/home/ResumeAlbumCard';
 import HomeStudiosSections from '../components/home/HomeStudiosSections';
 import HomeFooter from '../components/home/HomeFooter';
 
@@ -126,6 +127,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-stone-950 text-white">
       <HomeHeader />
+      <ResumeAlbumCard />
 
       <section className="px-4 sm:px-6 pt-8 pb-4 sm:pt-14 sm:pb-8">
         <div className="max-w-3xl mx-auto">
