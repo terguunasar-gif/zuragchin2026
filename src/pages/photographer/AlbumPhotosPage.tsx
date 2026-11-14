@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard,
+  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard, Copy,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -422,6 +422,66 @@ export default function AlbumPhotosPage() {
     setTimeout(() => setToastMsg(''), 3000);
   }
 
+  /** Нэг зургийг устгана (баталгаажуулалтгүй). Буцаах: 'deleted' | 'hidden' | null (алдаа) */
+  async function removePhoto(photo: Photo): Promise<string | null> {
+    const { data: res, error } = await supabase.rpc('delete_album_photo', { p_photo_id: photo.id });
+    if (error) return null;
+    if (res === 'deleted') {
+      const originalPath = photo.original_url.replace(/^photos-original\//, '');
+      const previewPath = photo.preview_url.includes('/photos-preview/')
+        ? photo.preview_url.split('/photos-preview/')[1]?.split('?')[0]
+        : null;
+      await Promise.all([
+        supabase.storage.from('photos-original').remove([originalPath]).catch(() => null),
+        previewPath ? supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null) : null,
+      ]);
+    }
+    return String(res);
+  }
+
+  const [bulkDeleting, setBulkDeleting] = useState<{ done: number; total: number } | null>(null);
+  async function deleteSelected() {
+    const list = photos.filter(p => selected.has(p.id));
+    if (!list.length) return;
+    if (!confirm(`Сонгосон ${list.length} зургийг цомгоос устгах уу? Буцаах боломжгүй.`)) return;
+    setBulkDeleting({ done: 0, total: list.length });
+    const gone = new Set<string>();
+    let failed = 0, i = 0;
+    const worker = async () => {
+      while (i < list.length) {
+        const ph = list[i++];
+        const r = await removePhoto(ph);
+        if (r) gone.add(ph.id); else failed++;
+        setBulkDeleting(b => (b ? { ...b, done: b.done + 1 } : b));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setPhotos(prev => prev.filter(p => !gone.has(p.id)));
+    setSelected(new Set());
+    setBulkDeleting(null);
+    showToast(failed ? `${gone.size} зураг устгагдлаа, ${failed} зураг устгах эрхгүй/алдаатай` : `${gone.size} зураг устгагдлаа`, failed ? 'error' : 'success');
+  }
+
+  /** Ижил нэртэй (давхар оруулсан) зургуудыг олж, хамгийн эхний нэгээс бусдыг сонгоно */
+  function selectDuplicates(silent = false) {
+    const groups = new Map<string, Photo[]>();
+    for (const p of photos) {
+      if (p.source === 'ai_booth' || !p.filename) continue;
+      const k = p.filename.toLowerCase();
+      groups.set(k, [...(groups.get(k) ?? []), p]);
+    }
+    const extra: string[] = [];
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      g.sort((a, b) => a.created_at.localeCompare(b.created_at));
+      g.slice(1).forEach(p => extra.push(p.id));
+    }
+    if (!extra.length) { if (!silent) showToast('Давхардсан (ижил нэртэй) зураг олдсонгүй'); return; }
+    setFilter('all');
+    setSelected(new Set(extra));
+    showToast(`${extra.length} давхардсан зураг сонгогдлоо — «Устгах» дарна уу (эхнийх нь үлдэнэ)`);
+  }
+
   async function deletePhoto(photo: Photo) {
     if (!confirm('Энэ зургийг цомгоос устгах уу?')) return;
     setDeleting(photo.id);
@@ -536,6 +596,16 @@ export default function AlbumPhotosPage() {
   }
 
   const isAiPhoto = (p: Photo) => p.source === 'ai_booth';
+  // Байршуулах хуудаснаас «Давхардал шалгах» дарж ирсэн бол автоматаар сонгоно
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dupsParam = searchParams.get('dups');
+  useEffect(() => {
+    if (dupsParam && photos.length) {
+      selectDuplicates();
+      const p = new URLSearchParams(searchParams); p.delete('dups'); setSearchParams(p, { replace: true });
+    }
+  }, [dupsParam, photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const shownPhotos = photos.filter(p =>
     filter === 'all' ? true
     : filter === 'ai' ? isAiPhoto(p)
@@ -804,8 +874,12 @@ export default function AlbumPhotosPage() {
               );
             })}
           </div>
+          <button onClick={() => selectDuplicates()}
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-lg">
+            <Copy className="w-3.5 h-3.5" /> Давхардсан зураг олох (ижил нэртэй)
+          </button>
           <p className="text-stone-500 text-xs mt-3">
-            Зураг дээрх ☐ тэмдгээр сонгоод доорх товчоор хавтас руу зөөнө. AI бүүтийн зургууд «AI бүүт» хавтсанд автоматаар харагдана.
+            Зураг дээрх ☐ тэмдгээр сонгоод доорх товчоор хавтас руу зөөх эсвэл устгана. AI бүүтийн зургууд «AI бүүт» хавтсанд автоматаар харагдана.
           </p>
         </div>
 
@@ -844,6 +918,11 @@ export default function AlbumPhotosPage() {
                 {titleBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />} Нэр өгөх
               </button>
             </span>
+            <button onClick={deleteSelected} disabled={!!bulkDeleting}
+              className="flex items-center gap-1.5 bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-200 font-semibold px-3 py-1.5 rounded-lg text-sm disabled:opacity-60">
+              {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {bulkDeleting ? `Устгаж байна ${bulkDeleting.done}/${bulkDeleting.total}` : `Устгах (${selected.size})`}
+            </button>
             <button onClick={() => setSelected(new Set(shownPhotos.map(p => p.id)))} className="text-stone-400 hover:text-white text-sm">Бүгдийг сонгох</button>
             <button onClick={() => setSelected(new Set())} className="text-stone-400 hover:text-white text-sm ml-auto">Цуцлах</button>
           </div>

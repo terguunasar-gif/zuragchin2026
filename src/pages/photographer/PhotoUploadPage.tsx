@@ -41,6 +41,8 @@ interface FileEntry {
   progress: number;
   errorMsg: string;
   printPrices: PrintPrices;
+  /** Энэ цомогт ижил нэртэй зураг аль хэдийн байна */
+  dupInAlbum?: boolean;
 }
 
 const defaultPrintPrices = (): PrintPrices =>
@@ -69,6 +71,11 @@ export default function PhotoUploadPage() {
   const [accessDenied, setAccessDenied] = useState(false);
 
   const [files, setFiles] = useState<FileEntry[]>([]);
+  // Давхардал шалгах: цомогт байгаа файлын нэрс, дараалалд байгаа нэр+хэмжээ
+  const existingNamesRef = useRef<Set<string>>(new Set());
+  const queueKeysRef = useRef<Set<string>>(new Set());
+  const [skippedDup, setSkippedDup] = useState(0);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState(false);
   const [uploadStarted, setUploadStarted] = useState(false);
   const [successCount, setSuccessCount] = useState(0);
@@ -172,8 +179,32 @@ export default function PhotoUploadPage() {
     })();
   }, [albumId, profile]);
 
+  useEffect(() => {
+    if (!album) return;
+    (async () => {
+      const names = new Set<string>();
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data } = await supabase.from('photo_uploads').select('filename')
+          .eq('album_id', album.id).range(from, from + 999);
+        (data ?? []).forEach(r => r.filename && names.add(String(r.filename).toLowerCase()));
+        if (!data || data.length < 1000) break;
+      }
+      existingNamesRef.current = names;
+      setFiles(prev => prev.map(f => ({ ...f, dupInAlbum: f.status === 'idle' && names.has(f.file.name.toLowerCase()) })));
+    })();
+  }, [album?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function addFiles(incoming: File[]) {
-    const valid = incoming.filter(f => ACCEPTED.includes(f.type) && f.size <= MAX_SIZE);
+    const accepted = incoming.filter(f => ACCEPTED.includes(f.type) && f.size <= MAX_SIZE);
+    // Нэг зургийг хоёр удаа сонгосон бол (нэр + хэмжээ ижил) алгасна
+    let skipped = 0;
+    const valid = accepted.filter(f => {
+      const key = `${f.name.toLowerCase()}|${f.size}`;
+      if (queueKeysRef.current.has(key)) { skipped++; return false; }
+      queueKeysRef.current.add(key);
+      return true;
+    });
+    if (skipped) setSkippedDup(n => n + skipped);
     const entries: FileEntry[] = valid.map(f => ({
       id: crypto.randomUUID(),
       file: f,
@@ -182,17 +213,23 @@ export default function PhotoUploadPage() {
       progress: 0,
       errorMsg: '',
       printPrices: defaultPrintPrices(),
+      dupInAlbum: existingNamesRef.current.has(f.name.toLowerCase()),
     }));
     setFiles(prev => [...prev, ...entries]);
   }
 
-  function removeFile(id: string) {
+  function removeFiles(ids: Set<string>) {
     setFiles(prev => {
-      const entry = prev.find(e => e.id === id);
-      if (entry) URL.revokeObjectURL(entry.previewUrl);
-      return prev.filter(e => e.id !== id);
+      prev.filter(e => ids.has(e.id)).forEach(e => {
+        URL.revokeObjectURL(e.previewUrl);
+        queueKeysRef.current.delete(`${e.file.name.toLowerCase()}|${e.file.size}`);
+      });
+      return prev.filter(e => !ids.has(e.id));
     });
+    setChecked(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n; });
   }
+
+  function removeFile(id: string) { removeFiles(new Set([id])); }
 
   const onInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(Array.from(e.target.files));
@@ -352,6 +389,7 @@ export default function PhotoUploadPage() {
         }
 
         setFileStatus(entry.id, { status: 'done', progress: 100 });
+        existingNamesRef.current.add(entry.file.name.toLowerCase());
         succeeded++;
         remaining--;
       } catch (err) {
@@ -463,9 +501,13 @@ export default function PhotoUploadPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setFiles([]); setUploadStarted(false); setSuccessCount(0); }}
+              <button onClick={() => { setFiles([]); queueKeysRef.current = new Set(); setChecked(new Set()); setSkippedDup(0); setUploadStarted(false); setSuccessCount(0); }}
                 className="text-sm text-stone-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
                 Дахин байршуулах
+              </button>
+              <button onClick={() => navigate(`/dashboard/albums/${albumId}/photos?dups=1`)}
+                className="text-sm text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
+                Давхардал шалгах / устгах
               </button>
               <button onClick={() => navigate(`/dashboard/albums/${albumId}/photos`)}
                 className="text-sm text-stone-950 font-semibold bg-amber-500 hover:bg-amber-400 px-3 py-1.5 rounded-lg transition-colors">
@@ -542,6 +584,42 @@ export default function PhotoUploadPage() {
                     </button>
                   )}
                 </div>
+                {!uploadStarted && (() => {
+                  const dups = files.filter(f => f.dupInAlbum && f.status === 'idle');
+                  return (
+                    <>
+                      {skippedDup > 0 && (
+                        <p className="text-stone-400 text-xs bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                          Нэг зургийг давхар сонгосон {skippedDup} файлыг автоматаар алгаслаа.
+                        </p>
+                      )}
+                      {dups.length > 0 && (
+                        <div className="flex items-center justify-between gap-3 flex-wrap bg-amber-500/10 border border-amber-500/40 rounded-xl px-3 py-2.5">
+                          <p className="text-amber-100 text-sm">
+                            <b>{dups.length}</b> зураг энэ цомогт <b>ижил нэртэй аль хэдийн байна</b> — дахин оруулбал эрх дэмий зарцуулна.
+                          </p>
+                          <button onClick={() => removeFiles(new Set(dups.map(d => d.id)))}
+                            className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-3 py-1.5 rounded-lg">
+                            Давхардсан {dups.length}-ийг хасах
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3 flex-wrap text-xs">
+                        <button onClick={() => setChecked(checked.size === files.length ? new Set() : new Set(files.map(f => f.id)))}
+                          className="text-stone-400 hover:text-white">
+                          {checked.size === files.length ? 'Сонголтыг цуцлах' : 'Бүгдийг сонгох'}
+                        </button>
+                        {checked.size > 0 && (
+                          <button onClick={() => removeFiles(checked)}
+                            className="flex items-center gap-1 bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-200 font-semibold px-3 py-1.5 rounded-lg">
+                            <X className="w-3.5 h-3.5" /> Сонгосон {checked.size} зургийг хасах
+                          </button>
+                        )}
+                        <span className="text-stone-600">Зураг дээрх ☐ тэмдгээр сонгоно</span>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {files.map(entry => (
                     <FileCard
@@ -551,6 +629,8 @@ export default function PhotoUploadPage() {
                       priceExpanded={expandedPrices.has(entry.id)}
                       onTogglePrices={() => togglePricePanel(entry.id)}
                       onRemove={() => removeFile(entry.id)}
+                      checked={checked.has(entry.id)}
+                      onCheck={() => setChecked(prev => { const n = new Set(prev); if (n.has(entry.id)) n.delete(entry.id); else n.add(entry.id); return n; })}
                       onPriceChange={(size, field, value) => setFilePrice(entry.id, size as PrintSize, field, value)}
                     />
                   ))}
@@ -666,8 +746,9 @@ export default function PhotoUploadPage() {
   );
 }
 
-function FileCard({ entry, uploadStarted, priceExpanded, onTogglePrices, onRemove, onPriceChange }: {
+function FileCard({ entry, uploadStarted, priceExpanded, onTogglePrices, onRemove, onPriceChange, checked, onCheck }: {
   entry: FileEntry; uploadStarted: boolean; priceExpanded: boolean;
+  checked: boolean; onCheck: () => void;
   onTogglePrices: () => void; onRemove: () => void;
   onPriceChange: (size: string, field: 'enabled' | 'price', value: boolean | string) => void;
 }) {
@@ -675,9 +756,18 @@ function FileCard({ entry, uploadStarted, priceExpanded, onTogglePrices, onRemov
     idle: 'bg-stone-500', processing: 'bg-amber-500', uploading: 'bg-blue-500', done: 'bg-green-500', error: 'bg-red-500',
   };
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+    <div className={`bg-white/5 border rounded-xl overflow-hidden ${checked ? 'border-red-400/70' : entry.dupInAlbum && !uploadStarted ? 'border-amber-500/60' : 'border-white/10'}`}>
       <div className="relative aspect-square">
-        <img src={entry.previewUrl} alt={entry.file.name} className="w-full h-full object-cover" />
+        <img src={entry.previewUrl} alt={entry.file.name} className={`w-full h-full object-cover ${checked ? 'opacity-60' : ''}`} />
+        {!uploadStarted && (
+          <button onClick={onCheck} aria-label="Сонгох"
+            className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-md border-2 flex items-center justify-center ${checked ? 'bg-red-500 border-red-500' : 'bg-stone-950/60 border-white/70'}`}>
+            {checked && <CheckCircle2 className="w-4 h-4 text-white" />}
+          </button>
+        )}
+        {entry.dupInAlbum && !uploadStarted && (
+          <span className="absolute bottom-1.5 right-1.5 bg-amber-500 text-stone-950 text-[10px] font-bold px-1.5 py-0.5 rounded">Цомогт байгаа</span>
+        )}
         {!uploadStarted && (
           <button onClick={onRemove} className="absolute top-1.5 right-1.5 w-6 h-6 bg-stone-950/80 hover:bg-red-500 rounded-full flex items-center justify-center transition-colors">
             <X className="w-3.5 h-3.5 text-white" />
