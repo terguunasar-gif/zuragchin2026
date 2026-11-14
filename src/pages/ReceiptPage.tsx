@@ -10,6 +10,17 @@ import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
+import { applyBrandToPurchase } from '../lib/watermark';
+
+async function blobUrlToDataUrl(u: string): Promise<string> {
+  const blob = await (await fetch(u)).blob();
+  return await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
 import BrandMark from '../components/BrandMark';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -56,6 +67,8 @@ interface SignedUrlItem {
   /** Татах хугацаа дуусах огноо (төлснөөс хойш 14 хоног) */
   expiresAt?: string | null;
   expired?: boolean;
+  /** Цомгийн брэнд давхаргууд (лого/текст) — татсан зурагт шингээнэ */
+  brand?: string;
 }
 
 /** Үлдсэн хугацааг «5 хоног 3 цаг» хэлбэрээр */
@@ -210,11 +223,16 @@ export default function ReceiptPage() {
     if (!urlItem?.signedUrl) return;
     setDownloading(prev => ({ ...prev, [p.id]: true }));
     try {
-      const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename);
+      const brand = urlItem.brand ?? '';
+      const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename,
+        brand ? b => applyBrandToPurchase(b, brand, filename) : undefined);
       // Апп доторх хөтөч эсвэл Android дээр — зургийг томоор харуулж заавар өгнө
       if (result === 'manual' || result === 'downloaded') {
-        // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоосыг харуулна
-        setViewer({ url: result === 'manual' ? urlItem.signedUrl : (blobUrl || urlItem.signedUrl), name: filename, hint: result });
+        // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоос
+        // (логотой бол data URL) харуулна
+        let manualUrl = urlItem.signedUrl;
+        if (result === 'manual' && brand && blobUrl) manualUrl = await blobUrlToDataUrl(blobUrl).catch(() => urlItem.signedUrl);
+        setViewer({ url: result === 'manual' ? manualUrl : (blobUrl || urlItem.signedUrl), name: filename, hint: result });
       }
     } catch {
       setViewer({ url: urlItem.signedUrl, name: filename, hint: 'manual' });

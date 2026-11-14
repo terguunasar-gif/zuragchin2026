@@ -42,10 +42,13 @@ export type SaveResult = 'shared' | 'downloaded' | 'manual';
  *  - эс бөгөөс файлаар татна (Android: Downloads → Галерейд харагдана)
  *  - апп доторх хөтөч бол 'manual' — зургийг томоор харуулж «удаан дарж хадгалах» заавар өгнө
  */
-export async function saveImageToDevice(url: string, filename: string): Promise<{ result: SaveResult; blobUrl?: string }> {
+export async function saveImageToDevice(
+  url: string, filename: string, transform?: (blob: Blob) => Promise<Blob>,
+): Promise<{ result: SaveResult; blobUrl?: string }> {
   const res = await fetch(url);
   if (!res.ok) throw new Error('Зураг татаж чадсангүй');
-  const blob = await res.blob();
+  let blob = await res.blob();
+  if (transform) blob = await transform(blob);
   const name = /\.(jpe?g|png|webp)$/i.test(filename) ? filename : `${filename}.jpg`;
   const blobUrl = URL.createObjectURL(blob);
 

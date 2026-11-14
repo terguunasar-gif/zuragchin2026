@@ -447,3 +447,59 @@ export function makeSalePreview(file: File, album: { watermark_type: string; wat
     protect: true,
   });
 }
+
+// ── Цомог үүсгэгчийн лого / мэндчилгээ (брэнд давхарга) ─────────────────────────
+
+/** Брэнд давхаргууд: давтагдах тамга болон «zuragchin.mn» текстийг хасна */
+export function brandLayers(raw: string): string | null {
+  try {
+    const layers = JSON.parse(raw) as { type: string; text?: string; imagePreview?: string }[];
+    if (!Array.isArray(layers)) return null;
+    const keep = layers.filter(l =>
+      (l.type === 'image' && !!l.imagePreview) ||
+      (l.type === 'text' && !!l.text && !/zuragchin/i.test(l.text)));
+    return keep.length ? JSON.stringify(keep) : null;
+  } catch { return null; }
+}
+
+/** JPEG-ийн XMP (APP1) болон тайлбар (COM) сегментүүд — захиалгын ID, зохиогчийн эрх.
+ *  EXIF-ийг (orientation) санаатай авахгүй: canvas аль хэдийн эргүүлсэн тул дахин эргэнэ. */
+function jpegMetaSegments(bytes: Uint8Array): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return out;
+  const sig = new TextEncoder().encode('http://ns.adobe.com/xap/1.0/');
+  let i = 2;
+  while (i + 4 <= bytes.length && bytes[i] === 0xff) {
+    const marker = bytes[i + 1];
+    if (!(marker >= 0xe0 && marker <= 0xef) && marker !== 0xfe) break;
+    const len = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (len < 2 || i + 2 + len > bytes.length) break;
+    const seg = bytes.subarray(i, i + 2 + len);
+    const isXmp = marker === 0xe1 && sig.every((b, k) => seg[4 + k] === b);
+    if (isXmp || marker === 0xfe) out.push(seg);
+    i += 2 + len;
+  }
+  return out;
+}
+
+/**
+ * Худалдаж авсан зурагт цомог үүсгэгчийн заасан лого / текстийг шингээнэ
+ * (сайтын «Zuragchin.mn» тэмдэг, давтагдах тамгагүй). Захиалгын XMP/COM мэдээллийг хадгална.
+ * Брэнд давхарга байхгүй эсвэл алдаа гарвал эх файлыг өөрчлөхгүй буцаана.
+ */
+export async function applyBrandToPurchase(blob: Blob, raw: string, filename: string): Promise<Blob> {
+  const layers = raw ? brandLayers(raw) : null;
+  if (!layers) return blob;
+  try {
+    const out = await applyWatermark(new File([blob], filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }),
+      { type: 'layers', value: layers, position: 'bottom-right', brandOnly: true, quality: 0.95, siteBadge: false });
+    const meta = jpegMetaSegments(new Uint8Array(await blob.arrayBuffer()));
+    if (!meta.length) return out;
+    const body = new Uint8Array(await out.arrayBuffer());
+    if (body[0] !== 0xff || body[1] !== 0xd8) return out;
+    return new Blob([body.subarray(0, 2), ...meta, body.subarray(2)], { type: 'image/jpeg' });
+  } catch (e) {
+    console.warn('brand overlay failed, using original:', e);
+    return blob;
+  }
+}

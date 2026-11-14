@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { applyWatermark } from './watermark';
+import { applyBrandToPurchase, brandLayers } from './watermark';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -56,25 +56,12 @@ im.onload=function(){
   }
 }
 
-/** Брэнд давхаргууд: давтагдах тамга болон «zuragchin.mn» текстийг хасна */
-function brandLayers(raw: string): string | null {
-  try {
-    const layers = JSON.parse(raw) as { type: string; text?: string; imagePreview?: string }[];
-    if (!Array.isArray(layers)) return null;
-    const keep = layers.filter(l =>
-      (l.type === 'image' && !!l.imagePreview) ||
-      (l.type === 'text' && !!l.text && !/zuragchin/i.test(l.text)));
-    return keep.length ? JSON.stringify(keep) : null;
-  } catch { return null; }
-}
-
 async function withBrand(url: string, raw: string, filename: string): Promise<string> {
   const layers = raw ? brandLayers(raw) : null;
   if (!layers) return url;
   try {
     const blob = await (await fetch(url)).blob();
-    const out = await applyWatermark(new File([blob], filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }),
-      { type: 'layers', value: layers, position: 'bottom-right', brandOnly: true, quality: 0.95, siteBadge: false });
+    const out = await applyBrandToPurchase(blob, raw, filename);
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result));

@@ -810,7 +810,7 @@ Deno.serve(async (req: Request) => {
 
       let res = await db
         .from("purchases")
-        .select("id, photo_id, type, download_expires_at, photo_uploads(original_url, filename)")
+        .select("id, photo_id, album_id, type, download_expires_at, photo_uploads(original_url, filename)")
         .eq("qpay_invoice_id", invoiceId)
         .eq("payment_status", "paid");
       if (res.error) {
@@ -825,7 +825,19 @@ Deno.serve(async (req: Request) => {
         return json({ error: "No paid purchases found" }, 404);
       }
 
-      const signedUrls: { purchaseId: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean }[] = [];
+      // Цомог үүсгэгчийн лого/текст (брэнд давхарга) — худалдах цомгийн эх файлд суугаагүй тул
+      // хөтөч татах үедээ шингээнэ. Үнэгүй цомгийн эх файлд аль хэдийн суусан тул давхарлахгүй.
+      const brandByAlbum: Record<string, string> = {};
+      const albumIds = [...new Set(purchases.map(p => p.album_id).filter(Boolean))] as string[];
+      if (albumIds.length) {
+        const { data: albums } = await db.from("albums")
+          .select("id, is_free, watermark_type, watermark_value").in("id", albumIds);
+        for (const a of albums ?? []) {
+          if (!a.is_free && a.watermark_type === "layers" && a.watermark_value) brandByAlbum[a.id] = a.watermark_value;
+        }
+      }
+
+      const signedUrls: { purchaseId: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string }[] = [];
       for (const p of purchases) {
         if (p.type === "download" && p.photo_uploads?.original_url) {
           const expiresAt: string | null = p.download_expires_at ?? null;
@@ -838,6 +850,7 @@ Deno.serve(async (req: Request) => {
             type: "download",
             expiresAt,
             expired,
+            brand: brandByAlbum[p.album_id] ?? "",
           });
         } else if (p.type === "print") {
           signedUrls.push({ purchaseId: p.id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false });
