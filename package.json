@@ -14,6 +14,7 @@
     "@mediapipe/tasks-vision": "^1.0.1",
     "@supabase/supabase-js": "^2.57.4",
     "@vladmandic/face-api": "^1.7.15",
+    "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.344.0",
     "qrcode": "^1.5.4",

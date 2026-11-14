@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2 } from 'lucide-react';
+import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface AdminAlbum {
@@ -242,6 +242,18 @@ export default function AdminAlbumsTab() {
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Харах
+                      </a>
+                    ) : null}
+                    {a.share_link || a.id ? (
+                      <a
+                        href={`/album/${(a.share_link || a.id).replace(/^\/?album\//, "")}/kiosk`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Томоор үзүүлэх — зураг бүрийн хажууд сагсны QR"
+                        className="ml-1.5 inline-flex items-center gap-1.5 text-xs text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <MonitorPlay className="w-3.5 h-3.5 text-amber-400" />
+                        Томоор
                       </a>
                     ) : (
                       <span className="text-stone-600 text-xs">Линк байхгүй</span>
