@@ -16,6 +16,7 @@ import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import SaveImageViewer from '../components/SaveImageViewer';
 import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
 import { saveImageToDevice } from '../lib/browserEnv';
+import { clampOffset, offsetWrapStyle } from '../components/WatermarkOffset';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import AlbumPinGate from '../components/AlbumPinGate';
@@ -104,6 +105,8 @@ interface WatermarkLayer {
   logoSize?: number;
   position: string;
   opacity: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 const PRINT_SIZE_LABELS: Record<string, string> = {
@@ -646,6 +649,8 @@ export default function PublicAlbumPage() {
           logoSize: l.imageSize || 20,
           position: l.position || 'bottom-right',
           opacity: typeof l.opacity === 'number' ? (l.opacity <= 1 ? l.opacity : l.opacity / 100) : 0.7,
+          offsetX: clampOffset(l.offsetX),
+          offsetY: clampOffset(l.offsetY),
         }));
       }
     } catch { wmLayers = []; }
@@ -1109,7 +1114,8 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
         {wmLayers.filter(l => l.type !== 'tiled-text').map(layer => {
           const opacityVal = typeof layer.opacity === 'number' ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity) : 0.7;
           return (
-            <div key={layer.id} className="absolute pointer-events-none" style={{ ...getPosStyle(layer.position), opacity: opacityVal, maxWidth: '45%' }}>
+            <div key={layer.id} style={offsetWrapStyle(layer.offsetX, layer.offsetY)}>
+            <div className="absolute pointer-events-none" style={{ ...getPosStyle(layer.position), opacity: opacityVal, maxWidth: '45%' }}>
               {layer.type === 'text' && layer.text && (
                 <span style={{ fontSize: `clamp(8px, ${(layer.fontSize ?? 20) * 0.22}vw, ${layer.fontSize ?? 20}px)`, color: layer.color || '#ffffff', textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontWeight: 700, whiteSpace: 'nowrap', userSelect: 'none', display: 'block' }}>
                   {layer.text}
@@ -1118,6 +1124,7 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
               {layer.type === 'logo' && layer.logoUrl && (
                 <img src={layer.logoUrl} alt="wm" draggable={false} style={{ width: `${(layer.logoSize ?? 20) * 2}px`, height: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.8))', userSelect: 'none', display: 'block' }} />
               )}
+            </div>
             </div>
           );
         })}

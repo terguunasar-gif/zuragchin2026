@@ -7,6 +7,7 @@ import {
   Download, QrCode, UserPlus, Search, Trash2, Users, Plus, Clock, Info,
   Grid,
 } from 'lucide-react';
+import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import BrandMark from '../../components/BrandMark';
@@ -28,6 +29,8 @@ interface WatermarkLayer {
   imagePreview: string;
   position: WatermarkPosition;
   imageSize: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 interface FormErrors {
@@ -244,7 +247,7 @@ export default function CreateAlbumPage() {
       const albumId = crypto.randomUUID();
       const shareLink = `/album/${albumId}`;
       const shareUrl = `${window.location.origin}${shareLink}`;
-      const watermarkValue = JSON.stringify(wmLayers.map(l => ({ id: l.id, type: l.type, text: l.text, fontSize: l.fontSize, opacity: l.opacity / 100, color: l.color, imagePreview: l.imagePreview, position: l.position, imageSize: l.imageSize })));
+      const watermarkValue = JSON.stringify(wmLayers.map(l => ({ id: l.id, type: l.type, text: l.text, fontSize: l.fontSize, opacity: l.opacity / 100, color: l.color, imagePreview: l.imagePreview, position: l.position, imageSize: l.imageSize, offsetX: clampOffset(l.offsetX), offsetY: clampOffset(l.offsetY) })));
       const contactInfo = { phone: contactPhone, email: contactEmail, facebook: contactFacebook, instagram: contactInstagram, other: contactOther };
       const ownerCommission = revenueModel === 'owned' ? OWNER_COMMISSION_OWNED : organizerPercent / 100;
       const photographerPercent = revenueModel === 'owned' ? 0 : (photographerPoolFraction * 100);
@@ -504,6 +507,7 @@ export default function CreateAlbumPage() {
                           </div>
                           <p className="text-stone-500 text-xs mt-2">{POSITION_LABEL[activeLayer.position]}</p>
                         </Field>
+                        <WatermarkOffset offsetX={activeLayer.offsetX} offsetY={activeLayer.offsetY} onChange={p => updateLayer(activeLayer.id, p)} />
                       </>
                     )}
 
@@ -546,6 +550,7 @@ export default function CreateAlbumPage() {
                           </div>
                           <p className="text-stone-500 text-xs mt-2">{POSITION_LABEL[activeLayer.position]}</p>
                         </Field>
+                        <WatermarkOffset offsetX={activeLayer.offsetX} offsetY={activeLayer.offsetY} onChange={p => updateLayer(activeLayer.id, p)} />
                       </>
                     )}
 
@@ -664,7 +669,8 @@ export default function CreateAlbumPage() {
                 <div className="relative rounded-xl overflow-hidden aspect-[3/2]">
                   <img src={PREVIEW_IMAGE} alt="preview" className="w-full h-full object-cover" />
                   {wmLayers.filter(l => l.type !== 'tiled-text').map(layer => (
-                    <div key={layer.id} className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`} style={{ maxWidth: '45%' }}>
+                    <div key={layer.id} style={offsetWrapStyle(layer.offsetX, layer.offsetY)}>
+                    <div className={`absolute pointer-events-none ${OVERLAY_CLASS[layer.position]}`} style={{ maxWidth: '45%' }}>
                       {layer.type === 'text' && layer.text && (
                         <span className="font-semibold px-1 select-none whitespace-nowrap drop-shadow"
                           style={{ fontSize: `${Math.max(8, Math.round(layer.fontSize * 0.4))}px`, color: layer.color, opacity: layer.opacity / 100 }}>
@@ -675,6 +681,7 @@ export default function CreateAlbumPage() {
                         <img src={layer.imagePreview} alt="wm" className="object-contain drop-shadow block"
                           style={{ opacity: layer.opacity / 100, width: `${layer.imageSize * 2}px`, height: 'auto' }} />
                       )}
+                    </div>
                     </div>
                   ))}
                   {wmLayers.filter(l => l.type === 'tiled-text').map(layer => renderTiledTextPreview(layer))}

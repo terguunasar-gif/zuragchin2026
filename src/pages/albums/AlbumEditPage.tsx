@@ -4,6 +4,7 @@ import {
   ArrowLeft, Save, AlertCircle, CheckCircle2, Type, Image as ImageIcon, Upload, X, Loader2, Plus, Grid, Phone, Mail, Facebook, Instagram, Link as LinkIcon, Users, Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
 import { supabase } from '../../lib/supabase';
 import BrandMark from '../../components/BrandMark';
 
@@ -58,6 +59,8 @@ interface WatermarkLayer {
   opacity: number;
   imageSize?: number;
   imagePreview?: string;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 interface SizePrice { size: string; label: string; price: string; enabled: boolean; }
@@ -110,6 +113,8 @@ function parseWatermarkValue(raw: string | null | undefined): WatermarkLayer[] |
         opacity,
         imageSize: l.imageSize,
         imagePreview: l.imagePreview,
+        offsetX: clampOffset(l.offsetX),
+        offsetY: clampOffset(l.offsetY),
       };
     });
   } catch { return null; }
@@ -127,6 +132,8 @@ function layersToWatermarkValue(layers: WatermarkLayer[]): string {
     imagePreview: l.logoUrl || l.imagePreview || '',
     position: l.position,
     imageSize: l.logoSize || l.imageSize || 20,
+    offsetX: clampOffset(l.offsetX),
+    offsetY: clampOffset(l.offsetY),
   })));
 }
 
@@ -145,7 +152,8 @@ function WatermarkPreview({ layers }: { layers: WatermarkLayer[] }) {
           const posStyle = POS_STYLE[layer.position] ?? POS_STYLE['bottom-right'];
           const opacityVal = layer.opacity > 1 ? layer.opacity / 100 : layer.opacity;
           return (
-            <div key={layer.id} className="absolute pointer-events-none" style={{ ...posStyle, opacity: opacityVal, maxWidth: '45%' }}>
+            <div key={layer.id} style={offsetWrapStyle(layer.offsetX, layer.offsetY)}>
+            <div className="absolute pointer-events-none" style={{ ...posStyle, opacity: opacityVal, maxWidth: '45%' }}>
               {layer.type === 'text' && layer.text && (
                 <span style={{ fontSize: `${Math.max(8, layer.fontSize * 0.35)}px`, color: layer.color || '#fff', fontWeight: 600, whiteSpace: 'nowrap', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
                   {layer.text}
@@ -155,6 +163,7 @@ function WatermarkPreview({ layers }: { layers: WatermarkLayer[] }) {
                 <img src={layer.logoPreview} alt="wm" draggable={false}
                   style={{ width: `${(layer.logoSize ?? 20) * 2}px`, height: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.8))' }} />
               )}
+            </div>
             </div>
           );
         })}
@@ -562,6 +571,7 @@ export default function AlbumEditPage() {
                         </div>
                         <p className="text-stone-500 text-xs mt-1.5">{POSITION_LABELS[activeLayer.position]}</p>
                       </div>
+                      <WatermarkOffset offsetX={activeLayer.offsetX} offsetY={activeLayer.offsetY} onChange={p => updateLayer(activeLayer.id, p)} />
                     </>
                   )}
 
@@ -603,6 +613,7 @@ export default function AlbumEditPage() {
                         </div>
                         <p className="text-stone-500 text-xs mt-1.5">{POSITION_LABELS[activeLayer.position]}</p>
                       </div>
+                      <WatermarkOffset offsetX={activeLayer.offsetX} offsetY={activeLayer.offsetY} onChange={p => updateLayer(activeLayer.id, p)} />
                     </>
                   )}
 

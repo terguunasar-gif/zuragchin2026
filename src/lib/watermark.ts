@@ -12,6 +12,20 @@ interface WatermarkLayer {
   imagePreview: string;
   position: WatermarkPosition;
   imageSize: number;
+  /** Сонгосон байршлаас шилжүүлэх (зургийн өргөн/өндрийн %, + баруун/доош) */
+  offsetX?: number;
+  offsetY?: number;
+}
+
+/** Шилжилтийг ±20%-иар хязгаарлаж, зургаас гаргахгүй байрлуулна */
+function shift(x: number, y: number, elemW: number, elemH: number, w: number, h: number, ox?: number, oy?: number, baseline = false) {
+  const cx = Math.max(-20, Math.min(20, Number(ox) || 0));
+  const cy = Math.max(-20, Math.min(20, Number(oy) || 0));
+  if (!cx && !cy) return { x, y };
+  const nx = Math.max(0, Math.min(w - elemW, x + (w * cx) / 100));
+  const top = baseline ? y - elemH : y;
+  const ny = Math.max(0, Math.min(h - elemH, top + (h * cy) / 100));
+  return { x: nx, y: baseline ? ny + elemH : ny };
 }
 
 interface WatermarkOptions {
@@ -74,13 +88,13 @@ export async function applyWatermark(
           // Булангийн байршилд нэг удаа харуулах текст
           occupied.push(applyTextWatermarkPositioned(
             ctx, canvas.width, canvas.height,
-            layer.text, layer.opacity, layer.fontSize, layer.color, layer.position,
+            layer.text, layer.opacity, layer.fontSize, layer.color, layer.position, layer.offsetX, layer.offsetY,
           ));
         } else if (layer.type === 'image' && layer.imagePreview) {
           // Булангийн байршилд лого
           const r = await applyImageWatermarkPositioned(
             ctx, canvas.width, canvas.height,
-            layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position,
+            layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position, layer.offsetX, layer.offsetY,
           );
           if (r) occupied.push(r);
         }
@@ -121,6 +135,8 @@ function applyTextWatermarkPositioned(
   fontSizePx: number,
   color: string,
   position: WatermarkPosition,
+  offsetX?: number,
+  offsetY?: number,
 ): Rect {
   const fontSize = Math.max(12, Math.round(w * (fontSizePx / 1000)));
   const padding  = Math.round(w * 0.02);
@@ -136,7 +152,8 @@ function applyTextWatermarkPositioned(
   const tw = metrics.width;
   const th = fontSize;
 
-  const { x, y } = getPositionXY(position, w, h, tw, th, padding);
+  const base = getPositionXY(position, w, h, tw, th, padding);
+  const { x, y } = shift(base.x, base.y, tw, th, w, h, offsetX, offsetY, true);
 
   ctx.strokeText(text, x, y);
   ctx.fillText(text, x, y);
@@ -154,6 +171,8 @@ async function applyImageWatermarkPositioned(
   opacity: number,
   imageSizePct: number,
   position: WatermarkPosition,
+  offsetX?: number,
+  offsetY?: number,
 ): Promise<Rect | null> {
   try {
     const wmImg = await loadImageFromUrl(url);
@@ -165,8 +184,7 @@ async function applyImageWatermarkPositioned(
     // getPositionXY нь текстийн суурь шугамаар (доод ирмэг) тооцдог; drawImage дээд ирмэгээр зурдаг тул
     // wmH-ийг хасна. Үгүй бол доод булангийн лого зургаас гарч таслагдаж байсан (update-87 засвар).
     const pos = getPositionXY(position, w, h, wmW, wmH, padding);
-    const x = pos.x;
-    const y = pos.y - wmH;
+    const { x, y } = shift(pos.x, pos.y - wmH, wmW, wmH, w, h, offsetX, offsetY);
 
     ctx.save();
     ctx.globalAlpha = opacity;
