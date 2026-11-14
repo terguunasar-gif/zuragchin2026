@@ -21,6 +21,7 @@ interface AlbumInfo {
   is_free?: boolean;
   free_activated?: boolean;
   photo_limit?: number | null;
+  watermark_strength?: string | null;
 }
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
@@ -136,6 +137,12 @@ export default function PhotoUploadPage() {
         .select('id, name, event_date, watermark_type, watermark_value, watermark_position, owner_id, is_free, free_activated, photo_limit')
         .eq('id', albumId)
         .maybeSingle();
+
+      // Тамганы хүч — багана байхгүй (migration хийгээгүй) үед ч алдаагүй 'medium' болно
+      if (albumData) {
+        const { data: wmCfg } = await supabase.from('albums').select('watermark_strength').eq('id', albumId).maybeSingle();
+        (albumData as AlbumInfo).watermark_strength = (wmCfg as { watermark_strength?: string } | null)?.watermark_strength ?? null;
+      }
 
       if (!albumData) {
         setAccessDenied(true);
