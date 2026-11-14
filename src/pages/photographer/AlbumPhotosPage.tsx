@@ -570,6 +570,17 @@ export default function AlbumPhotosPage() {
     setEditingPrices(prev => ({ ...prev, [photoId]: { ...prev[photoId], saving: false } }));
   }
 
+  // Анхаар: hook-ууд early return-ээс ӨМНӨ байх ёстой (эс бөгөөс хуудас унана).
+  // Байршуулах хуудаснаас «Давхардал шалгах» дарж ирсэн бол автоматаар сонгоно
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dupsParam = searchParams.get('dups');
+  useEffect(() => {
+    if (dupsParam && photos.length) {
+      selectDuplicates();
+      const p = new URLSearchParams(searchParams); p.delete('dups'); setSearchParams(p, { replace: true });
+    }
+  }, [dupsParam, photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading) {
     return (
       <div className="min-h-screen bg-stone-950 flex items-center justify-center">
@@ -596,16 +607,6 @@ export default function AlbumPhotosPage() {
   }
 
   const isAiPhoto = (p: Photo) => p.source === 'ai_booth';
-  // Байршуулах хуудаснаас «Давхардал шалгах» дарж ирсэн бол автоматаар сонгоно
-  const [searchParams, setSearchParams] = useSearchParams();
-  const dupsParam = searchParams.get('dups');
-  useEffect(() => {
-    if (dupsParam && photos.length) {
-      selectDuplicates();
-      const p = new URLSearchParams(searchParams); p.delete('dups'); setSearchParams(p, { replace: true });
-    }
-  }, [dupsParam, photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const shownPhotos = photos.filter(p =>
     filter === 'all' ? true
     : filter === 'ai' ? isAiPhoto(p)
