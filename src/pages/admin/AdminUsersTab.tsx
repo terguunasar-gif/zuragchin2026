@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   Search, UserCog, ChevronDown, CheckCircle2, X,
-  Loader2, Users, Mail, Calendar,
+  Loader2, Users, Mail, Calendar, Receipt,
 } from 'lucide-react';
+import AdminUserEarningsModal from './AdminUserEarningsModal';
 import { supabase } from '../../lib/supabase';
 import type { UserRole } from '../../lib/supabase';
 
@@ -28,6 +29,7 @@ export default function AdminUsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [filtered, setFiltered] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [earningsUser, setEarningsUser] = useState<AdminUser | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
 
@@ -201,9 +203,11 @@ export default function AdminUsersTab() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-sm font-semibold ${u.total_earned > 0 ? 'text-green-400' : 'text-stone-600'}`}>
+                    <button onClick={() => setEarningsUser(u)} title="Орлого, шимтгэлийн дэлгэрэнгүй"
+                      className={`inline-flex items-center gap-1.5 text-sm font-semibold hover:underline ${u.total_earned > 0 ? 'text-green-400' : 'text-stone-600'}`}>
                       ₮{u.total_earned.toLocaleString()}
-                    </span>
+                      <Receipt className="w-3.5 h-3.5 opacity-70" />
+                    </button>
                   </td>
                   <td className="px-6 py-3 text-right">
                     <button
@@ -220,6 +224,8 @@ export default function AdminUsersTab() {
           </table>
         </div>
       </div>
+
+      {earningsUser && <AdminUserEarningsModal user={earningsUser} onClose={() => setEarningsUser(null)} />}
 
       {/* Role change modal */}
       {roleModal && (
