@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, HandCoins, Loader2, AlertCircle, User, Phone } from 'lucide-react';
 import { publicDb } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
+import { loadBuyerInfo, saveBuyerInfo } from '../lib/buyerInfo';
 import { rememberOffer } from '../lib/offers';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -19,8 +20,8 @@ export default function PriceOfferModal({ photoId, previewUrl, listPrice, onClos
   const navigate = useNavigate();
   const [ratio, setRatio] = useState(0.5);
   const [amount, setAmount] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [name, setName] = useState(() => loadBuyerInfo().name);
+  const [phone, setPhone] = useState(() => loadBuyerInfo().phone);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +43,7 @@ export default function PriceOfferModal({ photoId, previewUrl, listPrice, onClos
     if (!/^\d{8}$/.test(phone)) return setError(t('8 оронтой утасны дугаараа оруулна уу'));
     if (!(value >= minAmount)) return setError(t('Санал хамгийн багадаа {n} байна', { n: `₮${minAmount.toLocaleString()}` }));
     if (value >= listPrice) return setError(t('Санал зургийн үнээс бага байх ёстой — үнээрээ шууд худалдаж авна уу'));
+    saveBuyerInfo(name, phone);
     setBusy(true);
     try {
       const res = await fetch(`${QPAY_FN_URL}/offer-submit`, {

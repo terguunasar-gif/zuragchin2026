@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2, Minus, Phone, Plus, Printer, Trash2, X } from 'lucide-react';
 import { publicDb } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
+import { loadBuyerInfo, saveBuyerInfo } from '../lib/buyerInfo';
 
 export const PRINT_REQUEST_SIZES = ['10x15', '13x18', '15x21', '20x30', 'A4'] as const;
 
@@ -19,8 +20,8 @@ export default function PrintRequestModal({ albumId, picks, onChange, onClose, o
   onSent: () => void;
 }) {
   const { t } = useI18n();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [name, setName] = useState(() => loadBuyerInfo().name);
+  const [phone, setPhone] = useState(() => loadBuyerInfo().phone);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -47,6 +48,7 @@ export default function PrintRequestModal({ albumId, picks, onChange, onClose, o
     if (name.trim().length < 2) { setError(t('Нэрээ оруулна уу')); return; }
     if (!/^\d{8,12}$/.test(phone)) { setError(t('Утасны дугаараа оруулна уу (8+ тоо)')); return; }
     if (picks.length === 0) return;
+    saveBuyerInfo(name, phone);
     setBusy(true);
     const { error: err } = await publicDb.rpc('submit_print_request', {
       p_album_id: albumId,

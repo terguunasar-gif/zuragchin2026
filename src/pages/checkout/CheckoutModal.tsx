@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { AlbumData, CartItem } from '../PublicAlbumPage';
 import { useI18n } from '../../lib/i18n';
+import { loadBuyerInfo, saveBuyerInfo } from '../../lib/buyerInfo';
 import LicenseConsent from '../../components/LicenseConsent';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -62,8 +63,8 @@ export default function CheckoutModal({
     setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
   };
   const [step, setStep] = useState<Step>('summary');
-  const [buyerName, setBuyerName] = useState('');
-  const [buyerPhone, setBuyerPhone] = useState('');
+  const [buyerName, setBuyerName] = useState(() => loadBuyerInfo().name);
+  const [buyerPhone, setBuyerPhone] = useState(() => loadBuyerInfo().phone);
   const [nameError, setNameError] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const hasDownloads = cart.some(i => i.type === 'download');
@@ -96,6 +97,7 @@ export default function CheckoutModal({
 
   async function createInvoice() {
     if (!validate()) return;
+    saveBuyerInfo(buyerName, buyerPhone);
     setLoading(true);
     setError('');
 
