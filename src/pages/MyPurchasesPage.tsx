@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Download, Printer, Receipt } from 'lucide-react';
-import { listPurchaseHistory } from '../lib/purchaseHistory';
+import { ArrowLeft, ChevronRight, Download, Loader2, Printer, Receipt } from 'lucide-react';
+import { listPurchaseHistory, listPendingInvoices, setPendingInvoice } from '../lib/purchaseHistory';
+
+const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
@@ -14,6 +16,31 @@ export default function MyPurchasesPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const items = useMemo(() => listPurchaseHistory(), []);
+  // Банкны апп руу шилжиж төлөөд буцаж ирэхэд төлбөрийг шалгах хуудас хаагдсан байж болно —
+  // энэ хөтөчид үлдсэн нэхэмжлэхүүдийг шалгаж, төлөгдсөнийг баримт руу нь холбоно.
+  const [checking, setChecking] = useState(false);
+  const [found, setFound] = useState<string[]>([]);
+  useEffect(() => {
+    const known = new Set(items.map(i => i.invoiceId));
+    const pending = listPendingInvoices().filter(p => !known.has(p.invoiceId));
+    if (!pending.length) return;
+    setChecking(true);
+    Promise.all(pending.map(async p => {
+      try {
+        const res = await fetch(`${QPAY_FN_URL}/check-payment/${p.invoiceId}`, {
+          headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        });
+        const data = await res.json();
+        if (data?.isPaid) { setPendingInvoice(p.albumId, null); return p.invoiceId; }
+      } catch { /* сүлжээ */ }
+      return null;
+    })).then(r => {
+      const paid = r.filter((x): x is string => !!x);
+      setChecking(false);
+      if (paid.length === 1 && items.length === 0) navigate(`/receipt/${paid[0]}`, { replace: true });
+      else setFound(paid);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -33,7 +60,22 @@ export default function MyPurchasesPage() {
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-4">
         <AutoOpenInBrowser />
         <InAppBrowserBanner compact />
-        {items.length === 0 ? (
+        {checking && (
+          <div className="flex items-center gap-2 text-stone-400 text-sm bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-400" /> {t('Төлбөрийг шалгаж байна…')}
+          </div>
+        )}
+        {found.map(id => (
+          <button key={id} onClick={() => navigate(`/receipt/${id}`)}
+            className="w-full flex items-center justify-between gap-3 bg-emerald-500/15 border border-emerald-400/40 rounded-2xl px-4 py-4 text-left">
+            <span>
+              <span className="block text-emerald-300 font-bold">{t('Төлөгдсөн захиалга олдлоо')}</span>
+              <span className="block text-stone-300 text-sm">{t('Дарж зургаа татаж авна уу')}</span>
+            </span>
+            <ChevronRight className="w-5 h-5 text-emerald-300" />
+          </button>
+        ))}
+        {items.length === 0 && found.length === 0 && !checking ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <Receipt className="w-8 h-8 text-stone-500" />

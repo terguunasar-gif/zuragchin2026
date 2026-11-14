@@ -16,9 +16,11 @@ interface Row {
   owner_amount: number;
   photographer_pool_amount: number;
   buyer_name: string | null;
+  buyer_phone: string | null;
+  qpay_invoice_id: string | null;
 }
 
-const COLS = 'id, created_at, album_id, photographer_id, type, print_size, gross_amount, qpay_fee_amount, platform_fee_amount, owner_amount, photographer_pool_amount, buyer_name';
+const COLS = 'id, created_at, album_id, photographer_id, type, print_size, gross_amount, qpay_fee_amount, platform_fee_amount, owner_amount, photographer_pool_amount, buyer_name, buyer_phone, qpay_invoice_id';
 const n = (v: unknown) => Number(v) || 0;
 const fmt = (v: number) => `₮${Math.round(v).toLocaleString()}`;
 
@@ -208,6 +210,7 @@ export default function AdminUserEarningsModal({ user, onClose }: {
                         <th className="text-right px-3 py-2">Зурагчин</th>
                         <th className="text-right px-3 py-2">Эзэн</th>
                         <th className="text-right px-3 py-2">Энэ хэрэглэгчид</th>
+                        <th className="text-right px-3 py-2">Баримт</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -222,13 +225,25 @@ export default function AdminUserEarningsModal({ user, onClose }: {
                                 ? <span className="inline-flex items-center gap-1"><Download className="w-3 h-3" />Татах</span>
                                 : <span className="inline-flex items-center gap-1"><Printer className="w-3 h-3" />{r.print_size || 'Угаалгах'}</span>}
                             </td>
-                            <td className="px-3 py-2 text-stone-400 max-w-[120px] truncate">{r.buyer_name || '—'}</td>
+                            <td className="px-3 py-2 text-stone-400 max-w-[140px]">
+                              <span className="block truncate">{r.buyer_name || '—'}</span>
+                              {r.buyer_phone && <span className="block text-stone-500">{r.buyer_phone}</span>}
+                            </td>
                             <td className="px-3 py-2 text-right text-white">{fmt(n(r.gross_amount))}</td>
                             <td className="px-3 py-2 text-right text-stone-500">{fmt(n(r.qpay_fee_amount))}</td>
                             <td className="px-3 py-2 text-right text-amber-300">{fmt(n(r.platform_fee_amount))}</td>
                             <td className={`px-3 py-2 text-right ${r.photographer_id === user.id ? 'text-blue-300' : 'text-stone-600'}`}>{fmt(n(r.photographer_pool_amount))}</td>
                             <td className={`px-3 py-2 text-right ${owned.has(r.album_id) ? 'text-orange-300' : 'text-stone-600'}`}>{fmt(n(r.owner_amount))}</td>
                             <td className="px-3 py-2 text-right text-green-400 font-semibold">{fmt(s.photographer + s.owner)}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {r.qpay_invoice_id ? (
+                                <span className="inline-flex gap-1">
+                                  <a href={`/receipt/${r.qpay_invoice_id}`} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline">Нээх</a>
+                                  <button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/receipt/${r.qpay_invoice_id}`)}
+                                    className="text-stone-400 hover:text-white">· Хуулах</button>
+                                </span>
+                              ) : '—'}
+                            </td>
                           </tr>
                         );
                       })}
