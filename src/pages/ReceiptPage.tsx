@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  CheckCircle2, Download, Printer, ArrowLeft, Loader2, AlertCircle, Phone, Mail, Facebook, Instagram, Calendar, Hash, Clock, X, Share2,
+  CheckCircle2, Download, Printer, ArrowLeft, Loader2, AlertCircle, Phone, Mail, Facebook, Instagram, Calendar, Hash, Clock, X, Share2, CheckSquare, Square, Images,
 } from 'lucide-react';
 import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
@@ -216,6 +216,80 @@ export default function ReceiptPage() {
     }
   }
 
+  // ── Олноор нь татах ─────────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string> | null>(null); // null = анхдагч (бүгд)
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const [ready, setReady] = useState<File[][]>([]); // iPhone: хадгалахад бэлэн багцууд
+  const [bulkMsg, setBulkMsg] = useState('');
+
+  async function fetchFile(p: PurchaseRow): Promise<File | null> {
+    const u = signedUrls.find(x => x.purchaseId === p.id);
+    if (!u?.signedUrl) return null;
+    const raw = u.filename || p.photo_uploads?.filename || `zuragchin_${p.id.slice(0, 8)}`;
+    const name = /\.(jpe?g|png|webp)$/i.test(raw) ? raw : `${raw}.jpg`;
+    const res = await fetch(u.signedUrl);
+    if (!res.ok) throw new Error('fetch');
+    let blob = await res.blob();
+    if (u.brand) blob = await applyBrandToPurchase(blob, u.brand, raw);
+    return new File([blob], name, { type: blob.type || 'image/jpeg' });
+  }
+
+  async function bulkDownload(list: PurchaseRow[]) {
+    if (!list.length) return;
+    setBulkMsg(''); setReady([]);
+    setBulk({ done: 0, total: list.length });
+    const files: File[] = [];
+    let failed = 0, i = 0;
+    const worker = async () => {
+      while (i < list.length) {
+        const p = list[i++];
+        try {
+          const f = await fetchFile(p);
+          if (f) {
+            files.push(f);
+            // iPhone биш бол шууд нэг нэгээр нь татна
+            if (!isIOS) {
+              const url = URL.createObjectURL(f);
+              const a = document.createElement('a');
+              a.href = url; a.download = f.name;
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 60000);
+              await new Promise(r => setTimeout(r, 350));
+            }
+          } else failed++;
+        } catch { failed++; }
+        setBulk(b => (b ? { ...b, done: b.done + 1 } : b));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setBulk(null);
+    if (isIOS) {
+      // Хуваалцах цонх хэрэглэгчийн товшилтоор нээгдэх ёстой → «Хадгалах» товч гаргана (10-аар багцлана)
+      const chunks: File[][] = [];
+      for (let k = 0; k < files.length; k += 10) chunks.push(files.slice(k, k + 10));
+      setReady(chunks);
+    } else {
+      setBulkMsg(t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: files.length })
+        + (failed ? ' ' + t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : ''));
+    }
+  }
+
+  async function saveChunk(idx: number) {
+    const files = ready[idx];
+    if (!files) return;
+    try {
+      await navigator.share({ files });
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) {
+        setBulkMsg(t('Хадгалж чадсангүй. Зураг тус бүрийн «Татах»-ыг дарна уу.'));
+        return;
+      }
+    }
+    const rest = ready.filter((_, k) => k !== idx);
+    setReady(rest);
+    if (!rest.length) setBulkMsg(t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгосон бол зургууд Photos-д орсон.'));
+  }
+
   /** Зургийг утасны галерей / компьютерт хадгална */
   async function handleDownload(p: PurchaseRow) {
     const urlItem  = signedUrls.find(u => u.purchaseId === p.id);
@@ -252,6 +326,11 @@ export default function ReceiptPage() {
   const totalPaid   = purchases.reduce((s, p) => s + Number(p.gross_amount), 0);
   const downloadPurchases = purchases.filter(p => p.type === 'download');
   const printPurchases    = purchases.filter(p => p.type === 'print');
+  const downloadable = downloadPurchases.filter(p => isPaid && !!signedUrls.find(u => u.purchaseId === p.id)?.signedUrl);
+  const sel = selected ?? new Set(downloadable.map(p => p.id));
+  const toggle = (id: string) => { const n = new Set(sel); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
+  const allOn = downloadable.length > 0 && downloadable.every(p => sel.has(p.id));
+  const chosen = downloadable.filter(p => sel.has(p.id));
   // Татах эцсийн хугацаа: худалдан авалтын хугацаа (14 хоног), байхгүй бол цомгийн хугацаа
   const dlDeadlines = signedUrls.filter(u => u.type === 'download' && u.expiresAt && !u.expired).map(u => u.expiresAt as string).sort();
   const downloadDeadline = dlDeadlines[0] ?? null;
@@ -422,6 +501,41 @@ export default function ReceiptPage() {
               </div>
             )}
 
+            {downloadable.length > 1 && !inAppBrowserName() && (
+              <div className="px-5 py-4 border-b border-white/10 space-y-3 bg-amber-500/5">
+                <div className="flex items-center justify-between gap-3">
+                  <button onClick={() => setSelected(allOn ? new Set() : new Set(downloadable.map(p => p.id)))}
+                    className="flex items-center gap-2 text-sm text-stone-200">
+                    {allOn ? <CheckSquare className="w-5 h-5 text-amber-400" /> : <Square className="w-5 h-5 text-stone-500" />}
+                    {allOn ? t('Бүгдийг болиулах') : t('Бүгдийг сонгох')}
+                  </button>
+                  <span className="text-stone-400 text-xs">{t('{n} сонгосон', { n: chosen.length })}</span>
+                </div>
+                {ready.length === 0 && (
+                  <button onClick={() => bulkDownload(chosen)} disabled={!!bulk || chosen.length === 0}
+                    className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 font-bold py-3.5 rounded-xl">
+                    {bulk ? <Loader2 className="w-5 h-5 animate-spin" /> : <Images className="w-5 h-5" />}
+                    {bulk
+                      ? t('Бэлдэж байна… {d}/{n}', { d: bulk.done, n: bulk.total })
+                      : t('Сонгосон {n} зургийг татах', { n: chosen.length })}
+                  </button>
+                )}
+                {ready.map((files, k) => (
+                  <button key={k} onClick={() => saveChunk(k)}
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold py-3.5 rounded-xl">
+                    <Download className="w-5 h-5" />
+                    {ready.length > 1
+                      ? t('Галерейд хадгалах — {n} зураг (багц {k})', { n: files.length, k: k + 1 })
+                      : t('Галерейд хадгалах — {n} зураг', { n: files.length })}
+                  </button>
+                ))}
+                {ready.length > 0 && (
+                  <p className="text-stone-400 text-xs text-center">{t('Товч дараад нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгоно.')}</p>
+                )}
+                {bulkMsg && <p className="text-emerald-300 text-xs text-center">{bulkMsg}</p>}
+              </div>
+            )}
+
             <div className="divide-y divide-white/5">
               {downloadPurchases.map(p => {
                 const urlItem     = signedUrls.find(u => u.purchaseId === p.id);
@@ -430,6 +544,11 @@ export default function ReceiptPage() {
 
                 return (
                   <div key={p.id} className="flex items-center gap-4 px-5 py-3">
+                    {downloadable.length > 1 && canDownload && !inAppBrowserName() && (
+                      <button onClick={() => toggle(p.id)} aria-label="Сонгох" className="-mr-2 flex-shrink-0">
+                        {sel.has(p.id) ? <CheckSquare className="w-5 h-5 text-amber-400" /> : <Square className="w-5 h-5 text-stone-500" />}
+                      </button>
+                    )}
                     {/* Preview thumbnail (усан тэмдэгтэй) */}
                     <div className="relative flex-shrink-0">
                       {p.photo_uploads?.preview_url && (
