@@ -45,12 +45,28 @@ interface WatermarkOptions {
   quality?: number;
   /** Худалдах цомгийн preview: өтгөн тамга, голоор дайрсан том бичиг, торон зураас — AI-аар арилгахад хэцүү */
   protect?: boolean;
+  /** protect үеийн тамганы хүч (цомог бүрт тохируулна). Анхдагч: 'medium' */
+  strength?: WmStrength;
   /** update-87: жижиг «Zuragchin.mn» тэмдэг (сурталчилгаа). Анхдагч: асаалттай.
    *  Цомог үүсгэгчийн лого/текстэй давхцахгүй буланд автоматаар байрлана. */
   siteBadge?: boolean;
 }
 
 type Rect = { x: number; y: number; w: number; h: number };
+
+/** Худалдах цомгийн усан тамганы хүч:
+ *  light  — сийрэг давтагдах тамга л
+ *  medium — сийрэг давтагдах тамга + голоор нэг том бичиг
+ *  strong — өтгөн тамга + торон зураас + 3 том бичиг */
+export type WmStrength = 'light' | 'medium' | 'strong';
+export const WM_STRENGTHS: { value: WmStrength; label: string; hint: string }[] = [
+  { value: 'light',  label: 'Хөнгөн', hint: 'Сийрэг жижиг тамга — зураг цэвэрхэн харагдана' },
+  { value: 'medium', label: 'Дунд',   hint: 'Сийрэг тамга + голоор нэг том бичиг' },
+  { value: 'strong', label: 'Хүчтэй', hint: 'Өтгөн тамга, тор, 3 том бичиг — хамгийн сайн хамгаалалт' },
+];
+export function normalizeStrength(v: unknown): WmStrength {
+  return v === 'light' || v === 'strong' ? v : 'medium';
+}
 
 const DEFAULT_TILED_TEXT = 'zuragchin.mn';
 
@@ -67,6 +83,9 @@ export async function applyWatermark(
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   // Цомог үүсгэгчийн лого/текстийн эзэлсэн хэсэг — сайтын тэмдгийг эдгээртэй давхцуулахгүй
   const occupied: Rect[] = [];
+  const strength = normalizeStrength(opts.strength);
+  const dense = !!opts.protect && strength === 'strong';
+  const tiledOpacity = (base: number) => !opts.protect ? base : strength === 'light' ? Math.min(base, 0.22) : strength === 'medium' ? Math.min(Math.max(base, 0.24), 0.3) : Math.max(base, 0.32);
 
   if (opts.type === 'none') {
     // тамгагүй
@@ -82,7 +101,7 @@ export async function applyWatermark(
           // Бүх зургийг бүрхэх давтагдах текст тамга
           await applyTextWatermarkTiled(
             ctx, canvas.width, canvas.height,
-            layer.text, opts.protect ? Math.max(layer.opacity, 0.32) : layer.opacity, layer.fontSize, layer.color, !!opts.protect,
+            layer.text, tiledOpacity(layer.opacity), layer.fontSize, layer.color, dense,
           );
         } else if (layer.type === 'text' && layer.text) {
           // Булангийн байршилд нэг удаа харуулах текст
@@ -105,15 +124,15 @@ export async function applyWatermark(
     // Цомогт давтагдах тамга тохируулаагүй ч зургийг хамгаалахын тулд
     // бүх зургийг бүрхэх нарийн "zuragchin.mn" тамгыг заавал нэмнэ.
     if (!hasTiled && !opts.brandOnly) {
-      await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, DEFAULT_TILED_TEXT, opts.protect ? 0.32 : 0.3, undefined, '#ffffff', !!opts.protect);
+      await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, DEFAULT_TILED_TEXT, tiledOpacity(0.3), undefined, '#ffffff', dense);
     }
   } else if (opts.type === 'text' && opts.value) {
-    await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35, undefined, '#ffffff', !!opts.protect);
+    await applyTextWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, tiledOpacity(opts.opacity ?? 0.35), undefined, '#ffffff', dense);
   } else if (opts.type === 'image' && opts.value) {
     await applyImageWatermarkTiled(ctx, canvas.width, canvas.height, opts.value, opts.opacity ?? 0.35, opts.imageSize ?? 20);
   }
 
-  if (opts.protect && opts.type !== 'none' && !opts.brandOnly) applyProtection(ctx, canvas.width, canvas.height);
+  if (opts.protect && opts.type !== 'none' && !opts.brandOnly) applyProtection(ctx, canvas.width, canvas.height, strength);
   if (opts.siteBadge !== false) applySiteBadge(ctx, canvas.width, canvas.height, occupied);
 
   return new Promise<Blob>((resolve, reject) => {
@@ -420,9 +439,27 @@ async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
 }
 
 // ── Худалдах цомгийн хамгаалалт: торон зураас + голоор дайрсан том бичиг ──────
-function applyProtection(ctx: CanvasRenderingContext2D, w: number, h: number) {
+function applyProtection(ctx: CanvasRenderingContext2D, w: number, h: number, strength: WmStrength = 'strong') {
+  if (strength === 'light') return;
   const s = Math.min(w, h);
   ctx.save();
+  if (strength === 'medium') {
+    // Голоор дайрсан нэг том бичиг л
+    const fs = Math.round(s * 0.11);
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.atan2(h, w));
+    ctx.font = `900 ${fs}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, fs / 14);
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.35;
+    ctx.strokeText('ZURAGCHIN.MN', 0, 0);
+    ctx.fillText('ZURAGCHIN.MN', 0, 0);
+    ctx.restore();
+    return;
+  }
   // Нарийн диагональ тор — нүүр, биеийг дайрч гарна
   ctx.globalAlpha = 0.14;
   ctx.strokeStyle = '#ffffff';
@@ -454,7 +491,7 @@ function applyProtection(ctx: CanvasRenderingContext2D, w: number, h: number) {
 
 /** Худалдах цомгийн урьдчилан харах зураг: 1000px, чанар 60%, хамгаалалттай тамга */
 export const SALE_PREVIEW_MAX = 1000;
-export function makeSalePreview(file: File, album: { watermark_type: string; watermark_value: string; watermark_position: string }): Promise<Blob> {
+export function makeSalePreview(file: File, album: { watermark_type: string; watermark_value: string; watermark_position: string; watermark_strength?: string | null }): Promise<Blob> {
   return applyWatermark(file, {
     type: (album.watermark_type || 'layers') as WatermarkOptions['type'],
     value: album.watermark_value,
@@ -463,6 +500,7 @@ export function makeSalePreview(file: File, album: { watermark_type: string; wat
     maxSize: SALE_PREVIEW_MAX,
     quality: 0.6,
     protect: true,
+    strength: normalizeStrength(album.watermark_strength),
   });
 }
 

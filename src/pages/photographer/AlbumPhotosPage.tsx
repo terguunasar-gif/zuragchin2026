@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { makeSalePreview } from '../../lib/watermark';
+import { makeSalePreview, WM_STRENGTHS, normalizeStrength, WmStrength } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
 
@@ -29,7 +29,7 @@ interface Photo {
 }
 
 interface Folder { id: string; name: string; }
-interface AlbumWm { name: string; is_free: boolean; watermark_type: string; watermark_value: string; watermark_position: string; download_price?: number }
+interface AlbumWm { name: string; is_free: boolean; watermark_type: string; watermark_value: string; watermark_position: string; download_price?: number; watermark_strength?: string | null }
 
 interface EditingPrices {
   [photoId: string]: {
@@ -108,6 +108,11 @@ export default function AlbumPhotosPage() {
     const { data: albumData } = await supabase.from('albums')
       .select('name, is_free, watermark_type, watermark_value, watermark_position, download_price').eq('id', albumId!).maybeSingle();
     setAlbumName(albumData?.name ?? '');
+    if (albumData) {
+      // Тамганы хүч — багана байхгүй үед ч алдаагүй (анхдагч 'medium')
+      const { data: wmCfg } = await supabase.from('albums').select('watermark_strength').eq('id', albumId!).maybeSingle();
+      (albumData as AlbumWm).watermark_strength = (wmCfg as { watermark_strength?: string } | null)?.watermark_strength ?? null;
+    }
     setAlbumWm(albumData as AlbumWm | null);
     if (isManager) {
       const { data: cfg, error: cfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumId!).maybeSingle();
@@ -179,11 +184,27 @@ export default function AlbumPhotosPage() {
   const unprotected = photos.filter(p =>
     p.photographer_id === profile?.id && p.source !== 'ai_booth' && !p.preview_url.includes('preview_p2_'));
 
-  async function protectPreviews() {
+  /** Миний оруулсан бүх (AI booth-оос бусад) зураг — тамгыг дахин тавихад */
+  const mine = photos.filter(p => p.photographer_id === profile?.id && p.source !== 'ai_booth');
+
+  async function saveStrength(v: WmStrength) {
+    if (!albumWm || normalizeStrength(albumWm.watermark_strength) === v) return;
+    const { error } = await supabase.from('albums').update({ watermark_strength: v }).eq('id', albumId!);
+    if (error) {
+      showToast(/watermark_strength/.test(error.message)
+        ? 'Өгөгдлийн санд тохиргоо нэмэгдээгүй байна (SQL ажиллуулах шаардлагатай)'
+        : 'Хадгалж чадсангүй: ' + error.message, 'error');
+      return;
+    }
+    setAlbumWm({ ...albumWm, watermark_strength: v });
+    showToast('Тамганы хүч хадгалагдлаа. Одоо байгаа зурагт «Тамгыг дахин тавих»-г дарна уу.');
+  }
+
+  async function protectPreviews(list: Photo[] = unprotected) {
     if (!albumWm || albumWm.is_free || !profile) return;
-    const todo = unprotected;
+    const todo = list;
     if (!todo.length) return;
-    if (!confirm(`${todo.length} зургийн урьдчилан харах хувилбарыг жижиг, хамгаалалттай тамгатай болгох уу? Эх зураг өөрчлөгдөхгүй.`)) return;
+    if (!confirm(`${todo.length} зургийн урьдчилан харах хувилбарт тамгыг «${WM_STRENGTHS.find(x => x.value === normalizeStrength(albumWm.watermark_strength))?.label}» түвшнээр дахин тавих уу? Эх зураг өөрчлөгдөхгүй.`)) return;
     setProtectProgress({ done: 0, total: todo.length, failed: 0 });
     let failed = 0;
     for (let i = 0; i < todo.length; i++) {
@@ -211,7 +232,7 @@ export default function AlbumPhotosPage() {
       }
       setProtectProgress({ done: i + 1, total: todo.length, failed });
     }
-    showToast(failed ? `${todo.length - failed} зураг шинэчлэгдлээ, ${failed} алдаатай` : 'Бүх зураг хамгаалалттай боллоо');
+    showToast(failed ? `${todo.length - failed} зураг шинэчлэгдлээ, ${failed} алдаатай` : 'Бүх зургийн тамга шинэчлэгдлээ');
     setTimeout(() => setProtectProgress(null), 4000);
   }
 
@@ -630,6 +651,41 @@ export default function AlbumPhotosPage() {
           </div>
         )}
 
+        {/* ── Усан тамганы хүч (худалдах цомог) ── */}
+        {albumWm && !albumWm.is_free && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
+            <p className="text-white font-semibold">💧 Усан тамганы хүч</p>
+            <p className="text-white/50 text-sm mt-1">
+              Худалдан авагчид харагдах зураг дээрх тамга. Худалдаж авсан зурагт тамга байхгүй.
+              {!canManage && ' Зөвхөн цомгийн эзэн өөрчилнө.'}
+            </p>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              {WM_STRENGTHS.map(o => {
+                const active = normalizeStrength(albumWm.watermark_strength) === o.value;
+                return (
+                  <button key={o.value} onClick={() => canManage && saveStrength(o.value)} disabled={!canManage}
+                    className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${active ? 'border-amber-400 bg-amber-500/15' : 'border-white/10 hover:border-white/25'} ${!canManage ? 'cursor-default' : ''}`}>
+                    <span className={`block text-sm font-semibold ${active ? 'text-amber-300' : 'text-white'}`}>{o.label}</span>
+                    <span className="block text-xs text-white/50 mt-0.5">{o.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {mine.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 mt-4">
+                <button onClick={() => protectPreviews(mine)} disabled={!!protectProgress && protectProgress.done < protectProgress.total}
+                  className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-4 py-2 rounded-xl flex items-center gap-2 text-sm">
+                  {protectProgress && protectProgress.done < protectProgress.total ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Миний {mine.length} зурагт тамгыг дахин тавих
+                </button>
+                {protectProgress && (
+                  <span className="text-amber-300 text-xs">{protectProgress.done} / {protectProgress.total}{protectProgress.failed ? ` · ${protectProgress.failed} алдаа` : ''}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Хуучин preview-г хамгаалалттай болгох (худалдах цомог) ── */}
         {albumWm && !albumWm.is_free && (unprotected.length > 0 || protectProgress) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -643,7 +699,7 @@ export default function AlbumPhotosPage() {
                 <p className="text-amber-300 text-xs mt-2">{protectProgress.done} / {protectProgress.total} боловсруулсан{protectProgress.failed ? ` · ${protectProgress.failed} алдаа` : ''}</p>
               )}
             </div>
-            <button onClick={protectPreviews} disabled={!!protectProgress && protectProgress.done < protectProgress.total}
+            <button onClick={() => protectPreviews()} disabled={!!protectProgress && protectProgress.done < protectProgress.total}
               className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2.5 rounded-xl flex items-center gap-2">
               {protectProgress && protectProgress.done < protectProgress.total ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Хамгаалалттай болгох

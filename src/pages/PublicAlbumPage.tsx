@@ -1103,6 +1103,8 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
   const downloadInCart = inCart.some(c => c.type === 'download');
   const hasPrintPrices = photo.print_prices && Object.keys(photo.print_prices).length > 0;
   const downloadPrice  = photoDownloadPrice(photo, album, aiPrice);
+  // Шинэ (preview_p2_) preview-д тамга аль хэдийн шингэсэн → дээрээс нь дахин давхарлахгүй (давхар тамга гарч байсан)
+  const overlayLayers = (photo.watermarked_url || '').includes('preview_p2_') ? [] : wmLayers;
 
   return (
     <div id={`photo-${photo.id}`} className={`group bg-white/5 border rounded-2xl overflow-hidden transition-all duration-200 ${
@@ -1117,7 +1119,7 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
           onContextMenu={e => e.preventDefault()}
         />
         {/* Булангийн layer-үүд */}
-        {wmLayers.filter(l => l.type !== 'tiled-text').map(layer => {
+        {overlayLayers.filter(l => l.type !== 'tiled-text').map(layer => {
           const opacityVal = typeof layer.opacity === 'number' ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity) : 0.7;
           return (
             <div key={layer.id} style={offsetWrapStyle(layer.offsetX, layer.offsetY)}>
@@ -1135,7 +1137,7 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
           );
         })}
         {/* Битүү tiled-text layer-үүд */}
-        {wmLayers.filter(l => l.type === 'tiled-text').map(layer => {
+        {overlayLayers.filter(l => l.type === 'tiled-text').map(layer => {
           const op = typeof layer.opacity === 'number' ? (layer.opacity > 1 ? layer.opacity / 100 : layer.opacity) : 0.3;
           const items = [];
           for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) {
