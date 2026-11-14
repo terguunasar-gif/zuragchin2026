@@ -15,7 +15,14 @@ export function inAppBrowserName(): string | null {
   if (/KAKAOTALK/i.test(UA)) return 'KakaoTalk';
   if (/musical_ly|BytedanceWebview|TikTok/i.test(UA)) return 'TikTok';
   if (/Telegram/i.test(UA)) return 'Telegram';
+  // Google апп (Lens-ээр QR уншуулахад нээгддэг)
+  if (/GSA\//.test(UA)) return 'Google';
   if (isAndroid && /; wv\)/.test(UA)) return 'App';
+  // iPhone: банкны апп, QR уншигч зэрэг аппын доторх хөтөч (WKWebView) — «Safari/» тэмдэггүй.
+  // Нүүр дэлгэцэд суулгасан сайт (standalone) болон Chrome/Firefox/Edge iOS-ийг хасна.
+  if (isIOS && !/Safari\//.test(UA) && !/CriOS|FxiOS|EdgiOS/.test(UA)
+      && !(typeof navigator !== 'undefined' && (navigator as Navigator & { standalone?: boolean }).standalone)
+      && !(typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches)) return 'App';
   return null;
 }
 
