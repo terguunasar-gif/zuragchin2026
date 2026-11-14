@@ -25,6 +25,8 @@ interface RecentPurchase {
   created_at: string;
   type: string;
   buyer_name: string;
+  buyer_phone?: string | null;
+  qpay_invoice_id?: string | null;
   albums: { name: string } | null;
   photo_uploads: { filename: string } | null;
 }
@@ -50,7 +52,7 @@ export default function AdminOverviewTab() {
       supabase.from('purchases').select('gross_amount').eq('payment_status', 'paid').gte('created_at', monthStart.toISOString()),
       supabase.from('platform_wallet').select('total_earned').maybeSingle(),
       supabase.from('purchases')
-        .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,albums(name),photo_uploads(filename)')
+        .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,albums(name),photo_uploads(filename)')
         .order('created_at', { ascending: false })
         .limit(20),
     ]);
@@ -162,7 +164,10 @@ export default function AdminOverviewTab() {
                     <td className="px-6 py-3 text-stone-400 text-xs whitespace-nowrap">
                       {new Date(p.created_at).toLocaleDateString('mn-MN', { month: '2-digit', day: '2-digit', year: 'numeric' })}
                     </td>
-                    <td className="px-4 py-3 text-stone-300 text-xs">{p.buyer_name || '—'}</td>
+                    <td className="px-4 py-3 text-stone-300 text-xs">
+                      {p.buyer_name || '—'}
+                      {p.buyer_phone && <span className="block text-stone-500">{p.buyer_phone}</span>}
+                    </td>
                     <td className="px-4 py-3 text-stone-300 text-xs truncate max-w-[120px]">
                       {(p.albums as { name: string } | null)?.name ?? '—'}
                     </td>
@@ -176,8 +181,15 @@ export default function AdminOverviewTab() {
                     </td>
                     <td className="px-4 py-3 text-right text-white font-semibold">₮{Number(p.gross_amount).toLocaleString()}</td>
                     <td className="px-4 py-3 text-right text-amber-400 text-xs">₮{Number(p.platform_fee_amount).toLocaleString()}</td>
-                    <td className="px-6 py-3 text-right">
+                    <td className="px-6 py-3 text-right whitespace-nowrap">
                       <StatusBadge status={p.payment_status} />
+                      {p.qpay_invoice_id && p.payment_status === 'paid' && (
+                        <span className="block mt-1 text-xs">
+                          <a href={`/receipt/${p.qpay_invoice_id}`} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline">Баримт</a>
+                          <button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/receipt/${p.qpay_invoice_id}`)}
+                            className="ml-1 text-stone-400 hover:text-white">· Хуулах</button>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
