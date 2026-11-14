@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { applyBrandToPurchase, brandLayers } from './watermark';
+import { applyAdjustToBlob, isNeutral, PhotoAdjust } from './photoAdjust';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -17,7 +18,33 @@ export interface PrintJobResult { sms: SmsResult; smsText: string; buyerPhone: s
  * Сервер талд төлөвийг «Угаасан» болгож, худалдан авагчид SMS илгээнэ.
  * Цонхыг товч дарсан агшинд нээх ёстой (popup blocker), тиймээс энэ функцийг click дотроос шууд дуудна.
  */
-export async function printPurchase(purchaseId: string): Promise<PrintJobResult> {
+/** «Засах» цонхонд: эх зураг, хэмжээ, лого, хадгалсан засвар (төлөв өөрчлөхгүй, SMS явахгүй) */
+export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: string; filename: string; size: string; brand: string; adjust: PhotoAdjust }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${QPAY_FN_URL}/print-job`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: ANON_KEY },
+    body: JSON.stringify({ purchaseId, preview: true }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Зураг ачаалж чадсангүй');
+  return { signedUrl: data.signedUrl, filename: data.filename, size: data.size, brand: data.brand ?? '', adjust: data.adjust ?? {} };
+}
+
+/** Гэрэл/өнгөний засварыг хадгална — дараагийн «Принт» бүрт хэрэгжинэ */
+export async function savePrintAdjust(purchaseId: string, adjust: PhotoAdjust): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${QPAY_FN_URL}/print-adjust`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: ANON_KEY },
+    body: JSON.stringify({ purchaseId, adjust }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Хадгалж чадсангүй');
+}
+
+/** adjustOverride: «Засах» цонхноос шууд хэвлэх үед (хадгалагдахыг хүлээхгүй) */
+export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAdjust): Promise<PrintJobResult> {
   const win = window.open('', '_blank');
   if (win) win.document.write('<p style="font-family:sans-serif;padding:24px">Зураг бэлтгэж байна…</p>');
   try {
@@ -31,7 +58,7 @@ export async function printPurchase(purchaseId: string): Promise<PrintJobResult>
     if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
     const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
     // Цомгийн лого, мэндчилгээг (сайтын «Zuragchin.mn» тамгагүйгээр) хэвлэх зурагт шингээнэ
-    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename);
+    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, adjustOverride ?? data.adjust ?? {});
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
 <style id="pg">@page{size:${w}cm ${h}cm;margin:0}</style>
 <style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}cm;height:${h}cm;object-fit:cover}
@@ -56,12 +83,14 @@ im.onload=function(){
   }
 }
 
-async function withBrand(url: string, raw: string, filename: string): Promise<string> {
+async function withBrand(url: string, raw: string, filename: string, adjust: PhotoAdjust = {}): Promise<string> {
   const layers = raw ? brandLayers(raw) : null;
-  if (!layers) return url;
+  if (!layers && isNeutral(adjust)) return url;
   try {
-    const blob = await (await fetch(url)).blob();
-    const out = await applyBrandToPurchase(blob, raw, filename);
+    let blob = await (await fetch(url)).blob();
+    // 1) гэрэл/өнгөний засвар (зөвхөн зурагт) → 2) цомгийн лого/мэндчилгээ
+    blob = await applyAdjustToBlob(blob, adjust);
+    const out = layers ? await applyBrandToPurchase(blob, raw, filename) : blob;
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result));
@@ -69,7 +98,7 @@ async function withBrand(url: string, raw: string, filename: string): Promise<st
       r.readAsDataURL(out);
     });
   } catch (e) {
-    console.warn('brand overlay failed, printing original:', e);
+    console.warn('print prepare failed, printing original:', e);
     return url;
   }
 }

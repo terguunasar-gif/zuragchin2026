@@ -717,7 +717,7 @@ Deno.serve(async (req: Request) => {
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const uid = await userIdFromRequest(db, req);
       if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
-      const { purchaseId } = await req.json() as { purchaseId: string };
+      const { purchaseId, preview } = await req.json() as { purchaseId: string; preview?: boolean };
       // deno-lint-ignore no-explicit-any
       let p: any = null;
       const full = await db.from("purchases")
@@ -738,6 +738,11 @@ Deno.serve(async (req: Request) => {
       const storagePath = String(photo?.original_url ?? "").replace(/^photos-original\//, "");
       const { data: signed } = await db.storage.from("photos-original").createSignedUrl(storagePath, 3600);
       if (!signed?.signedUrl) return json({ error: "Эх зураг олдсонгүй" }, 404);
+      const brand = album?.watermark_type === "layers" ? (album?.watermark_value ?? "") : "";
+      const adjust = await readPrintAdjust(db, p.id);
+
+      // «Засах» цонх: зөвхөн зураг + хадгалсан засвар. Төлөв өөрчлөхгүй, SMS явуулахгүй.
+      if (preview) return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, brand, adjust });
 
       if (p.print_status === "pending") {
         await db.from("purchases").update({ print_status: "printed", print_status_updated_at: new Date().toISOString() }).eq("id", p.id);
@@ -768,7 +773,30 @@ Deno.serve(async (req: Request) => {
           sms = "failed";
         }
       }
-      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone, brand: album?.watermark_type === "layers" ? (album?.watermark_value ?? "") : "" });
+      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone, brand, adjust });
+    }
+
+    // ── УГААЛГАХ ЗАХИАЛГА: хэвлэхийн өмнөх гэрэл/өнгөний засварыг хадгална ──
+    if (req.method === "POST" && path === "/print-adjust") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { purchaseId, adjust } = await req.json() as { purchaseId: string; adjust: Record<string, unknown> };
+      const { data: p } = await db.from("purchases").select("id, type, payment_status, photographer_id, album_id").eq("id", purchaseId).maybeSingle();
+      if (!p) return json({ error: "Захиалга олдсонгүй" }, 404);
+      if (p.type !== "print" || p.payment_status !== "paid") return json({ error: "Зөвхөн төлөгдсөн угаалгах захиалга" }, 400);
+      const { data: album } = await db.from("albums").select("owner_id").eq("id", p.album_id).maybeSingle();
+      if (p.photographer_id !== uid && album?.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
+      const clean: Record<string, number> = {};
+      for (const k of PRINT_ADJUST_KEYS) {
+        const v = Math.round(Number(adjust?.[k]) || 0);
+        if (v) clean[k] = Math.max(-100, Math.min(100, v));
+      }
+      const { error } = await db.storage.from("purchases").upload(`adjust/${p.id}.json`,
+        new Blob([JSON.stringify({ ...clean, by: uid, at: new Date().toISOString() })], { type: "application/json" }),
+        { upsert: true, contentType: "application/json" });
+      if (error) return json({ error: "Хадгалж чадсангүй: " + error.message }, 500);
+      return json({ ok: true, adjust: clean });
     }
 
     // ── ҮНЭГҮЙ ЦОМОГ: зочин эх зургийг шууд татах холбоос ──
@@ -1506,6 +1534,21 @@ function maskPhone(phone: string): string {
 
 function xmlEscape(v: string): string {
   return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+const PRINT_ADJUST_KEYS = ["exposure", "contrast", "highlights", "shadows", "saturation", "temperature"] as const;
+
+/** Угаалгах захиалгын хадгалсан гэрэл/өнгөний засвар (purchases bucket: adjust/<id>.json) */
+// deno-lint-ignore no-explicit-any
+async function readPrintAdjust(db: any, purchaseId: string): Promise<Record<string, number>> {
+  try {
+    const { data } = await db.storage.from("purchases").download(`adjust/${purchaseId}.json`);
+    if (!data) return {};
+    const raw = JSON.parse(await data.text());
+    const out: Record<string, number> = {};
+    for (const k of PRINT_ADJUST_KEYS) if (Number(raw?.[k])) out[k] = Number(raw[k]);
+    return out;
+  } catch { return {}; }
 }
 
 const XMP_HEADER = "http://ns.adobe.com/xap/1.0/\0";

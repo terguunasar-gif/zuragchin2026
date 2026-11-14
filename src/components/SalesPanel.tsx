@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Download, Loader2, MessageSquare, Phone, Printer, Receipt, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, MessageSquare, Phone, Printer, Receipt, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import PrintEditor from './PrintEditor';
+import type { PhotoAdjust } from '../lib/photoAdjust';
 import { supabase } from '../lib/supabase';
 import { printPurchase, PrintJobResult } from '../lib/printPhoto';
 
@@ -99,10 +101,12 @@ export default function SalesPanel({
   const [printing, setPrinting] = useState<string | null>(null);
   const [smsInfo, setSmsInfo] = useState<Record<string, PrintJobResult>>({});
 
-  async function doPrint(r: SaleRow) {
+  const [editing, setEditing] = useState<SaleRow | null>(null);
+
+  async function doPrint(r: SaleRow, adjust?: PhotoAdjust) {
     setPrinting(r.id);
     try {
-      const res = await printPurchase(r.id);
+      const res = await printPurchase(r.id, adjust);
       setSmsInfo(prev => ({ ...prev, [r.id]: res }));
       if (r.print_status === 'pending') setRows(prev => prev.map(x => (x.id === r.id ? { ...x, print_status: 'printed' } : x)));
     } catch (e) {
@@ -223,6 +227,11 @@ export default function SalesPanel({
                 </div>
                 {r.type === 'print' && (
                   <div className="flex items-center gap-2">
+                    <button onClick={() => setEditing(r)}
+                      title="Хэвлэхийн өмнө гэрэл, сүүдэр, өнгийг тохируулах"
+                      className="flex items-center gap-1.5 border border-white/15 hover:border-amber-500/50 text-stone-200 text-xs font-medium px-3 py-1.5 rounded-lg">
+                      <SlidersHorizontal className="w-3.5 h-3.5" /> Засах
+                    </button>
                     <button onClick={() => doPrint(r)} disabled={printing === r.id}
                       title="Принтерээр хэвлэх — төлөв «Угаасан» болж, худалдан авагчид SMS очно"
                       className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 text-xs font-bold px-3 py-1.5 rounded-lg">
@@ -245,6 +254,14 @@ export default function SalesPanel({
             </div>
           ))}
         </div>
+      )}
+      {editing && (
+        <PrintEditor
+          purchaseId={editing.id}
+          title={`${editing.print_size.replace('x', '×')} · ${editing.buyer_name || ''}`}
+          onClose={() => setEditing(null)}
+          onPrint={adjust => { const r = editing; setEditing(null); void doPrint(r, adjust); }}
+        />
       )}
     </section>
   );
