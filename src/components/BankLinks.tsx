@@ -11,7 +11,10 @@ export const canOpenBankApps = isAndroid || isIOS;
 /** Зөвхөн qPay хэтэвч болон Хаан банкийг харуулна (бусад банкийг хасна). */
 const ALLOWED: RegExp[] = [/qpay/i, /khan|хаан/i];
 function allowedIndex(u: BankLink) {
-  const key = `${u.name} ${u.description ?? ''} ${u.link}`;
+  // Холбоосын бүтэн хаягийг шалгахгүй: бүх банкны холбоосонд «qPay_QRcode=» байдаг тул бүгд таарч байсан.
+  // Зөвхөн нэр, тайлбар, апп-ын схем (khanbank://, qpaywallet://).
+  const scheme = String(u.link ?? '').split('://')[0];
+  const key = `${u.name} ${u.description ?? ''} ${scheme}`;
   return ALLOWED.findIndex(re => re.test(key));
 }
 export function filterBankLinks(urls: BankLink[] = []) {
