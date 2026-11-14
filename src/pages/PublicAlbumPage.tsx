@@ -908,16 +908,14 @@ export default function PublicAlbumPage() {
           {!delMode && (
             <p className="text-stone-500 text-xs mb-3">{t('Татах, угаалгах захиалга өгөхдөө зураг дээр дарна уу.')}</p>
           )}
-          <div className={`grid ${view !== 'small' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5' : 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1.5'}`}>
+          <div className={view !== 'small' ? 'columns-2 sm:columns-3 md:columns-4 lg:columns-6 gap-2.5' : 'columns-3 sm:columns-5 md:columns-6 lg:columns-8 gap-1.5'}>
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
               : visiblePhotos).map(photo => (
               <button key={photo.id} onClick={() => (delMode ? toggleDelPick(photo.id) : openLarge(photo.id))}
-                className={`relative aspect-square bg-stone-900 overflow-hidden group ${view !== 'small' ? 'rounded-xl' : 'rounded-md'} ${
+                className={`relative block w-full break-inside-avoid bg-stone-900 overflow-hidden group ${view !== 'small' ? 'rounded-xl mb-2.5' : 'rounded-md mb-1.5'} ${
                   delMode && delPicks.has(photo.id) ? 'ring-4 ring-red-500' : ''}`}>
-                <img src={photo.watermarked_url} alt={photo.name || photo.title} loading="lazy" draggable={false}
-                  onContextMenu={e => e.preventDefault()}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <MasonryThumb url={photo.watermarked_url} alt={photo.name || photo.title} />
                 {cart.some(c => c.photoId === photo.id) && (
                   <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-stone-950 text-[10px] font-bold">✓</span>
                 )}
@@ -937,7 +935,7 @@ export default function PublicAlbumPage() {
           </>
           ) : (
           // Том болон дунд харагдац: зураг бүрийн доор «Татах», «Угаалгах» товчнууд харагдана
-          <div className={`grid ${view === 'medium' ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4'}`}>
+          <div className={view === 'medium' ? 'columns-2 sm:columns-3 lg:columns-5 gap-2.5 [&>*]:mb-2.5' : 'columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 [&>*]:mb-4'}>
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
               : visiblePhotos).map(photo => (
@@ -1078,6 +1076,29 @@ export default function PublicAlbumPage() {
   );
 }
 
+// ── Зургийн жинхэнэ харьцаа (хөндлөн / босоо) ─────────────────────────────
+// Ачаалагдахаас өмнө 4:5 орлуулагч, ачаалагдсаны дараа жинхэнэ харьцаагаар — лого, булан тасрахгүй.
+const ratioCache = new Map<string, number>();
+function useImgRatio(url: string) {
+  const [ratio, setRatio] = useState<number | undefined>(() => ratioCache.get(url));
+  const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+    if (w && h) { const r = w / h; ratioCache.set(url, r); setRatio(r); }
+  };
+  return { ratio: ratio ?? 4 / 5, onLoad };
+}
+
+function MasonryThumb({ url, alt }: { url: string; alt: string }) {
+  const { ratio, onLoad } = useImgRatio(url);
+  return (
+    <span className="block w-full" style={{ aspectRatio: String(ratio) }}>
+      <img src={url} alt={alt} loading="lazy" draggable={false} onLoad={onLoad}
+        onContextMenu={e => e.preventDefault()}
+        className="w-full h-full object-cover" />
+    </span>
+  );
+}
+
 function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
   focused?: boolean;
   /** Цомгийн эзэн: энэ зургаас AI видео үүсгэх */
@@ -1105,16 +1126,18 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
   const downloadPrice  = photoDownloadPrice(photo, album, aiPrice);
   // Шинэ (preview_p2_) preview-д тамга аль хэдийн шингэсэн → дээрээс нь дахин давхарлахгүй (давхар тамга гарч байсан)
   const overlayLayers = (photo.watermarked_url || '').includes('preview_p2_') ? [] : wmLayers;
+  const { ratio, onLoad } = useImgRatio(photo.watermarked_url);
 
   return (
-    <div id={`photo-${photo.id}`} className={`group bg-white/5 border rounded-2xl overflow-hidden transition-all duration-200 ${
+    <div id={`photo-${photo.id}`} className={`group break-inside-avoid bg-white/5 border rounded-2xl overflow-hidden transition-all duration-200 ${
       focused ? 'border-amber-400 ring-2 ring-amber-400/60 shadow-lg shadow-amber-500/20' : 'border-white/10 hover:border-white/20'}`}>
-      <div className="relative aspect-square bg-stone-900 overflow-hidden select-none">
+      <div className="relative bg-stone-900 overflow-hidden select-none" style={{ aspectRatio: String(ratio) }}>
         <img
           src={photo.watermarked_url}
           alt={photo.name || photo.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="w-full h-full object-cover"
           loading="lazy"
+          onLoad={onLoad}
           draggable={false}
           onContextMenu={e => e.preventDefault()}
         />
