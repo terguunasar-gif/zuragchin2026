@@ -8,6 +8,7 @@ import {
   Grid,
 } from 'lucide-react';
 import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
+import { downloadLabeledQr } from '../../lib/labeledQr';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import BrandMark from '../../components/BrandMark';
@@ -274,7 +275,9 @@ export default function CreateAlbumPage() {
   }
   function downloadQR() {
     if (!successData) return;
-    window.open(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(successData.shareLink)}`, '_blank');
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(eventDate || '');
+    downloadLabeledQr(successData.shareLink, albumName.trim(), undefined, m ? `${m[1]}.${m[2]}.${m[3]}` : undefined)
+      .catch(e => alert('QR татаж чадсангүй: ' + (e instanceof Error ? e.message : e)));
   }
 
   function renderTiledTextPreview(layer: WatermarkLayer) {

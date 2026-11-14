@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, hasRole } from '../lib/supabase';
+import { downloadLabeledQr } from '../lib/labeledQr';
 import PhotographerProfileTab from './photographer/PhotographerProfileTab';
 import BuyerPurchases, { useBuyerPurchases } from '../components/BuyerPurchases';
 import { fetchPublicAlbums, PublicAlbum } from '../lib/listing';
@@ -46,7 +47,7 @@ export default function DashboardPage() {
   }, [navigate]);
 
   const [albums, setAlbums] = useState<Album[]>([]);
-  const [qrModal, setQrModal] = useState<{ id: string; name: string } | null>(null);
+  const [qrModal, setQrModal] = useState<{ id: string; name: string; date?: string } | null>(null);
   // Цомгийн хугацаа сунгах цонх
   const [extendModal, setExtendModal] = useState<{ id: string; name: string } | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -496,7 +497,7 @@ export default function DashboardPage() {
                           className="flex items-center justify-center gap-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/20 text-fuchsia-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
                           <Sparkles className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={e => { e.stopPropagation(); setQrModal({ id: album.id, name: album.title || album.name || '—' }); }}
+                        <button onClick={e => { e.stopPropagation(); setQrModal({ id: album.id, name: album.title || album.name || '—', date: album.event_date }); }}
                           className="flex items-center justify-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-medium py-2 px-3 rounded-lg transition-colors">
                           <QrCode className="w-3.5 h-3.5" />
                         </button>
@@ -599,14 +600,12 @@ export default function DashboardPage() {
             </div>
 
             {/* Download QR */}
-            <a
-              href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`${window.location.origin}/album/${qrModal.id}`)}`}
-              download={`qr-${qrModal.id}.png`}
-              target="_blank"
-              rel="noreferrer"
+            <button type="button"
+              onClick={() => downloadLabeledQr(`${window.location.origin}/album/${qrModal.id}`, qrModal.name, undefined, fmtQrDate(qrModal.date))
+                .catch(e => alert('QR татаж чадсангүй: ' + (e instanceof Error ? e.message : e)))}
               className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold py-3 rounded-xl text-sm transition-colors">
               <QrCode className="w-4 h-4" />QR код татаж авах
-            </a>
+            </button>
 
             {/* LED / ТВ дэлгэцэнд урсгаж харуулах */}
             <a href={`/album/${qrModal.id}/screen`} target="_blank" rel="noreferrer"
@@ -639,4 +638,11 @@ function StatCard({ icon, label, value, onClick }: {
       <ChevronRight className="w-4 h-4 text-stone-700 group-hover:text-stone-400 flex-shrink-0" />
     </button>
   );
+}
+
+/** QR зурган дээрх огноо: 2026.11.14 */
+function fmtQrDate(d?: string | null): string | undefined {
+  if (!d) return undefined;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  return m ? `${m[1]}.${m[2]}.${m[3]}` : undefined;
 }
