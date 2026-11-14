@@ -8,14 +8,17 @@ export interface BankLink { name: string; description?: string; link: string; lo
 /** Банкны апп зөвхөн утсан дээр нээгдэнэ (khanbank:// гэх мэт). Компьютер дээр QR уншуулна. */
 export const canOpenBankApps = isAndroid || isIOS;
 
-/** Зөвхөн qPay хэтэвч болон Хаан банкийг харуулна (бусад банкийг хасна). */
-const ALLOWED: RegExp[] = [/qpay/i, /khan|хаан/i];
+/** Зөвхөн qPay хэтэвч болон Хаан банкийг харуулна (бусад банкийг хасна).
+ *  Нэр/тайлбар/апп-ын схемийг БҮТНЭЭР нь тулгана — «Чингис Хаан банк» шиг хэсэгчилсэн таарцыг оруулахгүй. */
+const ALLOWED: ((name: string, desc: string, scheme: string) => boolean)[] = [
+  (n, d, sc) => sc === 'qpaywallet' || /^qpay (wallet|хэтэвч)$/.test(n) || /^qpay (wallet|хэтэвч)$/.test(d),
+  (n, d, sc) => sc === 'khanbank' || n === 'khan bank' || d === 'хаан банк',
+];
 function allowedIndex(u: BankLink) {
-  // Холбоосын бүтэн хаягийг шалгахгүй: бүх банкны холбоосонд «qPay_QRcode=» байдаг тул бүгд таарч байсан.
-  // Зөвхөн нэр, тайлбар, апп-ын схем (khanbank://, qpaywallet://).
-  const scheme = String(u.link ?? '').split('://')[0];
-  const key = `${u.name} ${u.description ?? ''} ${scheme}`;
-  return ALLOWED.findIndex(re => re.test(key));
+  // Холбоосын бүтэн хаягийг шалгахгүй: бүх банкны холбоосонд «qPay_QRcode=» байдаг.
+  const norm = (v?: string) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const scheme = norm(String(u.link ?? '').split('://')[0]);
+  return ALLOWED.findIndex(f => f(norm(u.name), norm(u.description), scheme));
 }
 export function filterBankLinks(urls: BankLink[] = []) {
   return urls
