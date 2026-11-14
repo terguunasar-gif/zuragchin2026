@@ -903,7 +903,11 @@ export default function PublicAlbumPage() {
             <p className="text-stone-500 text-sm">{t('Зурагчид одоогоор зураг байршуулаагүй байна.')}</p>
           </div>
         ) : (
-          view !== 'large' || delMode ? (
+          view === 'small' || delMode ? (
+          <>
+          {!delMode && (
+            <p className="text-stone-500 text-xs mb-3">{t('Татах, угаалгах захиалга өгөхдөө зураг дээр дарна уу.')}</p>
+          )}
           <div className={`grid ${view !== 'small' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5' : 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-1.5'}`}>
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
@@ -930,8 +934,10 @@ export default function PublicAlbumPage() {
               </button>
             ))}
           </div>
+          </>
           ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          // Том болон дунд харагдац: зураг бүрийн доор «Татах», «Угаалгах» товчнууд харагдана
+          <div className={`grid ${view === 'medium' ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4'}`}>
             {(folderFilter === 'mine' && faceIds
               ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
               : visiblePhotos).map(photo => (

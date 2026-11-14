@@ -285,6 +285,7 @@ const EN: Record<string, string> = {
   "Зураг яаж худалдаж авах вэ?": "How do I buy a photo?",
   "Худалдаж авсан зургаа хаанаас татах вэ?": "Where do I download photos I bought?",
   "Зурагчин болж цомог үүсгэх вэ?": "How do I become a photographer and create an album?",
+  'Татах, угаалгах захиалга өгөхдөө зураг дээр дарна уу.': 'Tap a photo to download or order a print.',
 };
 
 export default EN;
