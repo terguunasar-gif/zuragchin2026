@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
 } from 'lucide-react';
+import QrScanModal from '../components/QrScanModal';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, withTimeout, hasRole } from '../lib/supabase';
 import CheckoutModal from './checkout/CheckoutModal';
@@ -153,7 +154,9 @@ export default function PublicAlbumPage() {
   const [folders, setFolders] = useState<AlbumFolder[]>([]);
   const [folderFilter, setFolderFilter] = useState<FolderFilter>('all');
   // Зурагчнаар шүүх (?ph=<photographer_id>)
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [scanOpen, setScanOpen] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [phFilter, setPhFilter] = useState<string>(searchParams.get('ph') || '');
   const [focusPhoto, setFocusPhoto] = useState<string | null>(null);
   // Зураг харах хэмжээ: том (худалдан авах товчтой) / дунд / жижиг (олноор нь гүйлгэж хайх)
@@ -532,6 +535,52 @@ export default function PublicAlbumPage() {
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
 
+  /** QR-аар (томоор харуулах дэлгэцээс) зургийг сагсанд нэмнэ — анхдагчаар «Татах» */
+  const addPhotoById = useCallback((photoId: string): { ok: boolean; message: string } => {
+    const idx = photos.findIndex(p => p.id === photoId);
+    const ph = photos[idx];
+    if (!ph || !album) return { ok: false, message: t('Энэ зураг энэ цомогт алга') };
+    const price = photoDownloadPrice(ph, album, aiPrice);
+    if (!(price > 0)) {
+      setFocusPhoto(ph.id);
+      setTimeout(() => document.getElementById(`photo-${ph.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+      return { ok: true, message: t('Энэ зураг үнэгүй — цомгоос шууд татна уу') };
+    }
+    let existed = false;
+    setCart(prev => {
+      if (prev.some(c => c.photoId === ph.id)) { existed = true; return prev; }
+      return [...prev, {
+        id: crypto.randomUUID(), photoId: ph.id, photographerId: ph.photographer_id, previewUrl: ph.watermarked_url,
+        filename: ph.title || ph.id, type: 'download', price,
+      }];
+    });
+    return existed
+      ? { ok: true, message: t('Энэ зураг аль хэдийн сагсанд байна') }
+      : { ok: true, message: t('Зураг сагсанд нэмэгдлээ ✓') };
+  }, [photos, album, aiPrice, t]);
+
+  const handleScan = useCallback((text: string): { ok: boolean; message: string } => {
+    try {
+      const u = new URL(text);
+      const add = u.searchParams.get('add');
+      if (add) return addPhotoById(add);
+      if (/\/album\//.test(u.pathname)) return { ok: false, message: t('Энэ нь цомгийн QR байна — зургийн хажууд байгаа QR-ийг уншуулна уу') };
+    } catch { /* URL биш */ }
+    return { ok: false, message: t('Zuragchin.mn-ийн зургийн QR биш байна') };
+  }, [addPhotoById, t]);
+
+  // Томоор харуулах дэлгэцийн QR-ийг утасны камераар уншуулж орсон: ?add=<зураг> → сагсанд нэмнэ
+  const addParam = searchParams.get('add');
+  useEffect(() => {
+    if (!addParam || !cartReady || photos.length === 0) return;
+    const r = addPhotoById(addParam);
+    setNotice({ ok: r.ok, text: r.message });
+    setTimeout(() => setNotice(null), 4000);
+    const p = new URLSearchParams(searchParams);
+    p.delete('add');
+    setSearchParams(p, { replace: true });
+  }, [addParam, cartReady, photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Сагсан дахь зургийн сонголтыг солих: Татах ↔ Угаалгах (хэмжээ). Ижил сонголт аль хэдийн байвал давхардуулахгүй. */
   const changeCartItem = (id: string, type: 'download' | 'print', printSize: string | undefined, price: number) =>
     setCart(prev => {
@@ -741,6 +790,10 @@ export default function PublicAlbumPage() {
             {paidCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-stone-950 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{paidCount}</span>
             )}
+          </button>
+          <button onClick={() => setScanOpen(true)} title={t('Зургийн QR уншуулах')}
+            className="flex items-center justify-center bg-white/5 border border-white/15 hover:border-white/30 text-amber-300 w-10 h-10 rounded-xl flex-shrink-0">
+            <ScanLine className="w-5 h-5" />
           </button>
           <button onClick={() => setCartOpen(o => !o)}
             className="relative flex items-center gap-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-4 py-2 rounded-xl transition-colors flex-shrink-0">
@@ -1057,12 +1110,40 @@ export default function PublicAlbumPage() {
           onClose={() => setPrintReqOpen(false)} onSent={() => setPrintPicks([])} />
       )}
 
+      {scanOpen && (
+        <QrScanModal
+          title={t('Зургийн QR уншуулах')}
+          hint={t('Том дэлгэц дээрх зургийн хажууд байгаа QR-ийг уншуулахад тэр зураг сагсанд орно. Дараагийн зургийн QR-ийг шууд үргэлжлүүлэн уншуулна.')}
+          onCode={handleScan}
+          onClose={() => setScanOpen(false)}
+          footer={
+            <button onClick={() => { setScanOpen(false); setCartOpen(true); }}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl">
+              <ShoppingCart className="w-4 h-4" /> {t('Сагс')} ({cart.length}) · ₮{cartTotal.toLocaleString()}
+            </button>
+          }
+        />
+      )}
+      {notice && (
+        <div className={`fixed left-4 right-4 sm:left-auto sm:right-6 sm:w-96 bottom-6 z-[75] rounded-2xl px-4 py-3 font-semibold shadow-2xl ${
+          notice.ok ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}>
+          {notice.text}
+          {notice.ok && (
+            <button onClick={() => { setNotice(null); setScanOpen(true); }}
+              className="mt-2 w-full flex items-center justify-center gap-2 bg-stone-950/90 text-white text-sm py-2 rounded-xl">
+              <ScanLine className="w-4 h-4 text-amber-400" /> {t('Дараагийн зургийн QR уншуулах')}
+            </button>
+          )}
+        </div>
+      )}
+
       {cartOpen && (
         <CartSidebar
           cart={cart} total={cartTotal}
           onRemove={removeFromCart}
           onChange={changeCartItem}
           options={cartOptions}
+          onScan={() => { setCartOpen(false); setScanOpen(true); }}
           onClose={() => setCartOpen(false)}
           onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }}
         />
@@ -1327,7 +1408,8 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
   );
 }
 
-function CartSidebar({ cart, total, onRemove, onChange, options, onClose, onCheckout }: {
+function CartSidebar({ cart, total, onRemove, onChange, options, onScan, onClose, onCheckout }: {
+  onScan: () => void;
   cart: CartItem[]; total: number;
   onRemove: (id: string) => void;
   onChange: (id: string, type: 'download' | 'print', printSize: string | undefined, price: number) => void;
@@ -1350,6 +1432,10 @@ function CartSidebar({ cart, total, onRemove, onChange, options, onClose, onChec
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <button onClick={onScan}
+            className="w-full flex items-center justify-center gap-2 border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-semibold text-sm py-2.5 rounded-xl">
+            <ScanLine className="w-4 h-4" /> {t('Зургийн QR уншуулж нэмэх')}
+          </button>
           {cart.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingCart className="w-10 h-10 text-stone-600 mx-auto mb-3" />

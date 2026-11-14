@@ -37,7 +37,7 @@ function sessionId(): string {
 
 /** Туслах харагдах ёсгүй хуудсууд (дэлгэцийн слайдшоу, AI бүүтийн kiosk) */
 function hiddenOn(path: string) {
-  return /^\/album\/[^/]+\/screen/.test(path) || path.startsWith('/booth/');
+  return /^\/album\/[^/]+\/(screen|kiosk)/.test(path) || path.startsWith('/booth/');
 }
 
 export default function HelpChat() {
