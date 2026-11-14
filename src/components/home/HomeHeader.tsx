@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Images, LogOut, Menu, Settings, Smartphone, X } from 'lucide-react';
+import { ChevronDown, Images, KeyRound, LogOut, Menu, Settings, Smartphone, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../../lib/visitedAlbums';
@@ -171,11 +171,28 @@ function MyAlbumsBar() {
   const navigate = useNavigate();
   const [albums, setAlbums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
   const [open, setOpen] = useState(false);
-  if (albums.length === 0) return null;
   const last = albums[0];
+  // Өөр хөтчөөс орсон зочин цомгоо кодоор олно
+  const codeBtn = (
+    <button
+      onClick={() => navigate('/c')}
+      title="Цомгийн кодоор орох"
+      className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-200 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
+    >
+      <KeyRound className="w-4 h-4 text-amber-400" /> Цомгийн код
+    </button>
+  );
+  if (albums.length === 0) {
+    return (
+      <div className="border-t border-white/5 bg-stone-950/95">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end">{codeBtn}</div>
+      </div>
+    );
+  }
   return (
     <div className="border-t border-white/5 bg-stone-950/95">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2 relative">
+        {codeBtn}
         <button
           onClick={() => navigate(`/album/${last.link}`)}
           className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-semibold text-sm pl-1.5 pr-3 py-1.5 rounded-xl transition-colors min-w-0 max-w-[75vw]"

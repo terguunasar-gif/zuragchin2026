@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, withTimeout, hasRole } from '../lib/supabase';
@@ -9,6 +9,7 @@ import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
+import { albumCode, codeUrl } from '../lib/albumCode';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
 import FaceSearchModal from '../components/FaceSearchModal';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
@@ -750,6 +751,7 @@ export default function PublicAlbumPage() {
             {t('{n} зураг', { n: photos.length })}
           </span>
         </div>
+        <AlbumCodeChip id={album.id} name={album.name} />
         {album.expires_at && (() => {
           const left = Math.ceil((new Date(album.expires_at).getTime() - Date.now()) / 86400000);
           return left <= 7 ? (
@@ -1072,6 +1074,42 @@ export default function PublicAlbumPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Цомгийн богино код — өөр хөтөч/утаснаас буцаж орох ─────────────────────
+function AlbumCodeChip({ id, name }: { id: string; name: string }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const code = albumCode(id);
+  const url = codeUrl(id);
+  async function share() {
+    try {
+      if (navigator.share) { await navigator.share({ title: name, text: `${name} — ${t('цомгийн код')}: ${code}`, url }); return; }
+    } catch { return; }
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* */ }
+  }
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* */ }
+  }
+  return (
+    <div className="mb-3 inline-flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-amber-500/10 border border-amber-500/25 rounded-2xl px-3 py-2">
+      <span className="flex items-center gap-2 text-sm text-amber-100">
+        <KeyRound className="w-4 h-4 text-amber-400" />
+        {t('Цомгийн код')}: <b className="text-white tracking-[0.2em] text-base">{code}</b>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <button onClick={copy} className="flex items-center gap-1 text-xs bg-white/10 hover:bg-white/15 text-white rounded-lg px-2.5 py-1.5">
+          <Copy className="w-3.5 h-3.5" /> {copied ? t('Хуулагдлаа') : t('Холбоос хуулах')}
+        </button>
+        <button onClick={share} className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg px-2.5 py-1.5">
+          <Share2 className="w-3.5 h-3.5" /> {t('Хадгалах / илгээх')}
+        </button>
+      </span>
+      <span className="basis-full text-[11px] text-stone-400">
+        {t('Цомгоос гарсан бол ямар ч хөтчөөр zuragchin.mn/c/{code} гэж бичээд буцаж орно.', { code })}
+      </span>
     </div>
   );
 }

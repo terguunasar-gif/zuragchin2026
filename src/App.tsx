@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import RouteSeo from './components/RouteSeo';
 
+const AlbumCodePage = lazy(() => import('./pages/AlbumCodePage'));
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
@@ -144,6 +145,8 @@ export default function App() {
           <Route path="/studios/mine" element={<ProtectedRoute><MyStudiosPage /></ProtectedRoute>} />
           <Route path="/studios/:slug/edit" element={<ProtectedRoute><StudioFormPage /></ProtectedRoute>} />
           <Route path="/studios/:slug" element={<StudioDetailPage />} />
+          <Route path="/c" element={<AlbumCodePage />} />
+          <Route path="/c/:code" element={<AlbumCodePage />} />
           <Route path="/album/:shareLink" element={<PublicAlbumPage />} />
           <Route path="/album/:shareLink/screen" element={<AlbumScreenPage />} />
           <Route path="/receipt/:invoiceId" element={<ReceiptPage />} />
