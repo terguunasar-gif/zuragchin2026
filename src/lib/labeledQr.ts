@@ -64,7 +64,7 @@ export async function downloadLabeledQr(url: string, title: string, filename?: s
   // Доод тайлбар
   ctx.fillStyle = '#444444';
   ctx.font = '30px Arial, sans-serif';
-  ctx.fillText('Утасныхаа камераар уншуулж зургаа үзнэ үү', W / 2, headerH + QR + 22);
+  ctx.fillText('Камераар уншуулаад гарч ирсэн холбоосыг дарна уу', W / 2, headerH + QR + 22);
   ctx.fillStyle = '#b45309';
   ctx.font = 'bold 34px Arial, sans-serif';
   ctx.fillText('Zuragchin.mn', W / 2, headerH + QR + 68);
