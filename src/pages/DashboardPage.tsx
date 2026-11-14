@@ -107,8 +107,17 @@ export default function DashboardPage() {
 
   async function loadOrganizerAlbums() {
     const uid = profile!.id;
-    const q = (cols: string) => supabase.from('albums').select(cols).eq('owner_id', uid)
-      .order('created_at', { ascending: false }).limit(50);
+    // update-93: устгагдсан (нуугдсан) цомгийг харуулахгүй. deleted_at багана байхгүй бол шүүлтгүйгээр.
+    let hideDeleted = true;
+    const q = async (cols: string) => {
+      const base = () => supabase.from('albums').select(cols).eq('owner_id', uid).order('created_at', { ascending: false }).limit(50);
+      if (hideDeleted) {
+        const r = await base().is('deleted_at', null);
+        if (!r.error || !/deleted_at/.test(r.error.message)) return r;
+        hideDeleted = false;
+      }
+      return base();
+    };
     let { data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at, is_free, free_activated, photo_limit, listed_until');
     if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at, is_free, free_activated, photo_limit'));
     if (error) ({ data, error } = await q('id, name, title, event_date, status, created_at, expires_at, files_purged_at'));
@@ -120,16 +129,22 @@ export default function DashboardPage() {
 
   async function deleteAlbum(albumId: string) {
     if (!confirm('Энэ цомгийг устгах уу? Бүх зураг устна.')) return;
-    const { error } = await supabase
-      .from('albums')
-      .delete()
-      .eq('id', albumId)
-      .eq('owner_id', profile!.id);
-    if (!error) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/delete-album`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ albumId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Алдаа (${res.status})`);
       setAlbums(prev => prev.filter(a => a.id !== albumId));
-    } else {
-      console.error('deleteAlbum error:', error);
-      alert('Устгахад алдаа гарлаа: ' + error.message);
+      if (data.result === 'hidden') {
+        alert('Энэ цомогт төлбөр төлөгдсөн худалдан авалт байгаа тул бүрэн устгаагүй, нуулаа. Худалдан авагчид төлсөн зургаа татаж, угаалгах захиалга хэвлэгдэх боломжтой хэвээр байна.');
+      }
+    } catch (e) {
+      console.error('deleteAlbum error:', e);
+      alert('Устгахад алдаа гарлаа: ' + (e instanceof Error ? e.message : String(e)));
     }
   }
 

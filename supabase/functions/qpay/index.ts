@@ -282,6 +282,47 @@ Deno.serve(async (req: Request) => {
     }
 
     // CREATE INVOICE
+    // ── ЦОМОГ УСТГАХ (эзэн / админ) ──
+    // Борлуулалтгүй бол файл + мөрийг бүрэн устгана. Төлөгдсөн худалдан авалттай бол нууна —
+    // худалдан авагчийн баримт, татах холбоос, угаалгах захиалга ажилласаар байна.
+    if (req.method === "POST" && path === "/delete-album") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const uid = await userIdFromRequest(db, req);
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      const { albumId } = await req.json().catch(() => ({})) as { albumId?: string };
+      if (!albumId) return json({ error: "albumId дутуу" }, 400);
+      const { data: album } = await db.from("albums").select("id, owner_id").eq("id", albumId).maybeSingle();
+      if (!album) return json({ result: "deleted" });
+      if (album.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
+
+      const { count: paid } = await db.from("purchases").select("id", { count: "exact", head: true })
+        .eq("album_id", albumId).eq("payment_status", "paid");
+      if ((paid ?? 0) > 0) {
+        const now = new Date().toISOString();
+        let { error } = await db.from("albums").update({ deleted_at: now, status: "closed", listed_until: null }).eq("id", albumId);
+        if (error) ({ error } = await db.from("albums").update({ deleted_at: now, status: "closed" }).eq("id", albumId));
+        if (error) return json({ error: "Нууж чадсангүй: " + error.message + " (update-93 SQL ажиллуулсан эсэхээ шалгана уу)" }, 500);
+        return json({ result: "hidden", paid });
+      }
+
+      // Файлуудыг устгана (цомгийн хугацаа дуусах цэвэрлэгээтэй ижил)
+      const { data: photos } = await db.from("photo_uploads").select("original_url, preview_url").eq("album_id", albumId);
+      const originals = (photos ?? []).map(p => String(p.original_url ?? "").replace(/^photos-original\//, "")).filter(Boolean);
+      const previews = (photos ?? []).map(p => String(p.preview_url ?? "").split("/photos-preview/")[1]?.split("?")[0]).filter(Boolean) as string[];
+      const { data: guests } = await db.from("album_guest_photos").select("path, thumb_path").eq("album_id", albumId);
+      const guestFiles = (guests ?? []).flatMap((g: { path: string; thumb_path: string }) => [g.path, g.thumb_path]).filter(Boolean);
+      try {
+        for (let i = 0; i < originals.length; i += 100) await db.storage.from("photos-original").remove(originals.slice(i, i + 100));
+        for (let i = 0; i < previews.length; i += 100) await db.storage.from("photos-preview").remove(previews.slice(i, i + 100));
+        for (let i = 0; i < guestFiles.length; i += 100) await db.storage.from("guest-photos").remove(guestFiles.slice(i, i + 100));
+      } catch (e) {
+        console.log("DELETE ALBUM FILES ERROR:", e instanceof Error ? e.message : e);
+      }
+      const { error: delErr } = await db.from("albums").delete().eq("id", albumId);
+      if (delErr) return json({ error: "Устгаж чадсангүй: " + delErr.message }, 500);
+      return json({ result: "deleted", files: originals.length + previews.length + guestFiles.length });
+    }
+
     if (req.method === "POST" && path === "/create-invoice") {
       const body = await req.json();
       // Нэвтэрсэн худалдан авагч бол захиалгыг түүний бүртгэлд холбоно (нэвтрээгүй бол null)
