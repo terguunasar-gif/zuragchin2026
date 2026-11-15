@@ -12,8 +12,8 @@ import { KIOSK_LAYOUT_KEY, movePage, pageStartIndex, parseKioskLayout, type Kios
 /**
  * Томоор үзүүлэх дэлгэц (киоск) — арга хэмжээн дээр ТВ / монитор / таблет дээр цомгийн зургийг
  * бүтэн дэлгэцээр (тамгатай preview) гүйлгэж үзнэ.
- * Нэг зураг (анхдагч), 4 эсвэл 9 зураг зэрэг. Олон горимд зураг бүр өөрийн дугаар, өөрийн QR-тай:
- * утасны камераар уншуулахад тухайн зураг zuragchin.mn-ийн сагсанд шууд орно.
+ * Нэг зураг (анхдагч), 4 эсвэл 9 зураг зэрэг. Олон горимд зураг бүр зөвхөн дугаартай;
+ * дарахад нэг зургийн горим нээгдэж, QR тэнд харагдана.
  * Сонгосон горим нь төхөөрөмж дээр хадгалагдана.
  */
 
@@ -272,7 +272,6 @@ export default function AlbumKioskPage() {
                   num={index + 1}
                   perPage={layout}
                   marked={mark === index}
-                  addUrl={photoAddUrl(shareLink, p.id)}
                   onOpen={() => openSingle(index)}
                 />
               );
@@ -350,55 +349,37 @@ export default function AlbumKioskPage() {
 }
 
 function KioskTile({
-  photo, num, perPage, marked, addUrl, onOpen,
+  photo, num, perPage, marked, onOpen,
 }: {
   photo: KPhoto;
   num: number;
   perPage: 4 | 9;
   marked: boolean;
-  addUrl: string;
   onOpen: () => void;
 }) {
   const dense = perPage === 9;
-  // Нэг зураг, шүүлтүүр/scale байхгүй. Android Chrome blur(40px)+scale-ийг хэвтээ зурвас болгон зурдаг.
-  const qr = dense ? 88 : 132;
   return (
-    <div className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl bg-stone-900 ring-1 flex-col landscape:flex-row ${
-      marked ? 'ring-2 ring-amber-400' : 'ring-white/15'
-    }`}>
-      <button
-        type="button"
-        onClick={onOpen}
-        onContextMenu={e => e.preventDefault()}
-        aria-label={`№${num} зургийг бүтнээр харах`}
-        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden"
-      >
-        <img
-          src={photo.url}
-          alt=""
-          draggable={false}
-          decoding="async"
-          className="absolute inset-0 h-full w-full object-contain"
-        />
-      </button>
-      <div className={`flex shrink-0 items-center justify-center gap-1 bg-white p-1 text-stone-950 flex-row landscape:h-full landscape:w-auto landscape:flex-col ${
-        dense ? 'h-24 landscape:h-full landscape:w-[104px]' : 'h-36 landscape:h-full landscape:w-[156px]'
-      }`}>
-        <span className={`shrink-0 font-extrabold leading-none whitespace-nowrap ${marked ? 'text-amber-600' : 'text-stone-950'} ${
-          dense ? 'text-sm' : 'text-xl'
-        }`}>№{num}</span>
-        <QRCodeSVG
-          value={addUrl}
-          size={qr}
-          level="M"
-          marginSize={1}
-          bgColor="#ffffff"
-          fgColor="#000000"
-          className="min-h-0 max-h-full min-w-0 max-w-full shrink"
-          style={{ width: `min(100%, ${qr}px)`, height: 'auto' }}
-        />
-        <span className={`shrink-0 font-extrabold leading-none text-amber-600 ${dense ? 'text-[10px]' : 'text-xs'}`}>Авах</span>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      onContextMenu={e => e.preventDefault()}
+      aria-label={`№${num} зургийг бүтнээр харах`}
+      className={`relative h-full min-h-0 min-w-0 overflow-hidden rounded-xl bg-stone-900 ring-1 ${
+        marked ? 'ring-2 ring-amber-400' : 'ring-white/15'
+      }`}
+    >
+      <img
+        src={photo.url}
+        alt=""
+        draggable={false}
+        decoding="async"
+        className="absolute inset-0 h-full w-full object-contain"
+      />
+      <span className={`absolute left-1.5 top-1.5 bg-black/75 border border-white/20 rounded-lg font-extrabold leading-none ${
+        marked ? 'text-amber-300' : 'text-white'
+      } ${dense ? 'px-1.5 py-1 text-sm md:text-base' : 'px-2 py-1.5 text-lg md:text-2xl'}`}>
+        №{num}
+      </span>
+    </button>
   );
 }
