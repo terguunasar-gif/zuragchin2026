@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, ChevronLeft, ChevronRight, LayoutGrid, Loader2, Maximize, Minimize, ScanLine, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Grid2x2, Grid3x3, LayoutGrid, Loader2, Maximize, Minimize, ScanLine, Square, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { albumLockState } from '../lib/albumLock';
 import AlbumPinGate from '../components/AlbumPinGate';
 import BrandMark from '../components/BrandMark';
+import { KIOSK_LAYOUT_KEY, movePage, pageStartIndex, parseKioskLayout, type KioskLayout } from '../lib/kioskLayout';
 
 /**
  * Томоор үзүүлэх дэлгэц (киоск) — арга хэмжээн дээр ТВ / монитор / таблет дээр цомгийн зургийг
- * нэг нэгээр нь бүтэн дэлгэцээр (тамгатай preview) гүйлгэж үзнэ.
- * Зураг бүрийн хажууд тухайн зургийн QR: утасны камераар уншуулахад zuragchin.mn-ийн сагсанд шууд орно,
- * дараагийн зургийг сагсны «QR уншуулах» товчоор нэмнэ.
+ * бүтэн дэлгэцээр (тамгатай preview) гүйлгэж үзнэ.
+ * Нэг зураг (анхдагч), 4 эсвэл 9 зураг зэрэг. Олон горимд зураг бүр өөрийн дугаар, өөрийн QR-тай:
+ * утасны камераар уншуулахад тухайн зураг zuragchin.mn-ийн сагсанд шууд орно.
+ * Сонгосон горим нь төхөөрөмж дээр хадгалагдана.
  */
 
 interface KPhoto { id: string; url: string; folder_id: string | null; source: string | null }
 interface Folder { id: string; name: string }
+
+function readLayout(): KioskLayout {
+  try { return parseKioskLayout(localStorage.getItem(KIOSK_LAYOUT_KEY)); } catch { return 1; }
+}
+
+function photoAddUrl(shareLink: string, id: string) {
+  return `${window.location.origin}/album/${shareLink}?add=${id}`;
+}
 
 export default function AlbumKioskPage() {
   const { shareLink = '' } = useParams();
@@ -29,7 +39,17 @@ export default function AlbumKioskPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [idx, setIdx] = useState(0);
   const [grid, setGrid] = useState(false);
+  const [layout, setLayoutState] = useState<KioskLayout>(readLayout);
+  /** «Очих»-оор ирсэн зургийг олон горимд тодруулна. Хуудас солиход арилна. */
+  const [mark, setMark] = useState<number | null>(null);
   const tokenRef = useRef('');
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+
+  const setLayout = useCallback((v: KioskLayout) => {
+    setLayoutState(v);
+    try { localStorage.setItem(KIOSK_LAYOUT_KEY, String(v)); } catch { /* хувийн цонх */ }
+  }, []);
 
   const load = useCallback(async () => {
     setState('loading');
@@ -64,44 +84,64 @@ export default function AlbumKioskPage() {
 
   const shown = useMemo(() => photos.filter(p =>
     folder === 'all' ? true : folder === 'ai' ? p.source === 'ai_booth' : p.folder_id === folder), [photos, folder]);
-  useEffect(() => { setIdx(0); }, [folder]);
+  useEffect(() => { setIdx(0); setMark(null); }, [folder]);
 
   const count = shown.length;
-  const cur = shown[Math.min(idx, Math.max(count - 1, 0))];
-  const go = useCallback((d: number) => setIdx(i => (count ? (i + d + count) % count : 0)), [count]);
+  const safeIdx = count ? Math.min(Math.max(idx, 0), count - 1) : 0;
+  const pageStart = pageStartIndex(safeIdx, count, layout);
+  const pageEnd = Math.min(pageStart + layout, count);
+  const cur = shown[safeIdx];
+  const go = useCallback((d: number) => {
+    setMark(null);
+    setIdx(i => movePage(i, d, count, layout));
+  }, [count, layout]);
 
-  // Гар: ← → , Home/End
+  const openSingle = useCallback((index: number) => {
+    if (swiped.current) return;
+    setIdx(index);
+    setLayout(1);
+  }, [setLayout]);
+
+  // Гар: ← → хуудсаар (1 горимд нэг зургаар), Home/End
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(1); }
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
-      else if (e.key === 'Home') setIdx(0);
-      else if (e.key === 'End') setIdx(Math.max(count - 1, 0));
+      else if (e.key === 'Home') { setIdx(0); setMark(0); }
+      else if (e.key === 'End') { const last = Math.max(count - 1, 0); setIdx(last); setMark(last); }
       else if (e.key === 'Escape') setGrid(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [go, count]);
 
-  // Хуруугаар шударч гүйлгэх
-  const touch = useRef<{ x: number; y: number } | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
+  // Хуруугаар шударч нэг хуудас гүйлгэнэ. Шидэлт дараагийн товшилтыг нээхгүй.
+  const onTouchStart = (e: React.TouchEvent) => {
+    swiped.current = false;
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
   const onTouchEnd = (e: React.TouchEvent) => {
     if (!touch.current) return;
     const dx = e.changedTouches[0].clientX - touch.current.x;
     const dy = e.changedTouches[0].clientY - touch.current.y;
     touch.current = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      swiped.current = true;
+      go(dx < 0 ? 1 : -1);
+    }
   };
 
-  // Хөрш зургуудыг урьдчилан ачаална
+  // Дараагийн хуудсыг урьдчилан ачаална
   useEffect(() => {
-    for (const d of [1, 2, -1]) {
-      const p = shown[(idx + d + count) % (count || 1)];
+    if (!count) return;
+    const start = pageStartIndex(safeIdx, count, layout);
+    const offsets = layout === 1 ? [1, 2, -1] : [layout, layout + 1, layout + 2, -layout];
+    for (const d of offsets) {
+      const p = shown[(start + d + count) % count];
       if (p) { const img = new Image(); img.src = p.url; }
     }
-  }, [idx, shown, count]);
+  }, [safeIdx, shown, count, layout]);
 
   // Дэлгэц унтрахаас сэргийлнэ
   useEffect(() => {
@@ -130,7 +170,7 @@ export default function AlbumKioskPage() {
   const [jump, setJump] = useState('');
   const doJump = () => {
     const n = parseInt(jump, 10);
-    if (n >= 1 && n <= count) setIdx(n - 1);
+    if (n >= 1 && n <= count) { setIdx(n - 1); setMark(n - 1); }
     setJump('');
   };
 
@@ -150,17 +190,25 @@ export default function AlbumKioskPage() {
     return <AlbumPinGate albumId={album.id} albumName={album.name} onUnlocked={load} />;
   }
 
-  const addUrl = cur ? `${window.location.origin}/album/${shareLink}?add=${cur.id}` : '';
+  const addUrl = cur ? photoAddUrl(shareLink, cur.id) : '';
   const hasAi = photos.some(p => p.source === 'ai_booth');
+  const multi = layout === 4 || layout === 9;
+  const pagePhotos = shown.slice(pageStart, pageEnd);
+  const cols = layout === 9 ? 3 : 2;
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col select-none">
+    <div className="fixed inset-0 bg-black text-white flex flex-col select-none overscroll-none">
       {/* Дээд мөр */}
       <div className="flex items-center gap-2 px-3 py-2 bg-stone-950/95 border-b border-white/10 text-sm flex-wrap">
         <button onClick={() => navigate(-1)} title="Буцах" className="p-2 rounded-lg hover:bg-white/10"><ArrowLeft className="w-4 h-4" /></button>
         <BrandMark className="w-7 h-7" />
-        <p className="font-bold truncate max-w-[40vw]">{album?.name}</p>
+        <p className="font-bold truncate max-w-[28vw] sm:max-w-[40vw]">{album?.name}</p>
         <div className="flex-1" />
+        {multi && count > 0 && (
+          <span className="tabular-nums font-bold whitespace-nowrap text-white">
+            №{pageStart + 1}{pageEnd > pageStart + 1 ? `–${pageEnd}` : ''}<span className="text-stone-500 font-semibold">/{count}</span>
+          </span>
+        )}
         <select value={folder} onChange={e => setFolder(e.target.value)}
           className="bg-stone-900 border border-white/10 rounded-lg px-2 py-1.5 outline-none">
           <option value="all">Бүх зураг</option>
@@ -172,6 +220,18 @@ export default function AlbumKioskPage() {
             className="w-16 bg-stone-900 border border-white/10 rounded-lg px-2 py-1.5 outline-none text-center" />
           <button type="submit" className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15">Очих</button>
         </form>
+        <div className="flex flex-shrink-0 rounded-lg overflow-hidden border border-white/10" role="group" aria-label="Харагдац">
+          {([
+            [1, '1 зураг', Square],
+            [4, '4 зураг', Grid2x2],
+            [9, '9 зураг', Grid3x3],
+          ] as const).map(([k, label, Icon]) => (
+            <button key={k} type="button" onClick={() => setLayout(k)} title={label} aria-label={label} aria-pressed={layout === k}
+              className={`p-2 transition-colors ${layout === k ? 'bg-amber-500 text-stone-950' : 'text-stone-200 hover:bg-white/10'}`}>
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
         <button onClick={() => setGrid(true)} title="Бүх зураг" className="p-2 rounded-lg hover:bg-white/10"><LayoutGrid className="w-4 h-4" /></button>
         <button onClick={toggleFull} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 rounded-lg px-3 py-1.5">
           {isFull ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />} <span className="hidden sm:inline">{isFull ? 'Гарах' : 'Бүтэн дэлгэц'}</span>
@@ -180,6 +240,39 @@ export default function AlbumKioskPage() {
 
       {count === 0 ? (
         <div className="flex-1 flex items-center justify-center text-stone-500 text-xl">Зураг алга</div>
+      ) : multi ? (
+        <div className="relative flex-1 min-h-0" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          <div
+            className="h-full min-h-0 grid gap-1.5 md:gap-2 px-12 md:px-14 py-1.5 md:py-2"
+            style={{
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${cols}, minmax(0, 1fr))`,
+            }}
+          >
+            {pagePhotos.map((p, i) => {
+              const index = pageStart + i;
+              return (
+                <KioskTile
+                  key={p.id}
+                  photo={p}
+                  num={index + 1}
+                  perPage={layout}
+                  marked={mark === index}
+                  addUrl={photoAddUrl(shareLink, p.id)}
+                  onOpen={() => openSingle(index)}
+                />
+              );
+            })}
+          </div>
+          <button type="button" onClick={() => go(-1)} aria-label="Өмнөх"
+            className="absolute left-1 md:left-1.5 top-1/2 -translate-y-1/2 z-10 w-11 h-11 md:w-12 md:h-12 rounded-full bg-black/55 hover:bg-black/75 border border-white/20 flex items-center justify-center">
+            <ChevronLeft className="w-7 h-7" />
+          </button>
+          <button type="button" onClick={() => go(1)} aria-label="Дараах"
+            className="absolute right-1 md:right-1.5 top-1/2 -translate-y-1/2 z-10 w-11 h-11 md:w-12 md:h-12 rounded-full bg-black/55 hover:bg-black/75 border border-white/20 flex items-center justify-center">
+            <ChevronRight className="w-7 h-7" />
+          </button>
+        </div>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col landscape:flex-row">
           {/* Зураг */}
@@ -196,7 +289,7 @@ export default function AlbumKioskPage() {
               <ChevronRight className="w-8 h-8" />
             </button>
             <span className="absolute left-3 top-3 bg-black/70 border border-white/15 rounded-xl px-3 py-1.5 text-lg md:text-2xl font-extrabold">
-              №{idx + 1}<span className="text-stone-400 text-sm md:text-base font-semibold"> / {count}</span>
+              №{safeIdx + 1}<span className="text-stone-400 text-sm md:text-base font-semibold"> / {count}</span>
             </span>
           </div>
 
@@ -229,8 +322,8 @@ export default function AlbumKioskPage() {
           </div>
           <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-2 content-start">
             {shown.map((p, i) => (
-              <button key={p.id} onClick={() => { setIdx(i); setGrid(false); }}
-                className={`relative aspect-square rounded-lg overflow-hidden bg-stone-900 ${i === idx ? 'ring-4 ring-amber-400' : ''}`}>
+              <button key={p.id} onClick={() => { setIdx(i); setMark(i); setGrid(false); }}
+                className={`relative aspect-square rounded-lg overflow-hidden bg-stone-900 ${i === safeIdx ? 'ring-4 ring-amber-400' : ''}`}>
                 <img src={p.url} alt="" loading="lazy" className="w-full h-full object-cover" />
                 <span className="absolute left-1 bottom-1 bg-black/70 rounded px-1.5 text-xs font-bold">{i + 1}</span>
               </button>
@@ -238,6 +331,58 @@ export default function AlbumKioskPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function KioskTile({
+  photo, num, perPage, marked, addUrl, onOpen,
+}: {
+  photo: KPhoto;
+  num: number;
+  perPage: 4 | 9;
+  marked: boolean;
+  addUrl: string;
+  onOpen: () => void;
+}) {
+  const dense = perPage === 9;
+  return (
+    <div className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl bg-stone-950 ring-1 flex-col landscape:flex-row ${
+      marked ? 'ring-2 ring-amber-400' : 'ring-white/15'
+    }`}>
+      <button
+        type="button"
+        onClick={onOpen}
+        onContextMenu={e => e.preventDefault()}
+        aria-label={`№${num} зургийг бүтнээр харах`}
+        className="group relative min-h-0 min-w-0 flex-1"
+      >
+        <img src={photo.url} alt="" aria-hidden draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-50 blur-2xl" />
+        <img src={photo.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-contain p-1 transition-[filter] group-hover:brightness-110" />
+      </button>
+      {/* Дугаар + QR нь зурагнаас тусдаа — хуруу QR дээр хүрэхэд горим солигдохгүй */}
+      <div className={`flex min-h-0 min-w-0 items-center justify-center gap-1 bg-white p-1 text-stone-950 flex-row landscape:h-full landscape:flex-col ${
+        dense
+          ? 'h-[30%] max-h-28 landscape:max-h-none landscape:w-[34%] landscape:max-w-[140px] landscape:min-w-[76px]'
+          : 'h-[32%] max-h-40 landscape:max-h-none landscape:w-[30%] landscape:max-w-[180px] landscape:min-w-[96px]'
+      }`}>
+        <span onClick={onOpen} className={`shrink-0 cursor-pointer font-extrabold leading-none whitespace-nowrap ${marked ? 'text-amber-600' : 'text-stone-950'} ${
+          dense ? 'text-[clamp(0.8rem,2.1vmin,1.35rem)]' : 'text-[clamp(1rem,2.8vmin,1.85rem)]'
+        }`}>№{num}</span>
+        <div className="relative min-h-0 min-w-0 flex-1 self-stretch" style={{ containerType: 'size' }}>
+          <QRCodeSVG
+            value={addUrl}
+            size={256}
+            level="M"
+            marginSize={2}
+            bgColor="#ffffff"
+            fgColor="#000000"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={{ width: 'min(100cqw, 100cqh)', height: 'min(100cqw, 100cqh)' }}
+          />
+        </div>
+        <span onClick={onOpen} className={`shrink-0 cursor-pointer font-extrabold leading-none text-amber-600 ${dense ? 'text-[9px] md:text-[11px]' : 'text-[10px] md:text-xs'}`}>Авах</span>
+      </div>
     </div>
   );
 }

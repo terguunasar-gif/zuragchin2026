@@ -38,6 +38,7 @@
     { "src": "^/auth/reset-password/?$", "dest": "/app.html" },
     { "src": "^/photographers/[^/]+/?$", "dest": "/app.html" },
     { "src": "^/album/[^/]+/screen/?$", "dest": "/app.html" },
+    { "src": "^/album/[^/]+/kiosk/?$", "dest": "/app.html" },
     { "src": "^/album/[^/]+/?$", "dest": "/app.html" },
     { "src": "^/receipt/[^/]+/?$", "dest": "/app.html" },
     { "src": "^/offer/[^/]+/?$", "dest": "/app.html" },
