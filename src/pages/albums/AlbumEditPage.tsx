@@ -222,7 +222,7 @@ export default function AlbumEditPage() {
   const [zurError, setZurError] = useState('');
   const [zurBusy, setZurBusy] = useState(false);
 
-  useEffect(() => { if (albumId && profile) loadAlbum(); }, [albumId, profile]);
+  useEffect(() => { if (albumId && profile) loadAlbum(); }, [albumId, profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadAlbum() {
     const { data, error } = await supabase.from('albums').select('*').eq('id', albumId).eq('owner_id', profile!.id).maybeSingle();
@@ -365,12 +365,14 @@ export default function AlbumEditPage() {
   async function handleSave() {
     if (!albumName.trim()) { setError('Цомгийн нэр оруулна уу'); return; }
     if (logoUploading) { setError('Лого байршуулж дуусаагүй байна. Түр хүлээгээд дахин хадгална уу.'); return; }
-    if (layers.some(l => l.type === 'logo' && !l.logoUrl)) { setError('Лого сонгоогүй давхарга байна. Лого сонгох эсвэл тэр давхаргыг устгана уу.'); return; }
+    // Лого сонгоогүй хоосон давхаргыг хадгалахад саад болгохгүй — автоматаар хасна
+    const usable = layers.filter(l => !(l.type === 'logo' && !l.logoUrl));
+    if (usable.length !== layers.length) { setLayers(usable); setActiveId(usable[0]?.id ?? ''); }
     setSaving(true); setError('');
-    const first = layers[0];
+    const first = usable[0];
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
-    const watermarkValue = layersToWatermarkValue(layers);
+    const watermarkValue = layersToWatermarkValue(usable);
     const { data: savedRows, error: err } = await supabase.from('albums').update({
       title: albumName.trim(), name: albumName.trim(),
       event_date: eventDate || null, description: description.trim(),
@@ -388,9 +390,17 @@ export default function AlbumEditPage() {
       watermark_logo_url: first?.type === 'logo' ? (first?.logoUrl || null) : null,
     }).eq('id', albumId).select('id');
     setSaving(false);
-    if (err) { setError(err.message); return; }
-    if (!savedRows || savedRows.length === 0) { setError('Хадгалагдсангүй — энэ цомгийг засах эрх алга (зөвхөн цомгийн эзэн засна).'); return; }
-    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    if (err) { setError('Хадгалагдсангүй: ' + err.message); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (!savedRows || savedRows.length === 0) { setError('Хадгалагдсангүй — энэ цомгийг засах эрх алга (зөвхөн цомгийн эзэн засна).'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    // Өгөгдлийн санд үнэхээр хадгалагдсаныг шалгана
+    const { data: check } = await supabase.from('albums').select('name, title').eq('id', albumId).maybeSingle();
+    const savedName = (check?.title || check?.name || '').trim();
+    if (check && savedName !== albumName.trim()) {
+      setError(`Нэр хадгалагдсангүй (одоо «${savedName}» байна). Хуудсаа шинэчлээд дахин оролдоно уу.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setSaved(true); setTimeout(() => setSaved(false), 4000);
   }
 
   const activeLayer = layers.find(l => l.id === activeId);
@@ -460,6 +470,11 @@ export default function AlbumEditPage() {
             </button>
           )}
         </div>
+        {(saved || error) && (
+          <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] rounded-2xl px-4 py-3 shadow-2xl font-semibold text-sm ${saved ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}>
+            {saved ? '✓ Амжилттай хадгалагдлаа!' : error}
+          </div>
+        )}
         {saved && <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3"><CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" /><p className="text-green-400 text-sm">Амжилттай хадгалагдлаа!</p></div>}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

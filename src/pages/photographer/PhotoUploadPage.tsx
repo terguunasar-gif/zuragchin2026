@@ -177,7 +177,7 @@ export default function PhotoUploadPage() {
       }
       setCheckingAccess(false);
     })();
-  }, [albumId, profile]);
+  }, [albumId, profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!album) return;

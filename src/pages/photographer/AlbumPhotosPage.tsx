@@ -80,7 +80,7 @@ export default function AlbumPhotosPage() {
   useEffect(() => {
     if (!albumId || !profile) return;
     checkAccessAndLoad();
-  }, [albumId, profile]);
+  }, [albumId, profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function checkAccessAndLoad() {
     setLoading(true);
