@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import BankLinks, { BankLink, canOpenBankApps } from '../../components/BankLinks';
 import {
-  X, User, Phone, AlertCircle,
+  X, User, Phone, Mail, AlertCircle,
   Loader2, QrCode, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import { AlbumData, CartItem } from '../PublicAlbumPage';
 import { useI18n } from '../../lib/i18n';
 import { loadBuyerInfo, saveBuyerInfo } from '../../lib/buyerInfo';
+import { normalizeEmail } from '../../lib/buyerEmail';
 import LicenseConsent from '../../components/LicenseConsent';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -55,6 +56,7 @@ export default function CheckoutModal({
 }) {
   const { t, lang } = useI18n();
   const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
   /** Утасны гар нээгдэхэд талбарыг дэлгэцийн дунд гаргана (гарны ард нуугдахгүй) */
   const [typing, setTyping] = useState(false);
   const keepVisible = (e: { currentTarget: HTMLElement }) => {
@@ -65,8 +67,10 @@ export default function CheckoutModal({
   const [step, setStep] = useState<Step>('summary');
   const [buyerName, setBuyerName] = useState(() => loadBuyerInfo().name);
   const [buyerPhone, setBuyerPhone] = useState(() => loadBuyerInfo().phone);
+  const [buyerEmail, setBuyerEmail] = useState(() => loadBuyerInfo().email);
   const [nameError, setNameError] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const hasDownloads = cart.some(i => i.type === 'download');
   const [licenseOk, setLicenseOk] = useState(false);
   const [licenseError, setLicenseError] = useState('');
@@ -91,13 +95,17 @@ export default function CheckoutModal({
     if (!buyerPhone.trim() || !/^\d{8,}$/.test(buyerPhone.trim())) {
       setPhoneError(t('Утасны дугаараа оруулна уу (8+ тоо)')); ok = false;
     } else setPhoneError('');
+    if (buyerEmail.trim() && !normalizeEmail(buyerEmail)) {
+      setEmailError(t('Имэйл хаягаа зөв оруулна уу')); ok = false;
+    } else setEmailError('');
     if (hasDownloads && !licenseOk) { setLicenseError(t('Нөхцөлийг зөвшөөрч тэмдэглэнэ үү')); ok = false; } else setLicenseError('');
     return ok;
   }
 
   async function createInvoice() {
     if (!validate()) return;
-    saveBuyerInfo(buyerName, buyerPhone);
+    const email = normalizeEmail(buyerEmail) ?? '';
+    saveBuyerInfo(buyerName, buyerPhone, email);
     setLoading(true);
     setError('');
 
@@ -117,6 +125,7 @@ export default function CheckoutModal({
           })),
           buyerName: buyerName.trim(),
           buyerPhone: buyerPhone.trim(),
+          buyerEmail: normalizeEmail(buyerEmail) ?? '',
           albumId: album.id,
           licenseAccepted: hasDownloads ? licenseOk : undefined,
         }),
@@ -236,8 +245,9 @@ export default function CheckoutModal({
                       type="tel"
                       inputMode="numeric"
                       autoComplete="tel"
-                      enterKeyHint="done"
+                      enterKeyHint="next"
                       value={buyerPhone}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); emailRef.current?.focus(); } }}
                       onFocus={keepVisible}
                       onBlur={() => setTimeout(() => setTyping(false), 200)}
                       onChange={e => setBuyerPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 12))}
@@ -245,6 +255,29 @@ export default function CheckoutModal({
                       className={`w-full bg-white/5 border ${phoneError ? 'border-red-500/50' : 'border-white/10'} focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm`}
                     />
                     {phoneError && <p className="text-red-400 text-xs mt-1">{phoneError}</p>}
+                  </div>
+                  <div>
+                    <label className="text-stone-400 text-sm mb-1.5 flex items-center gap-2 flex-wrap" htmlFor="checkout-email">
+                      <Mail className="w-3.5 h-3.5" /> {t('Имэйл хаяг')}
+                      <span className="text-amber-200/90 text-xs font-normal">{t('Зургаа сэргээхэд хэрэгтэй')}</span>
+                    </label>
+                    <input
+                      id="checkout-email"
+                      ref={emailRef}
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      spellCheck={false}
+                      enterKeyHint="done"
+                      value={buyerEmail}
+                      onFocus={keepVisible}
+                      onBlur={() => setTimeout(() => setTyping(false), 200)}
+                      onChange={e => setBuyerEmail(e.target.value.slice(0, 254))}
+                      placeholder="name@example.com"
+                      className={`w-full bg-white/5 border ${emailError ? 'border-red-500/50' : 'border-white/10'} focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 text-white placeholder-stone-600 rounded-xl px-4 py-2.5 outline-none transition-all text-sm`}
+                    />
+                    <p className="text-stone-500 text-xs mt-1">{t('Заавал биш. Өөр утас, хөтчөөс захиалгаа имэйлээр сэргээнэ.')}</p>
+                    {emailError && <p className="text-red-400 text-xs mt-1">{emailError}</p>}
                   </div>
                 </div>
               </div>

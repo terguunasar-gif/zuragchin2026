@@ -27,6 +27,14 @@ const AI_ALBUM_PRICE_DEFAULT = 3000;
 const DOWNLOAD_DAYS_DEFAULT = 14;
 const SITE_URL = (Deno.env.get("SITE_URL") || "https://zuragchin.mn").replace(/\/+$/, "");
 
+/** buyer-purchases/logic.ts normalizeEmail-тэй ижил. Хоосон бол ''. */
+function normalizeBuyerEmail(raw: unknown): string {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s.length < 6 || s.length > 254) return "";
+  if (!/^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(s)) return "";
+  return s;
+}
+
 async function qpayToken(): Promise<string> {
   const creds = btoa(`${QPAY_USERNAME}:${QPAY_PASSWORD}`);
   console.log("===== QPAY TOKEN REQUEST =====");
@@ -335,13 +343,18 @@ Deno.serve(async (req: Request) => {
           if (u) buyerUserId = uid;
         }
       } catch { /* нэвтрээгүй */ }
-      const { cartItems, buyerName, buyerPhone, albumId, licenseAccepted } = body as {
+      const { cartItems, buyerName, buyerPhone, buyerEmail: buyerEmailRaw, albumId, licenseAccepted } = body as {
         cartItems: CartItem[];
         buyerName: string;
         buyerPhone: string;
+        buyerEmail?: string;
         albumId: string;
         licenseAccepted?: boolean;
       };
+      const buyerEmail = normalizeBuyerEmail(buyerEmailRaw);
+      if (String(buyerEmailRaw ?? "").trim() && !buyerEmail) {
+        return json({ error: "Имэйл хаягаа зөв оруулна уу" }, 400);
+      }
 
       console.log("ALBUM:", albumId);
       console.log("CART ITEMS COUNT:", cartItems?.length);
@@ -485,6 +498,7 @@ Deno.serve(async (req: Request) => {
           qpay_invoice_id: invoiceId,
           buyer_name: buyerName,
           buyer_phone: buyerPhone,
+          buyer_email: buyerEmail,
           payment_status: "pending",
           ...(item.type === "download" && licenseAt ? { license_accepted_at: licenseAt } : {}),
         };
@@ -498,9 +512,18 @@ Deno.serve(async (req: Request) => {
       const photographerPool = sum("photographer_pool_amount");
 
       let { error: insertErr } = await db.from("purchases").insert(purchaseRows);
-      if (insertErr && /license_accepted_at/.test(insertErr.message)) {
+      if (insertErr && /buyer_email/.test(insertErr.message)) {
+        // buyer_email багана хэрэгжихээс өмнө
+        // deno-lint-ignore no-explicit-any no-unused-vars
+        const withoutEmail = purchaseRows.map(({ buyer_email, ...r }: any) => r);
+        ({ error: insertErr } = await db.from("purchases").insert(withoutEmail));
+        if (insertErr && /license_accepted_at/.test(insertErr.message)) {
+          // deno-lint-ignore no-explicit-any
+          ({ error: insertErr } = await db.from("purchases").insert(withoutEmail.map(({ license_accepted_at, ...r }: any) => r)));
+        }
+      } else if (insertErr && /license_accepted_at/.test(insertErr.message)) {
         // update-40-ийн SQL ажиллаагүй үед
-        // deno-lint-ignore no-unused-vars
+        // deno-lint-ignore no-explicit-any
         ({ error: insertErr } = await db.from("purchases").insert(purchaseRows.map(({ license_accepted_at, ...r }: any) => r)));
       }
       if (insertErr) {

@@ -37,6 +37,29 @@ export const publicDb = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'zuragchin-public' },
 });
 
+/**
+ * Худалдан авалт сэргээх имэйл OTP.
+ * Үндсэн нэвтрэлтийн session-д бичихгүй (өөр storage, persist байхгүй).
+ */
+export function recoveryAuth() {
+  const memory = new Map<string, string>();
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      flowType: 'implicit',
+      storageKey: 'zuragchin-purchase-recovery',
+      storage: {
+        getItem: (key) => Promise.resolve(memory.get(key) ?? null),
+        setItem: (key, value) => { memory.set(key, value); return Promise.resolve(); },
+        removeItem: (key) => { memory.delete(key); return Promise.resolve(); },
+      },
+      lock: async <R,>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
+    },
+  });
+}
+
 /** Хүсэлт хэт удвал алдаа өгнө (хуудас эцэс төгсгөлгүй ачааллахаас сэргийлнэ) */
 export function withTimeout<T>(p: PromiseLike<T>, ms = 12000): Promise<T> {
   return new Promise<T>((resolve, reject) => {

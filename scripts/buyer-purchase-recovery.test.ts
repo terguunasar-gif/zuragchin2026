@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import {
+  emailRateSubject,
   groupPaidPurchases,
+  groupPaidPurchasesByEmail,
   isSixDigitCode,
+  normalizeEmail,
   normalizePhone,
   randomCode,
   retryAfterSeconds,
@@ -16,6 +19,15 @@ assert.equal(normalizePhone('97699112233'), '99112233');
 assert.equal(normalizePhone('9911223'), null);
 assert.equal(normalizePhone('991122334'), null);
 assert.equal(normalizePhone('123456789012'), null);
+
+assert.equal(normalizeEmail(' Buyer@Example.COM '), 'buyer@example.com');
+assert.equal(normalizeEmail('photo.fan+order@gmail.com'), 'photo.fan+order@gmail.com');
+assert.equal(normalizeEmail(''), null);
+assert.equal(normalizeEmail('not-an-email'), null);
+assert.equal(normalizeEmail('a@localhost'), null);
+assert.equal(normalizeEmail('a@b..com'), null);
+assert.equal(emailRateSubject('buyer@example.com'), 'e:buyer@example.com');
+assert.equal(/^\d{8}$/.test(emailRateSubject('buyer@example.com')), false);
 
 assert.equal(isSixDigitCode('012345'), true);
 assert.equal(isSixDigitCode('12345'), false);
@@ -44,6 +56,7 @@ const row = (over: Partial<PaidRow>): PaidRow => ({
   gross_amount: 5000,
   buyer_name: 'Болд',
   buyer_phone: '99112233',
+  buyer_email: 'buyer@example.com',
   album_name: 'name',
   album_title: 'Хурим',
   share_link: '/album/wedding',
@@ -81,5 +94,24 @@ assert.equal('buyer_phone' in orders[1], false);
 assert.equal(groupPaidPurchases('99112233', [row({ buyer_phone: '88001122' })]), null);
 assert.deepEqual(groupPaidPurchases('99112233', [row({ qpay_invoice_id: '../etc' })]), []);
 assert.deepEqual(groupPaidPurchases('99112233', []), []);
+
+const byEmail = groupPaidPurchasesByEmail('buyer@example.com', [
+  row({ type: 'download', gross_amount: 5000 }),
+  row({ type: 'print', gross_amount: 2000, buyer_phone: '88001122' }),
+]);
+assert.ok(byEmail);
+assert.equal(byEmail.length, 1);
+assert.equal(byEmail[0].downloads, 1);
+assert.equal(byEmail[0].prints, 1);
+assert.equal(byEmail[0].total, 7000);
+assert.equal('buyer_email' in byEmail[0], false);
+
+const narrowed = groupPaidPurchasesByEmail('buyer@example.com', [
+  row({ type: 'download' }),
+  row({ type: 'print', buyer_phone: '88001122', qpay_invoice_id: '33333333-3333-3333-3333-333333333333' }),
+], '99112233');
+assert.equal(narrowed, null);
+assert.equal(groupPaidPurchasesByEmail('buyer@example.com', [row({ buyer_email: 'other@example.com' })]), null);
+assert.deepEqual(groupPaidPurchasesByEmail('buyer@example.com', [], '99112233'), []);
 
 console.log('buyer-purchase-recovery logic ok');
