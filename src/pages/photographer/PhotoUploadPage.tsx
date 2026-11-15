@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/watermark';
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
+import {
+  albumHasFile, filenameKey, indexExisting, planUploads, rememberFilename, uploadSkipSummary, type ExistingIndex,
+} from '../../lib/photoUploadDedupe';
 import BrandMark from '../../components/BrandMark';
 
 interface AlbumInfo {
@@ -31,7 +34,7 @@ interface PrintPrices {
   [size: string]: { enabled: boolean; price: string };
 }
 
-type UploadStatus = 'idle' | 'processing' | 'uploading' | 'done' | 'error';
+type UploadStatus = 'idle' | 'processing' | 'uploading' | 'done' | 'error' | 'skipped';
 
 interface FileEntry {
   id: string;
@@ -71,10 +74,15 @@ export default function PhotoUploadPage() {
   const [accessDenied, setAccessDenied] = useState(false);
 
   const [files, setFiles] = useState<FileEntry[]>([]);
-  // Давхардал шалгах: цомогт байгаа файлын нэрс, дараалалд байгаа нэр+хэмжээ
-  const existingNamesRef = useRef<Set<string>>(new Set());
+  // Давхардал шалгах: цомогт байгаа файлын нэрс (нуусан зураг орно), дараалалд байгаа нэр
+  const existingRef = useRef<ExistingIndex>(new Map());
   const queueKeysRef = useRef<Set<string>>(new Set());
+  const uploadingRef = useRef(false);
   const [skippedDup, setSkippedDup] = useState(0);
+  const [uploadNote, setUploadNote] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const [plannedUpload, setPlannedUpload] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState(false);
   const [uploadStarted, setUploadStarted] = useState(false);
@@ -181,25 +189,29 @@ export default function PhotoUploadPage() {
 
   useEffect(() => {
     if (!album) return;
+    let cancelled = false;
     (async () => {
-      const names = new Set<string>();
-      for (let from = 0; from < 20000; from += 1000) {
-        const { data } = await supabase.from('photo_uploads').select('filename')
-          .eq('album_id', album.id).range(from, from + 999);
-        (data ?? []).forEach(r => r.filename && names.add(String(r.filename).toLowerCase()));
-        if (!data || data.length < 1000) break;
+      try {
+        const index = await fetchAlbumFilenames(album.id);
+        if (cancelled) return;
+        existingRef.current = index;
+        setFiles(prev => prev.map(f => ({
+          ...f,
+          dupInAlbum: f.status === 'idle' && albumHasFile(f.file.name, f.file.size, index),
+        })));
+      } catch {
+        /* байршуулах үед дахин уншина */
       }
-      existingNamesRef.current = names;
-      setFiles(prev => prev.map(f => ({ ...f, dupInAlbum: f.status === 'idle' && names.has(f.file.name.toLowerCase()) })));
     })();
+    return () => { cancelled = true; };
   }, [album?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addFiles(incoming: File[]) {
     const accepted = incoming.filter(f => ACCEPTED.includes(f.type) && f.size <= MAX_SIZE);
-    // Нэг зургийг хоёр удаа сонгосон бол (нэр + хэмжээ ижил) алгасна
+    // Нэг сонголтод ижил нэртэй файлыг (том/жижиг үсэг хамаарахгүй) нэг л удаа үлдээнэ
     let skipped = 0;
     const valid = accepted.filter(f => {
-      const key = `${f.name.toLowerCase()}|${f.size}`;
+      const key = filenameKey(f.name);
       if (queueKeysRef.current.has(key)) { skipped++; return false; }
       queueKeysRef.current.add(key);
       return true;
@@ -213,7 +225,7 @@ export default function PhotoUploadPage() {
       progress: 0,
       errorMsg: '',
       printPrices: defaultPrintPrices(),
-      dupInAlbum: existingNamesRef.current.has(f.name.toLowerCase()),
+      dupInAlbum: albumHasFile(f.name, f.size, existingRef.current),
     }));
     setFiles(prev => [...prev, ...entries]);
   }
@@ -222,7 +234,7 @@ export default function PhotoUploadPage() {
     setFiles(prev => {
       prev.filter(e => ids.has(e.id)).forEach(e => {
         URL.revokeObjectURL(e.previewUrl);
-        queueKeysRef.current.delete(`${e.file.name.toLowerCase()}|${e.file.size}`);
+        queueKeysRef.current.delete(filenameKey(e.file.name));
       });
       return prev.filter(e => !ids.has(e.id));
     });
@@ -265,12 +277,69 @@ export default function PhotoUploadPage() {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
   }
 
-  async function uploadAll() {
-    if (!album || !profile || files.length === 0) return;
-    setUploadStarted(true);
-    let succeeded = 0;
+  function markSkipped(id: string, inAlbum: boolean) {
+    setFileStatus(id, { status: 'skipped', progress: 0, errorMsg: '', dupInAlbum: inAlbum });
+  }
 
-    // Идэвхжсэн «үнэгүй хуваалцах» цомгийн багцын хязгаар
+  function resetSelection() {
+    setFiles([]);
+    queueKeysRef.current = new Set();
+    setChecked(new Set());
+    setSkippedDup(0);
+    setUploadStarted(false);
+    setSuccessCount(0);
+    setUploadNote('');
+    setUploadError('');
+    setPlannedUpload(0);
+  }
+
+  async function uploadAll() {
+    if (!album || !profile || files.length === 0 || uploadingRef.current) return;
+    uploadingRef.current = true;
+    setUploadStarted(true);
+    setPreparing(true);
+    setUploadError('');
+    let succeeded = files.filter(f => f.status === 'done').length;
+
+    let existing: ExistingIndex;
+    try {
+      existing = await fetchAlbumFilenames(album.id);
+    } catch (err) {
+      setUploadStarted(false);
+      setPreparing(false);
+      uploadingRef.current = false;
+      setUploadError(err instanceof Error ? err.message : 'Цомогт байгаа зургийг шалгаж чадсангүй. Дахин оролдоно уу.');
+      return;
+    }
+    existingRef.current = existing;
+
+    const plan = planUploads(
+      files.map(f => ({ item: f, name: f.file.name, size: f.file.size, done: f.status === 'done' })),
+      existing,
+    );
+    const skippedAlbumIds = new Set(plan.skippedAlbum.map(f => f.id));
+    const skippedSelectionIds = new Set(plan.skippedSelection.map(f => f.id));
+    if (skippedAlbumIds.size || skippedSelectionIds.size) {
+      setFiles(prev => prev.map(f => (
+        skippedAlbumIds.has(f.id) || skippedSelectionIds.has(f.id)
+          ? { ...f, status: 'skipped' as const, progress: 0, errorMsg: '', dupInAlbum: skippedAlbumIds.has(f.id) || f.dupInAlbum }
+          : f
+      )));
+    }
+    let albumSkips = plan.skippedAlbum.length;
+    let toUpload = plan.upload.length;
+    const publishNote = () => {
+      setPlannedUpload(toUpload);
+      const summary = uploadSkipSummary(albumSkips, toUpload, plan.skippedSelection.length) ?? '';
+      const selectionNote = plan.skippedSelection.length === 0 && skippedDup > 0
+        ? `Нэг зургийг давхар сонгосон ${skippedDup} файлыг алгаслаа.`
+        : '';
+      setUploadNote([summary, selectionNote].filter(Boolean).join(' '));
+    };
+    publishNote();
+
+    // Идэвхжсэн «үнэгүй хуваалцах» цомгийн багцын хязгаар.
+    // Алгассан зураг энэ тоонд орохгүй — зөвхөн шинээр бичигдэх мөрийг хасна.
     let remaining = Infinity;
     let quotaLimit = 0;
     if (!album.is_free) {
@@ -283,8 +352,19 @@ export default function PhotoUploadPage() {
       remaining = Math.max(0, album.photo_limit - (count ?? 0));
     }
 
-    for (const entry of files) {
-      if (entry.status === 'done') { succeeded++; continue; }
+    const skipStored = (id: string, name: string, size: number) => {
+      rememberFilename(existingRef.current, name, size);
+      albumSkips += 1;
+      toUpload = Math.max(0, toUpload - 1);
+      publishNote();
+      markSkipped(id, true);
+    };
+
+    for (const entry of plan.upload) {
+      if (albumHasFile(entry.file.name, entry.file.size, existingRef.current)) {
+        skipStored(entry.id, entry.file.name, entry.file.size);
+        continue;
+      }
       if (remaining <= 0) {
         setFileStatus(entry.id, {
           status: 'error',
@@ -371,6 +451,10 @@ export default function PhotoUploadPage() {
           // Бүртгэл амжилтгүй бол байршуулсан файлуудыг устгана (зай эзлэхгүй)
           await supabase.storage.from('photos-original').remove([originalPath]).catch(() => null);
           await supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null);
+          if (/DUPLICATE_FILENAME/.test(dbErr.message)) {
+            skipStored(entry.id, entry.file.name, entry.file.size);
+            continue;
+          }
           if (/QUOTA_EXCEEDED/.test(dbErr.message)) {
             remaining = 0;
             throw new Error(dbErr.message.replace(/^.*QUOTA_EXCEEDED:\s*/, ''));
@@ -389,7 +473,7 @@ export default function PhotoUploadPage() {
         }
 
         setFileStatus(entry.id, { status: 'done', progress: 100 });
-        existingNamesRef.current.add(entry.file.name.toLowerCase());
+        rememberFilename(existingRef.current, entry.file.name, entry.file.size);
         succeeded++;
         remaining--;
       } catch (err) {
@@ -399,11 +483,14 @@ export default function PhotoUploadPage() {
     }
     setSuccessCount(succeeded);
     if (!album.is_free) loadQuota(album.id);
+    setPreparing(false);
+    uploadingRef.current = false;
   }
 
-  const allDone = files.length > 0 && files.every(f => f.status === 'done' || f.status === 'error');
+  const allDone = files.length > 0 && files.every(f => f.status === 'done' || f.status === 'error' || f.status === 'skipped');
   const anyUploading = files.some(f => f.status === 'uploading' || f.status === 'processing');
-  const pendingCount = files.filter(f => f.status === 'idle').length;
+  const pendingCount = files.filter(f => f.status === 'idle' && !f.dupInAlbum).length;
+  const uploadedNow = files.filter(f => f.status === 'done').length;
 
   if (checkingAccess) {
     return (
@@ -489,6 +576,44 @@ export default function PhotoUploadPage() {
           </p>
         </div>
 
+        {uploadError && (
+          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl px-5 py-4 text-red-200 text-sm">
+            {uploadError}
+          </div>
+        )}
+
+        {uploadNote && (
+          <div className="mb-6 bg-amber-500/10 border border-amber-500/40 rounded-2xl px-5 py-4">
+            <p className="text-amber-100 text-sm">{uploadNote}</p>
+            {uploadStarted && plannedUpload > 0 && (
+              <div className="mt-3">
+                <div className="flex justify-between text-xs text-amber-200/80 mb-1.5">
+                  <span>Явц</span>
+                  <span>{uploadedNow} / {plannedUpload}</span>
+                </div>
+                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.round((uploadedNow / plannedUpload) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {allDone && successCount === 0 && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={resetSelection}
+                  className="text-sm text-stone-200 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
+                  Дахин байршуулах
+                </button>
+                <button onClick={() => navigate(`/dashboard/albums/${albumId}/photos`)}
+                  className="text-sm text-stone-950 font-semibold bg-amber-500 hover:bg-amber-400 px-3 py-1.5 rounded-lg transition-colors">
+                  Цомог харах
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {allDone && successCount > 0 && (
           <div className="mb-6 bg-green-500/10 border border-green-500/20 rounded-2xl p-5 flex items-start gap-4">
             <div className="w-10 h-10 bg-green-500/15 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -497,11 +622,15 @@ export default function PhotoUploadPage() {
             <div className="flex-1">
               <p className="text-green-400 font-semibold">{successCount} зураг амжилттай оруулагдлаа</p>
               <p className="text-stone-400 text-sm mt-0.5">
-                {successCount === files.length ? 'Бүх зураг амжилттай байршлаа.' : `${files.length - successCount} зурагт алдаа гарлаа.`}
+                {files.every(f => f.status === 'done')
+                  ? 'Бүх зураг амжилттай байршлаа.'
+                  : files.some(f => f.status === 'error')
+                    ? `${files.filter(f => f.status === 'error').length} зурагт алдаа гарлаа.`
+                    : 'Аль хэдийн орсон зургуудыг алгаслаа.'}
               </p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setFiles([]); queueKeysRef.current = new Set(); setChecked(new Set()); setSkippedDup(0); setUploadStarted(false); setSuccessCount(0); }}
+              <button onClick={resetSelection}
                 className="text-sm text-stone-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
                 Дахин байршуулах
               </button>
@@ -596,7 +725,7 @@ export default function PhotoUploadPage() {
                       {dups.length > 0 && (
                         <div className="flex items-center justify-between gap-3 flex-wrap bg-amber-500/10 border border-amber-500/40 rounded-xl px-3 py-2.5">
                           <p className="text-amber-100 text-sm">
-                            <b>{dups.length}</b> зураг энэ цомогт <b>ижил нэртэй аль хэдийн байна</b> — дахин оруулбал эрх дэмий зарцуулна.
+                            <b>{dups.length}</b> зураг энэ цомогт ижил нэртэй аль хэдийн байна. «Зураг байршуулах» дарахад эдгээрийг алгасаж, эрхэнд тооцохгүй.
                           </p>
                           <button onClick={() => removeFiles(new Set(dups.map(d => d.id)))}
                             className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-sm px-3 py-1.5 rounded-lg">
@@ -677,7 +806,7 @@ export default function PhotoUploadPage() {
 
             {quota && (() => {
               const left = Math.max(0, quota.quota - quota.used);
-              const pending = files.filter(f => f.status === 'idle');
+              const pending = files.filter(f => f.status === 'idle' && !f.dupInAlbum);
               const over = Math.max(0, pending.length - left);
               const overBytes = pending.slice(left).reduce((n, f) => n + f.file.size, 0);
               const pct = Math.min(100, Math.round((quota.used / Math.max(1, quota.quota)) * 100));
@@ -695,7 +824,7 @@ export default function PhotoUploadPage() {
                   {over > 0 && (
                     <div className="mt-4 pt-4 border-t border-amber-500/30 space-y-3">
                       <p className="text-amber-100 text-sm leading-relaxed">
-                        Та <b>{pending.length.toLocaleString()}</b> зураг сонгосон. Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг тул
+                        Аль хэдийн орсон зургийг алгассаны дараа <b>{pending.length.toLocaleString()}</b> зураг үлдэнэ. Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг тул
                         <b className="text-amber-300"> {over.toLocaleString()} зураг ({fmtSize(overBytes)})</b> хязгаараас хэтэрч байна.
                         Эдгээрийг цомогт оруулахын тулд нэмэлт багц авна уу:
                       </p>
@@ -715,10 +844,10 @@ export default function PhotoUploadPage() {
             })()}
 
             {files.length > 0 && !allDone && (
-              <button onClick={uploadAll} disabled={anyUploading || files.length === 0}
+              <button onClick={uploadAll} disabled={anyUploading || preparing || files.length === 0}
                 className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-stone-950 font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2.5 text-base">
-                {anyUploading ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" />Байршуулж байна…</>
+                {anyUploading || preparing ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" />{preparing && !anyUploading ? 'Шалгаж байна…' : 'Байршуулж байна…'}</>
                 ) : (
                   <><Upload className="w-5 h-5" />{pendingCount > 0 ? `${pendingCount} ` : ''}Зураг байршуулах</>
                 )}
@@ -731,6 +860,7 @@ export default function PhotoUploadPage() {
                 <StatusRow label="Боловсруулж байна" value={files.filter(f => f.status === 'processing').length} color="text-amber-400" />
                 <StatusRow label="Байршуулж байна" value={files.filter(f => f.status === 'uploading').length} color="text-blue-400" />
                 <StatusRow label="Дууссан" value={files.filter(f => f.status === 'done').length} color="text-green-400" />
+                <StatusRow label="Алгассан" value={files.filter(f => f.status === 'skipped').length} color="text-amber-200" />
                 <StatusRow label="Алдаа" value={files.filter(f => f.status === 'error').length} color="text-red-400" />
               </div>
             )}
@@ -753,7 +883,7 @@ function FileCard({ entry, uploadStarted, priceExpanded, onTogglePrices, onRemov
   onPriceChange: (size: string, field: 'enabled' | 'price', value: boolean | string) => void;
 }) {
   const statusColor: Record<UploadStatus, string> = {
-    idle: 'bg-stone-500', processing: 'bg-amber-500', uploading: 'bg-blue-500', done: 'bg-green-500', error: 'bg-red-500',
+    idle: 'bg-stone-500', processing: 'bg-amber-500', uploading: 'bg-blue-500', done: 'bg-green-500', error: 'bg-red-500', skipped: 'bg-amber-300',
   };
   return (
     <div className={`bg-white/5 border rounded-xl overflow-hidden ${checked ? 'border-red-400/70' : entry.dupInAlbum && !uploadStarted ? 'border-amber-500/60' : 'border-white/10'}`}>
@@ -785,6 +915,11 @@ function FileCard({ entry, uploadStarted, priceExpanded, onTogglePrices, onRemov
         {entry.status === 'done' && (
           <div className="absolute inset-0 bg-stone-950/40 flex items-center justify-center">
             <CheckCircle2 className="w-8 h-8 text-green-400" />
+          </div>
+        )}
+        {entry.status === 'skipped' && (
+          <div className="absolute inset-0 bg-stone-950/55 flex items-center justify-center">
+            <span className="bg-amber-500 text-stone-950 text-xs font-bold px-2 py-1 rounded">Алгассан</span>
           </div>
         )}
         {entry.status === 'error' && (
@@ -854,6 +989,23 @@ function StatusRow({ label, value, color }: { label: string; value: number; colo
       <span className={`font-semibold ${color}`}>{value}</span>
     </div>
   );
+}
+
+/** Цомгийн бүх зургийн эх нэр. hidden_at-тай (нуусан) мөрүүдийг ч оруулна. */
+async function fetchAlbumFilenames(albumId: string): Promise<ExistingIndex> {
+  const rows: { filename: string | null }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('photo_uploads')
+      .select('filename')
+      .eq('album_id', albumId)
+      .order('id', { ascending: true })
+      .range(from, from + 999);
+    if (error) throw new Error('Цомогт байгаа зургийн нэрийг уншиж чадсангүй. Дахин оролдоно уу.');
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return indexExisting(rows);
 }
 
 /** Цомогт лого / текст / эзний нэмсэн битүү тамга давхарга байгаа эсэх */
