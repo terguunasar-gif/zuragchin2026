@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Grid2x2, Grid3x3, LayoutGrid, Loader2, Maximize, Minimize, ScanLine, Square, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { albumLockState } from '../lib/albumLock';
+import { albumOrFilter, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import AlbumPinGate from '../components/AlbumPinGate';
 import BrandMark from '../components/BrandMark';
 import { KIOSK_LAYOUT_KEY, movePage, pageStartIndex, parseKioskLayout, type KioskLayout } from '../lib/kioskLayout';
@@ -28,13 +29,14 @@ function photoAddUrl(shareLink: string, id: string) {
 }
 
 export default function AlbumKioskPage() {
-  const { shareLink = '' } = useParams();
+  const { shareLink: shareParam = '' } = useParams();
+  const shareLink = normalizeShareLink(shareParam);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const folder = params.get('f') || 'all';
 
   const [album, setAlbum] = useState<{ id: string; name: string } | null>(null);
-  const [state, setState] = useState<'loading' | 'notfound' | 'locked' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'notfound' | 'offline' | 'locked' | 'ready'>('loading');
   const [photos, setPhotos] = useState<KPhoto[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [idx, setIdx] = useState(0);
@@ -53,29 +55,32 @@ export default function AlbumKioskPage() {
 
   const load = useCallback(async () => {
     setState('loading');
-    const byLink = `share_link.eq./album/${shareLink},share_link.eq.${shareLink},id.eq.${shareLink}`;
-    const { data } = await supabase.from('albums').select('id, name, title, status').or(byLink).maybeSingle();
-    if (!data || data.status !== 'active') { setState('notfound'); return; }
-    setAlbum({ id: data.id, name: data.title || data.name });
-    const lock = await albumLockState(data.id);
+    if (!shareLink) { setState('notfound'); return; }
+    const { data, error } = await readAlbumQuery(() =>
+      supabase.from('albums').select('id, name, title, status').or(albumOrFilter(shareLink)).maybeSingle());
+    if (error) { setState('offline'); return; }
+    const album = data as { id: string; name: string; title: string | null; status: string } | null;
+    if (!album || album.status !== 'active') { setState('notfound'); return; }
+    setAlbum({ id: album.id, name: album.title || album.name });
+    const lock = await albumLockState(album.id);
     if (lock.state === 'locked') { setState('locked'); return; }
     tokenRef.current = lock.state === 'ok' ? lock.token : '';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rows: any[] | null = null;
     if (tokenRef.current) {
-      ({ data: rows } = await supabase.rpc('locked_album_photos', { p_album_id: data.id, p_token: tokenRef.current }));
+      ({ data: rows } = await supabase.rpc('locked_album_photos', { p_album_id: album.id, p_token: tokenRef.current }));
     } else {
       const res = await supabase.from('photo_uploads').select('id, preview_url, source, folder_id, hidden_at')
-        .eq('album_id', data.id).is('hidden_at', null).order('created_at', { ascending: true }).limit(3000);
+        .eq('album_id', album.id).is('hidden_at', null).order('created_at', { ascending: true }).limit(3000);
       rows = res.error
         ? (await supabase.from('photo_uploads').select('id, preview_url, source, folder_id')
-            .eq('album_id', data.id).order('created_at', { ascending: true }).limit(3000)).data
+            .eq('album_id', album.id).order('created_at', { ascending: true }).limit(3000)).data
         : res.data;
     }
     setPhotos((rows ?? []).filter(r => r.preview_url).map(r => ({
       id: r.id, url: r.preview_url, folder_id: r.folder_id ?? null, source: r.source ?? null,
     })));
-    const { data: f } = await supabase.from('album_folders').select('id, name').eq('album_id', data.id).order('sort_order', { ascending: true });
+    const { data: f } = await supabase.from('album_folders').select('id, name').eq('album_id', album.id).order('sort_order', { ascending: true });
     setFolders((f ?? []) as Folder[]);
     setState('ready');
   }, [shareLink]);
@@ -132,13 +137,12 @@ export default function AlbumKioskPage() {
     }
   };
 
-  // Дараагийн хуудсыг урьдчилан ачаална
+  // Нэг зургийн горимд хөршийг урьдчилан ачаална. 4/9 горимд зөвхөн энэ хуудсыг зурна —
+  // бусдыг нь урьдчилж тайлах нь таблет дээр бүтэн зургуудыг зэрэг задлуулдаг.
   useEffect(() => {
-    if (!count) return;
-    const start = pageStartIndex(safeIdx, count, layout);
-    const offsets = layout === 1 ? [1, 2, -1] : [layout, layout + 1, layout + 2, -layout];
-    for (const d of offsets) {
-      const p = shown[(start + d + count) % count];
+    if (!count || layout !== 1) return;
+    for (const d of [1, 2, -1]) {
+      const p = shown[(safeIdx + d + count) % count];
       if (p) { const img = new Image(); img.src = p.url; }
     }
   }, [safeIdx, shown, count, layout]);
@@ -186,6 +190,14 @@ export default function AlbumKioskPage() {
   if (state === 'notfound') {
     return <div className="fixed inset-0 bg-black text-stone-400 flex items-center justify-center">Цомог олдсонгүй</div>;
   }
+  if (state === 'offline') {
+    return (
+      <div className="fixed inset-0 bg-black text-white flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-xl font-semibold">Сүлжээ удаан байна</p>
+        <button type="button" onClick={() => load()} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">Дахин оролдох</button>
+      </div>
+    );
+  }
   if (state === 'locked' && album) {
     return <AlbumPinGate albumId={album.id} albumName={album.name} onUnlocked={load} />;
   }
@@ -194,7 +206,7 @@ export default function AlbumKioskPage() {
   const hasAi = photos.some(p => p.source === 'ai_booth');
   const multi = layout === 4 || layout === 9;
   const pagePhotos = shown.slice(pageStart, pageEnd);
-  const cols = layout === 9 ? 3 : 2;
+  const side = layout === 9 ? 3 : 2;
 
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col select-none overscroll-none">
@@ -241,12 +253,14 @@ export default function AlbumKioskPage() {
       {count === 0 ? (
         <div className="flex-1 flex items-center justify-center text-stone-500 text-xl">Зураг алга</div>
       ) : multi ? (
-        <div className="relative flex-1 min-h-0" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="relative min-h-0 flex-1 overflow-hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           <div
-            className="h-full min-h-0 grid gap-1.5 md:gap-2 px-12 md:px-14 py-1.5 md:py-2"
+            className="absolute inset-0 grid overflow-hidden"
             style={{
-              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${cols}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${side}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${side}, minmax(0, 1fr))`,
+              gap: '0.5rem',
+              padding: '0.5rem 3.25rem',
             }}
           >
             {pagePhotos.map((p, i) => {
@@ -346,8 +360,10 @@ function KioskTile({
   onOpen: () => void;
 }) {
   const dense = perPage === 9;
+  // Нэг зураг, шүүлтүүр/scale байхгүй. Android Chrome blur(40px)+scale-ийг хэвтээ зурвас болгон зурдаг.
+  const qr = dense ? 88 : 132;
   return (
-    <div className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl bg-stone-950 ring-1 flex-col landscape:flex-row ${
+    <div className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl bg-stone-900 ring-1 flex-col landscape:flex-row ${
       marked ? 'ring-2 ring-amber-400' : 'ring-white/15'
     }`}>
       <button
@@ -355,33 +371,33 @@ function KioskTile({
         onClick={onOpen}
         onContextMenu={e => e.preventDefault()}
         aria-label={`№${num} зургийг бүтнээр харах`}
-        className="group relative min-h-0 min-w-0 flex-1"
+        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden"
       >
-        <img src={photo.url} alt="" aria-hidden draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-50 blur-2xl" />
-        <img src={photo.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-contain p-1 transition-[filter] group-hover:brightness-110" />
+        <img
+          src={photo.url}
+          alt=""
+          draggable={false}
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-contain"
+        />
       </button>
-      {/* Дугаар + QR нь зурагнаас тусдаа — хуруу QR дээр хүрэхэд горим солигдохгүй */}
-      <div className={`flex min-h-0 min-w-0 items-center justify-center gap-1 bg-white p-1 text-stone-950 flex-row landscape:h-full landscape:flex-col ${
-        dense
-          ? 'h-[30%] max-h-28 landscape:max-h-none landscape:w-[34%] landscape:max-w-[140px] landscape:min-w-[76px]'
-          : 'h-[32%] max-h-40 landscape:max-h-none landscape:w-[30%] landscape:max-w-[180px] landscape:min-w-[96px]'
+      <div className={`flex shrink-0 items-center justify-center gap-1 bg-white p-1 text-stone-950 flex-row landscape:h-full landscape:w-auto landscape:flex-col ${
+        dense ? 'h-24 landscape:h-full landscape:w-[104px]' : 'h-36 landscape:h-full landscape:w-[156px]'
       }`}>
-        <span onClick={onOpen} className={`shrink-0 cursor-pointer font-extrabold leading-none whitespace-nowrap ${marked ? 'text-amber-600' : 'text-stone-950'} ${
-          dense ? 'text-[clamp(0.8rem,2.1vmin,1.35rem)]' : 'text-[clamp(1rem,2.8vmin,1.85rem)]'
+        <span className={`shrink-0 font-extrabold leading-none whitespace-nowrap ${marked ? 'text-amber-600' : 'text-stone-950'} ${
+          dense ? 'text-sm' : 'text-xl'
         }`}>№{num}</span>
-        <div className="relative min-h-0 min-w-0 flex-1 self-stretch" style={{ containerType: 'size' }}>
-          <QRCodeSVG
-            value={addUrl}
-            size={256}
-            level="M"
-            marginSize={2}
-            bgColor="#ffffff"
-            fgColor="#000000"
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-            style={{ width: 'min(100cqw, 100cqh)', height: 'min(100cqw, 100cqh)' }}
-          />
-        </div>
-        <span onClick={onOpen} className={`shrink-0 cursor-pointer font-extrabold leading-none text-amber-600 ${dense ? 'text-[9px] md:text-[11px]' : 'text-[10px] md:text-xs'}`}>Авах</span>
+        <QRCodeSVG
+          value={addUrl}
+          size={qr}
+          level="M"
+          marginSize={1}
+          bgColor="#ffffff"
+          fgColor="#000000"
+          className="min-h-0 max-h-full min-w-0 max-w-full shrink"
+          style={{ width: `min(100%, ${qr}px)`, height: 'auto' }}
+        />
+        <span className={`shrink-0 font-extrabold leading-none text-amber-600 ${dense ? 'text-[10px]' : 'text-xs'}`}>Авах</span>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, Grid2x2, Loader2, Maximize, Minimize, Square, Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { albumOrFilter, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import { albumLockState } from '../lib/albumLock';
 import AlbumPinGate from '../components/AlbumPinGate';
 import BrandMark from '../components/BrandMark';
@@ -22,7 +23,8 @@ const POLL_MS = 30_000;
 const SPEEDS = [4, 6, 10];
 
 export default function AlbumScreenPage() {
-  const { shareLink = '' } = useParams();
+  const { shareLink: shareParam = '' } = useParams();
+  const shareLink = normalizeShareLink(shareParam);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const speed = SPEEDS.includes(Number(params.get('s'))) ? Number(params.get('s')) : 6;
@@ -30,7 +32,7 @@ export default function AlbumScreenPage() {
   const mode = params.get('m') === 'grid' ? 'grid' : 'single';
 
   const [album, setAlbum] = useState<{ id: string; name: string } | null>(null);
-  const [state, setState] = useState<'loading' | 'notfound' | 'locked' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'notfound' | 'offline' | 'locked' | 'ready'>('loading');
   const [photos, setPhotos] = useState<ScreenPhoto[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
@@ -48,14 +50,17 @@ export default function AlbumScreenPage() {
   // ── Цомог олох + түгжээ шалгах ──
   const load = useCallback(async () => {
     setState('loading');
-    const byLink = `share_link.eq./album/${shareLink},share_link.eq.${shareLink},id.eq.${shareLink}`;
-    const { data } = await supabase.from('albums').select('id, name, title, status').or(byLink).maybeSingle();
-    if (!data || data.status !== 'active') { setState('notfound'); return; }
-    setAlbum({ id: data.id, name: data.title || data.name });
-    const lock = await albumLockState(data.id);
+    if (!shareLink) { setState('notfound'); return; }
+    const { data, error } = await readAlbumQuery(() =>
+      supabase.from('albums').select('id, name, title, status').or(albumOrFilter(shareLink)).maybeSingle());
+    if (error) { setState('offline'); return; }
+    const album = data as { id: string; name: string; title: string | null; status: string } | null;
+    if (!album || album.status !== 'active') { setState('notfound'); return; }
+    setAlbum({ id: album.id, name: album.title || album.name });
+    const lock = await albumLockState(album.id);
     if (lock.state === 'locked') { setState('locked'); return; }
     tokenRef.current = lock.state === 'ok' ? lock.token : '';
-    const { data: f } = await supabase.from('album_folders').select('id, name').eq('album_id', data.id).order('sort_order', { ascending: true });
+    const { data: f } = await supabase.from('album_folders').select('id, name').eq('album_id', album.id).order('sort_order', { ascending: true });
     setFolders((f ?? []) as Folder[]);
     setState('ready');
   }, [shareLink]);
@@ -187,6 +192,14 @@ export default function AlbumScreenPage() {
   }
   if (state === 'notfound') {
     return <div className="fixed inset-0 bg-black text-stone-400 flex items-center justify-center">Цомог олдсонгүй</div>;
+  }
+  if (state === 'offline') {
+    return (
+      <div className="fixed inset-0 bg-black text-white flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-xl font-semibold">Сүлжээ удаан байна</p>
+        <button type="button" onClick={() => load()} className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">Дахин оролдох</button>
+      </div>
+    );
   }
   if (state === 'locked' && album) {
     return <AlbumPinGate albumId={album.id} albumName={album.name} onUnlocked={load} />;

@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import QrScanModal from '../components/QrScanModal';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
-import { publicDb as supabase, supabase as authDb, withTimeout, hasRole } from '../lib/supabase';
+import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
+import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import CheckoutModal from './checkout/CheckoutModal';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
@@ -135,7 +136,8 @@ function getPosStyle(pos: string): React.CSSProperties {
 }
 
 export default function PublicAlbumPage() {
-  const { shareLink } = useParams<{ shareLink: string }>();
+  const { shareLink: shareParam } = useParams<{ shareLink: string }>();
+  const shareLink = normalizeShareLink(shareParam);
   const navigate = useNavigate();
   const location = useLocation();
   const { t, lang, locale } = useI18n();
@@ -146,6 +148,7 @@ export default function PublicAlbumPage() {
   const [photos, setPhotos] = useState<PhotoData[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -295,7 +298,10 @@ export default function PublicAlbumPage() {
   const [offerPhoto, setOfferPhoto] = useState<PhotoData | null>(null);
   const [paidCount] = useState(() => { try { return listPurchaseHistory().length; } catch { return 0; } });
 
-  useEffect(() => { if (shareLink) loadAlbum(shareLink); }, [shareLink]);
+  useEffect(() => {
+    if (shareLink) loadAlbum(shareLink);
+    else { setLoading(false); setLoadError(false); setNotFound(true); }
+  }, [shareLink]);
 
   // Сагсыг браузерт хадгална — өөр хуудас руу ороод буцаж ирэхэд хэвээр байна.
   useEffect(() => {
@@ -338,34 +344,32 @@ export default function PublicAlbumPage() {
     setCartReady(true);
   }
 
-  async function loadAlbum(link: string) {
+  async function loadAlbum(rawLink: string) {
     setLoading(true);
+    setNotFound(false);
+    setLoadError(false);
+    const link = normalizeShareLink(rawLink);
+    if (!link) { setNotFound(true); setLoading(false); return; }
     const BASE_COLS = 'id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices';
-    const byLink = `share_link.eq./album/${link},share_link.eq.${link},id.eq.${link}`;
-    // Хугацааны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let albumData: any = null;
+    const byLink = albumOrFilter(link);
     const FULL_COLS = BASE_COLS + ', expires_at, files_purged_at, free_activated';
-    let withExpiry;
-    try {
-      withExpiry = await withTimeout(supabase.from('albums').select(FULL_COLS).or(byLink).maybeSingle(), 15000);
-    } catch {
-      // Сүлжээ удаан — нэг удаа дахин оролдоно, бүтэхгүй бол «олдсонгүй» харуулна
-      try {
-        withExpiry = await withTimeout(supabase.from('albums').select(FULL_COLS).or(byLink).maybeSingle(), 15000);
-      } catch {
-        setNotFound(true); setLoading(false); return;
-      }
+    // Хугацаа/багцын багана байхгүй (SQL ажиллуулаагүй) үед л нарийсгана.
+    // Сүлжээ, timeout, бусад query алдаа «олдсонгүй» биш.
+    const read = (cols: string, activeOnly = false) => readAlbumQuery(() => {
+      let q = supabase.from('albums').select(cols).or(byLink);
+      if (activeOnly) q = q.eq('status', 'active');
+      return q.maybeSingle();
+    });
+    let withExpiry = await read(FULL_COLS);
+    if (withExpiry.error && isMissingColumnError(withExpiry.error)) {
+      withExpiry = await read(BASE_COLS + ', expires_at, files_purged_at');
     }
-    // Багцын багана байхгүй (SQL ажиллуулаагүй) бол хугацааны баганатайгаар
-    if (withExpiry.error) {
-      withExpiry = await supabase.from('albums').select(BASE_COLS + ', expires_at, files_purged_at').or(byLink).maybeSingle();
+    if (withExpiry.error && isMissingColumnError(withExpiry.error)) {
+      withExpiry = await read(BASE_COLS, true);
     }
-    if (withExpiry.error) {
-      ({ data: albumData } = await supabase.from('albums').select(BASE_COLS).or(byLink).eq('status', 'active').maybeSingle());
-    } else {
-      albumData = withExpiry.data;
-    }
+    if (withExpiry.error) { setLoadError(true); setLoading(false); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const albumData = withExpiry.data as any;
 
     if (!albumData || (albumData.status !== 'active' && !albumData.files_purged_at)) { setNotFound(true); setLoading(false); return; }
 
@@ -632,11 +636,16 @@ export default function PublicAlbumPage() {
     : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
     : !isAi(p) && p.folder_id === folderFilter);
 
-  usePageMeta(!loading && album ? {
+  usePageMeta(!loading && album && !loadError ? {
     title: `${album.name} — Zuragchin.mn`,
     description: (album.description || `${album.name} цомгийн зургууд. Өөрийн зургаа олж, утсандаа авна.`).slice(0, 180),
     path: location.pathname,
     robots: 'index,follow',
+  } : !loading && loadError ? {
+    title: 'Сүлжээ удаан байна — Zuragchin.mn',
+    description: 'Холболт удаан эсвэл тасарсан байна.',
+    path: location.pathname,
+    robots: 'noindex,nofollow',
   } : !loading ? {
     title: 'Цомог олдсонгүй — Zuragchin.mn',
     description: 'Холбоос буруу эсвэл цомог идэвхгүй болсон байж болно.',
@@ -668,6 +677,25 @@ export default function PublicAlbumPage() {
         <AlbumExpiredView albumId={expired.id} albumName={expired.name} expiresAt={expired.expiresAt}
           purged={expired.purged} onExtended={() => shareLink && loadAlbum(shareLink)} />
       </>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-stone-950 flex items-center justify-center p-6">
+        <LanguagePickerModal />
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-amber-400" />
+          </div>
+          <p className="text-white font-semibold text-xl mb-2">{t('Сүлжээ удаан байна')}</p>
+          <p className="text-stone-400 text-sm mb-5">{t('Сүлжээ удаан байна. Дахин оролдоно уу.')}</p>
+          <button type="button" onClick={() => loadAlbum(shareLink)}
+            className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold px-5 py-2.5 rounded-xl">
+            {t('Дахин оролдох')}
+          </button>
+        </div>
+      </div>
     );
   }
 

@@ -37,6 +37,7 @@ const EN: Record<string, string> = {
   'Энд үргэлжлүүлэх': 'Continue here',
   'Бэлдэж байна…': 'Preparing…',
   'Сүлжээ удаан байна. Дахин оролдоно уу.': 'The connection is slow. Please try again.',
+  'Сүлжээ удаан байна': 'The connection is slow',
   'Төлсөн': 'Paid',
   'захиалга': 'orders',
   'Төлсөн захиалга': 'Paid orders',
