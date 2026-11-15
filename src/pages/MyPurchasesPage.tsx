@@ -7,8 +7,6 @@ import RecoverPurchases from '../components/RecoverPurchases';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
-import InAppBrowserBanner from '../components/InAppBrowserBanner';
-import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import BrandMark from '../components/BrandMark';
 
 // Энэ төхөөрөмж дээр төлсөн бүх захиалгын жагсаалт. Зурагчнаас угаасан зургаа
@@ -59,8 +57,6 @@ export default function MyPurchasesPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-4">
-        <AutoOpenInBrowser />
-        <InAppBrowserBanner compact />
         {checking && (
           <div className="flex items-center gap-2 text-stone-400 text-sm bg-white/5 border border-white/10 rounded-xl px-4 py-3">
             <Loader2 className="w-4 h-4 animate-spin text-amber-400" /> {t('Төлбөрийг шалгаж байна…')}

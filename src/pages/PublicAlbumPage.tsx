@@ -14,8 +14,6 @@ import { useI18n } from '../lib/i18n';
 import { albumCode, codeUrl } from '../lib/albumCode';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
 import FaceSearchModal from '../components/FaceSearchModal';
-import InAppBrowserBanner from '../components/InAppBrowserBanner';
-import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import SaveImageViewer from '../components/SaveImageViewer';
 import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
 import { saveImageToDevice } from '../lib/browserEnv';
@@ -838,8 +836,6 @@ export default function PublicAlbumPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8 border-b border-white/5">
-        <AutoOpenInBrowser />
-        <InAppBrowserBanner />
         <h1 className="text-white text-3xl font-bold mb-3">{album.name}</h1>
         <div className="flex flex-wrap gap-5 text-sm text-stone-400 mb-3">
           <span className="flex items-center gap-2">

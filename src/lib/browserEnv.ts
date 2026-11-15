@@ -26,10 +26,40 @@ export function inAppBrowserName(): string | null {
   return null;
 }
 
-/** Android: одоогийн хуудсыг Chrome (эсвэл үндсэн хөтөч)-д нээх intent холбоос */
-export function openInBrowserUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
+/** Facebook / Messenger / Instagram, мөн Line, KakaoTalk. Банкны WebView энд орохгүй. */
+export function socialInAppName(ua: string): string | null {
+  if (/FB_IAB|FBAN|FBAV|FB4A|FBIOS/i.test(ua)) return /Messenger|Orca/i.test(ua) ? 'Messenger' : 'Facebook';
+  if (/Messenger/i.test(ua)) return 'Messenger';
+  if (/Instagram/i.test(ua)) return 'Instagram';
+  if (/Line\//i.test(ua)) return 'Line';
+  if (/KAKAOTALK/i.test(ua)) return 'KakaoTalk';
+  return null;
+}
+
+/**
+ * Android Chrome руу гаргах intent.
+ * intent://хост+зам+query#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=<анхны хаяг>;end
+ */
+export function chromeIntentUrl(href: string): string {
   const u = new URL(href);
-  return `intent://${u.host}${u.pathname}${u.search}${u.hash}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
+  return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
+}
+
+/** QPay-ийн буцах хуудас, киоск, дэлгэцийн горимыг автоматаар бүү соль. */
+export function shouldAutoOpenChrome(opts: { ua: string; pathname: string; search: string; alreadyTried: boolean }): boolean {
+  if (opts.alreadyTried) return false;
+  if (new URLSearchParams(opts.search).get('stay') === '1') return false;
+  if (!/Android/i.test(opts.ua)) return false;
+  if (!socialInAppName(opts.ua)) return false;
+  // Баримт, санал, бүүт, «Миний худалдан авалт» дээр QPay-ээс буцаж ирсэн төлбөрийг энэ хөтөч дээр нь шалгана.
+  if (/^\/(?:receipt|offer|booth|my-purchases)(?:\/|$)/.test(opts.pathname)) return false;
+  if (/^\/album\/[^/]+\/(?:kiosk|screen)\/?$/.test(opts.pathname)) return false;
+  return true;
+}
+
+/** Android: одоогийн хуудсыг Chrome-д нээх intent холбоос */
+export function openInBrowserUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
+  return chromeIntentUrl(href);
 }
 
 export async function copyText(text: string): Promise<boolean> {
@@ -141,13 +171,12 @@ const AUTO_KEY = 'zuragchin_iab_auto';
  * Шилжиж чадвал true буцаана (оролдлого хийсэн). ?stay=1 параметртэй бол оролдохгүй.
  */
 export function tryAutoOpenInBrowser(): boolean {
-  if (typeof window === 'undefined' || !inAppBrowserName()) return false;
-  if (new URLSearchParams(location.search).get('stay') === '1') return false;
-  try {
-    if (sessionStorage.getItem(AUTO_KEY) === location.pathname) return false;
-    sessionStorage.setItem(AUTO_KEY, location.pathname);
-  } catch { /* хувийн горим */ }
-  if (isAndroid) { location.href = openInBrowserUrl(); return true; }
-  if (isIOS) { location.href = openInSafariUrl(); return true; }
-  return false;
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  let already = false;
+  try { already = !!sessionStorage.getItem(AUTO_KEY); } catch { /* хувийн горим */ }
+  if (!shouldAutoOpenChrome({ ua, pathname: location.pathname, search: location.search, alreadyTried: already })) return false;
+  try { sessionStorage.setItem(AUTO_KEY, '1'); } catch { /* хувийн горим */ }
+  location.href = openInBrowserUrl();
+  return true;
 }

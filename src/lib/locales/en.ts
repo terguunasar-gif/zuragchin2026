@@ -45,6 +45,8 @@ const EN: Record<string, string> = {
   'Та {app} доторх хөтчөөр орсон байна': 'You are in the {app} in-app browser',
   'Зургаа утсандаа хадгалах, худалдан авалтаа дараа дахин харахад Chrome эсвэл Safari-аар нээх нь найдвартай.': 'To save photos to your phone and see your purchases later, open this page in Chrome or Safari.',
   'Chrome-оор нээх': 'Open in Chrome',
+  'Хөтчөөр нээх': 'Open in browser',
+  'Баруун дээд буланд ••• дараад ‘Браузерт нээх’ / ‘Open in Safari’ сонгоно уу': 'Tap ••• at the top right and choose “Open in Safari”.',
   'Хуулагдлаа': 'Copied',
   'Холбоос хуулах': 'Copy link',
   'Баруун дээд/доод буланд байгаа ••• товчийг дараад «Safari-д нээх / Open in browser»-ийг сонгоно уу.': 'Tap ••• in the corner and choose “Open in Safari / Open in browser”.',
