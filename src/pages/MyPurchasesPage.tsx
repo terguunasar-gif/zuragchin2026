@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Download, Loader2, Printer, Receipt } from 'lucide-react';
-import { listPurchaseHistory, listPendingInvoices, setPendingInvoice } from '../lib/purchaseHistory';
+import { listPurchaseHistory, listPendingInvoices, setPendingInvoice, type PurchaseHistoryEntry } from '../lib/purchaseHistory';
+import RecoverPurchases from '../components/RecoverPurchases';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { useI18n } from '../lib/i18n';
@@ -15,7 +16,7 @@ import BrandMark from '../components/BrandMark';
 export default function MyPurchasesPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
-  const items = useMemo(() => listPurchaseHistory(), []);
+  const [items, setItems] = useState<PurchaseHistoryEntry[]>(() => listPurchaseHistory());
   // Банкны апп руу шилжиж төлөөд буцаж ирэхэд төлбөрийг шалгах хуудас хаагдсан байж болно —
   // энэ хөтөчид үлдсэн нэхэмжлэхүүдийг шалгаж, төлөгдсөнийг баримт руу нь холбоно.
   const [checking, setChecking] = useState(false);
@@ -76,7 +77,7 @@ export default function MyPurchasesPage() {
           </button>
         ))}
         {items.length === 0 && found.length === 0 && !checking ? (
-          <div className="text-center py-20">
+          <div className="text-center pt-16 pb-6">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <Receipt className="w-8 h-8 text-stone-500" />
             </div>
@@ -117,6 +118,8 @@ export default function MyPurchasesPage() {
             </button>
           ))
         )}
+
+        <RecoverPurchases onRecovered={() => setItems(listPurchaseHistory())} />
 
         <p className="text-stone-600 text-xs text-center pt-4">
           {t('Энэ жагсаалт зөвхөн энэ утас/компьютерийн браузерт хадгалагдана. Баримтын хуудсыг screenshot хийж эсвэл линкийг нь хадгалж авбал илүү найдвартай.')}
