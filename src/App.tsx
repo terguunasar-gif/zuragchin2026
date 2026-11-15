@@ -5,6 +5,7 @@ import { I18nProvider } from './lib/i18n';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import RouteSeo from './components/RouteSeo';
+import InAppBrowserBanner from './components/InAppBrowserBanner';
 
 const AlbumKioskPage = lazy(() => import('./pages/AlbumKioskPage'));
 const AlbumCodePage = lazy(() => import('./pages/AlbumCodePage'));
@@ -66,6 +67,7 @@ export default function App() {
       <AuthProvider>
       <I18nProvider>
         <RouteSeo />
+        <InAppBrowserBanner />
         <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<HomePage />} />

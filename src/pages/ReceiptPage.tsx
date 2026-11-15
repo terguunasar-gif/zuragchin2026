@@ -7,8 +7,6 @@ import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
-import InAppBrowserBanner from '../components/InAppBrowserBanner';
-import AutoOpenInBrowser from '../components/AutoOpenInBrowser';
 import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
 
@@ -443,8 +441,6 @@ export default function ReceiptPage() {
           </div>
         </div>
 
-        <AutoOpenInBrowser />
-        <InAppBrowserBanner compact />
 
         {isPaid && downloadPurchases.length > 0 && downloadDeadline && (
           <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-4 flex gap-3">
