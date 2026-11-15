@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
@@ -8,6 +8,7 @@ import QrScanModal from '../components/QrScanModal';
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import CheckoutModal from './checkout/CheckoutModal';
+import AlbumPurchaseGuide from '../components/AlbumPurchaseGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
@@ -151,6 +152,16 @@ export default function PublicAlbumPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const guideCheckout = useRef(false);
+  const [guideOn, setGuideOn] = useState(false);
+  useEffect(() => {
+    if (!album) return;
+    try {
+      const raw = JSON.parse(localStorage.getItem(`zm_album_guide_${album.id}`) || 'null');
+      setGuideOn(!raw?.declined);
+    } catch { setGuideOn(true); }
+  }, [album?.id]);
+  const [guidePaid, setGuidePaid] = useState<string | null>(null);
   const [printSelectorPhoto, setPrintSelectorPhoto] = useState<string | null>(null);
   const [folders, setFolders] = useState<AlbumFolder[]>([]);
   const [folderFilter, setFolderFilter] = useState<FolderFilter>('all');
@@ -784,6 +795,21 @@ export default function PublicAlbumPage() {
   return (
     <div className="min-h-screen bg-stone-950">
       <LanguagePickerModal />
+      {guideOn && !addParam && (
+        <AlbumPurchaseGuide
+          album={album}
+          photos={photos}
+          folders={folders}
+          aiPrice={aiPrice}
+          paidInvoice={guidePaid}
+          onCheckout={lines => {
+            guideCheckout.current = true;
+            setCart(lines.map(l => ({ ...l, id: crypto.randomUUID() })));
+            setCheckoutOpen(true);
+          }}
+          onClose={() => setGuideOn(false)}
+        />
+      )}
       <header className="border-b border-white/10 sticky top-0 z-30 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1200,6 +1226,11 @@ export default function PublicAlbumPage() {
             setPendingInvoice(album.id, null);
             saveCart(album.id, []);
             setCart([]);
+            if (guideCheckout.current) {
+              guideCheckout.current = false;
+              setGuidePaid(invoiceId);
+              return;
+            }
             navigate(`/receipt/${invoiceId}`);
           }}
         />
