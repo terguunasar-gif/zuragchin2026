@@ -173,6 +173,28 @@ const EN: Record<string, string> = {
   'Төлөгдсөн': 'Paid',
   'Энэ жагсаалт зөвхөн энэ утас/компьютерийн браузерт хадгалагдана. Баримтын хуудсыг screenshot хийж эсвэл линкийг нь хадгалж авбал илүү найдвартай.':
     'This list is stored only in this device’s browser. Taking a screenshot of the receipt or saving its link is safer.',
+  'Утасны дугаараар сэргээх': 'Recover with phone number',
+  'Өөр хөтөч, утас эсвэл Messenger дотор төлсөн бол төлөхдөө оруулсан 8 оронтой дугаараараа захиалгаа сэргээнэ.':
+    'If you paid in another browser, phone, or inside Messenger, recover your orders with the 8-digit number you used at checkout.',
+  'Код авах': 'Send code',
+  '6 оронтой код': '6-digit code',
+  'Хэрэв энэ дугаарт төлсөн захиалга байвал баталгаажуулах код SMS-ээр очино. 5 минутын дотор оруулна уу.':
+    'If this number has paid orders, a confirmation code will arrive by SMS. Enter it within 5 minutes.',
+  'Баталгаажуулах': 'Confirm',
+  'Дугаар солих': 'Change number',
+  'Дахин код авах': 'Send a new code',
+  '{n} захиалга энэ төхөөрөмжид хадгалагдлаа. Баримт руу орж зургаа татна.':
+    '{n} orders were saved on this device. Open a receipt to download your photos.',
+  'Энэ дугаарт төлсөн захиалга олдсонгүй.': 'No paid orders were found for this number.',
+  '8 оронтой утасны дугаараа оруулна уу.': 'Enter your 8-digit phone number.',
+  '6 оронтой кодоо оруулна уу.': 'Enter the 6-digit code.',
+  'Хэт олон удаа оролдлоо. {s} секундын дараа дахин оролдоно уу.': 'Too many attempts. Try again in {s} seconds.',
+  'Хэт олон удаа оролдлоо. Түр хүлээгээд дахин оролдоно уу.': 'Too many attempts. Please wait and try again.',
+  'Код буруу эсвэл хугацаа дууссан. Дахин код авна уу.': 'The code is wrong or expired. Request a new one.',
+  'Оролдлого хэтэрсэн. Шинэ код авна уу.': 'Too many tries. Request a new code.',
+  'Код илгээж чадсангүй. Дахин оролдоно уу.': 'Could not send the code. Please try again.',
+  'SMS үйлчилгээ тохируулаагүй байна. Дараа дахин оролдоно уу.': 'SMS is not configured yet. Please try again later.',
+  'Сэргээж чадсангүй. Дахин оролдоно уу.': 'Could not recover purchases. Please try again.',
 
   'Таны үйл ажиллагаа,': 'Your events,',
   'гоёор дүрслэгдсэн.': 'beautifully captured.',
