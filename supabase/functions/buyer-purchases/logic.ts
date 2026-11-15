@@ -25,6 +25,7 @@ export interface PaidRow {
   gross_amount: number;
   buyer_name: string;
   buyer_phone: string;
+  buyer_email: string;
   album_name: string;
   album_title: string;
   share_link: string;
@@ -48,6 +49,25 @@ export function normalizePhone(raw: unknown): string | null {
   if (/^\d{8}$/.test(d)) return d;
   if (/^976\d{8}$/.test(d)) return d.slice(3);
   return null;
+}
+
+/**
+ * Checkout дээр хадгалсан имэйл. Хоосон, буруу хэлбэртэй бол null.
+ * qpay/index.ts болон src/lib/buyerEmail.ts-тэй ижил дүрэм.
+ */
+export function normalizeEmail(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s.length < 6 || s.length > 254) return null;
+  if (!/^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(s)) return null;
+  return s;
+}
+
+/**
+ * Имэйлийн rate-limit түлхүүр. buyer_purchase_otp_hits.phone нь форматгүй текст
+ * тул 8 оронтой дугаартай мөргөлдөхгүй `e:` угтвартай хадгална.
+ */
+export function emailRateSubject(email: string): string {
+  return `e:${email}`;
 }
 
 export function isSixDigitCode(raw: unknown): boolean {
@@ -90,12 +110,8 @@ export function strictestRetry(waits: number[]): number {
   return waits.reduce((m, n) => Math.max(m, n), 0);
 }
 
-/**
- * Зөвхөн тухайн утасны төлсөн мөрүүдийг нэхэмжлэхээр бүлэглэнэ.
- * Өөр дугаар холилдвол null — дуудагч захиалга буцаахгүй.
- */
-export function groupPaidPurchases(phone: string, rows: PaidRow[]): RecoveredOrder[] | null {
-  if (rows.some((r) => r.buyer_phone !== phone)) return null;
+function groupPaidRows(rows: PaidRow[], sameBuyer: (row: PaidRow) => boolean): RecoveredOrder[] | null {
+  if (rows.some((row) => !sameBuyer(row))) return null;
   const map = new Map<string, RecoveredOrder>();
   for (const r of rows) {
     const invoiceId = String(r.qpay_invoice_id ?? "");
@@ -127,4 +143,21 @@ export function groupPaidPurchases(phone: string, rows: PaidRow[]): RecoveredOrd
   return [...map.values()]
     .sort((a, b) => (b.paidAt || "").localeCompare(a.paidAt || ""))
     .slice(0, 200);
+}
+
+/**
+ * Зөвхөн тухайн утасны төлсөн мөрүүдийг нэхэмжлэхээр бүлэглэнэ.
+ * Өөр дугаар холилдвол null — дуудагч захиалга буцаахгүй.
+ */
+export function groupPaidPurchases(phone: string, rows: PaidRow[]): RecoveredOrder[] | null {
+  return groupPaidRows(rows, (row) => row.buyer_phone === phone);
+}
+
+/**
+ * Зөвхөн баталгаажсан имэйлийн төлсөн мөрүүд.
+ * phone өгвөл тухайн дугаараар нарийсгана (өөр дугаарын захиалгыг нэмж өгөхгүй).
+ * Өөр имэйл эсвэл өөр дугаар холилдвол null.
+ */
+export function groupPaidPurchasesByEmail(email: string, rows: PaidRow[], phone: string | null = null): RecoveredOrder[] | null {
+  return groupPaidRows(rows, (row) => row.buyer_email === email && (phone === null || row.buyer_phone === phone));
 }

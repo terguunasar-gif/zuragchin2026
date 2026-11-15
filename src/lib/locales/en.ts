@@ -128,6 +128,9 @@ const EN: Record<string, string> = {
   'Нэр': 'Name',
   'Таны нэр': 'Your name',
   'Утасны дугаар': 'Phone number',
+  'Зургаа сэргээхэд хэрэгтэй': 'Needed to recover your photos',
+  'Заавал биш. Өөр утас, хөтчөөс захиалгаа имэйлээр сэргээнэ.': 'Optional. Use it to recover this order from another phone or browser.',
+  'Имэйл хаягаа зөв оруулна уу': 'Enter a valid email address',
   'Боловсруулж байна…': 'Processing…',
   'Төлбөр хүлээж байна…': 'Waiting for payment…',
   'QPay апп-аар уншуулж {amount} төлнө үү': 'Scan with the QPay app and pay {amount}',
@@ -195,6 +198,18 @@ const EN: Record<string, string> = {
   'Код илгээж чадсангүй. Дахин оролдоно уу.': 'Could not send the code. Please try again.',
   'SMS үйлчилгээ тохируулаагүй байна. Дараа дахин оролдоно уу.': 'SMS is not configured yet. Please try again later.',
   'Сэргээж чадсангүй. Дахин оролдоно уу.': 'Could not recover purchases. Please try again.',
+  'Имэйлээр сэргээх': 'Recover with email',
+  'Өөр хөтөч, утас эсвэл Messenger дотор төлсөн бол төлөхдөө оруулсан имэйлээрээ захиалгаа сэргээнэ.':
+    'If you paid in another browser, phone, or inside Messenger, recover your orders with the email you entered at checkout.',
+  'Хэрэв энэ имэйлд төлсөн захиалга байвал баталгаажуулах код имэйлээр очино. Кодоо оруулна уу.':
+    'If this email has paid orders, a confirmation code will arrive by email. Enter the code.',
+  'Имэйл солих': 'Change email',
+  'Энэ имэйлд төлсөн захиалга олдсонгүй.': 'No paid orders were found for this email.',
+  'Имэйл хаягаа оруулна уу.': 'Enter your email address.',
+  'Имэйл илгээж чадсангүй. Дахин оролдоно уу.': 'Could not send the email. Please try again.',
+  'Эсвэл утасны дугаараар (SMS)': 'Or use your phone number (SMS)',
+  'Утас (заавал биш)': 'Phone (optional)',
+  'Оруулбал зөвхөн энэ дугаарын захиалгыг хайна.': 'If you enter it, only orders for this number are shown.',
 
   'Таны үйл ажиллагаа,': 'Your events,',
   'гоёор дүрслэгдсэн.': 'beautifully captured.',
