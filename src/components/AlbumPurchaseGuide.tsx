@@ -76,6 +76,11 @@ export default function AlbumPurchaseGuide({
   const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  // Зургийн тор: 1 (том, доош гүйлгэнэ) / 2 / 3 багана — сонголт төхөөрөмж дээр хадгалагдана
+  const [cols, setColsState] = useState<1 | 2 | 3>(() => {
+    try { const v = Number(localStorage.getItem('zm_guide_cols')); return v === 1 || v === 3 ? v : 2; } catch { return 2; }
+  });
+  const setCols = (v: 1 | 2 | 3) => { setColsState(v); try { localStorage.setItem('zm_guide_cols', String(v)); } catch { /* */ } };
   const listRef = useRef<HTMLDivElement>(null);
   const choicesRef = useRef(session.choices);
   const viewerIdRef = useRef(viewerId);
@@ -547,18 +552,32 @@ export default function AlbumPurchaseGuide({
         </div>
       </header>
 
-      {session.step === 'browse' && named.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-white/10 shrink-0 [scrollbar-width:none]">
-          <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
+      {session.step === 'browse' && (
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
+        <div className="flex gap-1.5 overflow-x-auto flex-1 min-w-0 [scrollbar-width:none]">
+          {named.length > 0 && <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === null ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
             Бүгд
-          </button>
+          </button>}
           {named.map(f => (
             <button key={f.id} type="button" onClick={() => openFolder(f.id, f.name)}
               className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === f.id ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
               {f.name}
             </button>
           ))}
+        </div>
+          <div className="shrink-0 flex bg-white/10 rounded-lg p-0.5" role="group" aria-label="Харагдац">
+            {([1, 2, 3] as const).map(n => (
+              <button key={n} type="button" onClick={() => setCols(n)} aria-label={`${n} багана`}
+                className={`w-8 h-7 rounded-md flex items-center justify-center ${cols === n ? 'bg-amber-500 text-stone-950' : 'text-stone-300'}`}>
+                <span className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${n}, minmax(0,1fr))` }}>
+                  {Array.from({ length: n === 1 ? 1 : n * 2 }).map((_, i) => (
+                    <span key={i} className={`block rounded-[1px] bg-current ${n === 1 ? 'w-3 h-3.5' : n === 2 ? 'w-1.5 h-1.5' : 'w-1 h-1'}`} />
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -644,13 +663,15 @@ export default function AlbumPurchaseGuide({
 
         {session.step === 'browse' && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className={`grid ${cols === 1 ? 'grid-cols-1 gap-3 max-w-xl mx-auto' : cols === 3 ? 'grid-cols-3 gap-1.5' : 'grid-cols-2 sm:grid-cols-3 gap-2'}`}>
               {visible.map(p => {
                 const on = session.selected.includes(p.id);
                 return (
                   <button key={p.id} type="button" onClick={() => togglePhoto(p.id)}
-                    className={`relative aspect-[3/4] rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
-                    <img src={p.watermarked_url} alt="" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover" />
+                    className={`relative ${cols === 1 ? '' : 'aspect-[3/4]'} rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
+                    {cols === 1
+                      ? <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none block w-full h-auto min-h-[200px]" />
+                      : <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover" />}
                     <span className={`pointer-events-none absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80 text-white'}`}>
                       {on ? <Check className="w-4 h-4" strokeWidth={3} /> : <span className="block h-3.5 w-3.5 rounded-sm border border-white/80" />}
                     </span>
