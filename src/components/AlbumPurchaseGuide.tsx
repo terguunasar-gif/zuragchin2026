@@ -390,6 +390,21 @@ export default function AlbumPurchaseGuide({
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   }
 
+  /**
+   * Төлбөрийн алхамаас буцах — сонголт хэвээр үлдэнэ.
+   * QR үүссэн бол тэр нэхэмжлэхийг орхино (дахин «QPay-ээр төлөх» дарахад шинэ дүнгээр үүснэ).
+   */
+  function backFromPay(target: 'choices' | 'album') {
+    if (session.invoice && !window.confirm('Энэ QR код хүчингүй болно. Зураг нэмж/хассаны дараа шинэ QR үүснэ. Буцах уу?')) return;
+    if (target === 'album') {
+      go('browse', { folderId: session.folderId ?? null, invoice: null },
+        'Цомгийн зургууд. Өмнө сонгосон зургууд хадгалагдсан — нэмж сонгоод «Сонгож дууслаа» дарна уу.');
+    } else {
+      go('choices', { invoice: null }, 'Сонгосон зургууд. Нэмэх, хасах, татах/угаалгах сонголтоо засаад дахин төлнө үү.');
+    }
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+  }
+
   function setChoice(id: string, patch: Partial<GuideChoice>) {
     const choices = session.choices.map(c => c.photoId === id ? { ...c, ...patch } : c);
     commit({ ...session, choices });
@@ -922,6 +937,17 @@ export default function AlbumPurchaseGuide({
                 {session.invoice.urls.length > 0 && <BankLinks urls={session.invoice.urls} />}
               </div>
             )}
+            {/* Төлөхөөс өмнө буцаж зураг нэмэх / хасах */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button type="button" onClick={() => backFromPay('choices')}
+                className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl py-3 text-sm font-semibold">
+                <ChevronLeft className="w-4 h-4" /> Сонгосон зураг
+              </button>
+              <button type="button" onClick={() => backFromPay('album')}
+                className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl py-3 text-sm font-semibold">
+                <Images className="w-4 h-4 text-amber-400" /> Зураг нэмэх
+              </button>
+            </div>
           </div>
         )}
 
