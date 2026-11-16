@@ -574,7 +574,7 @@ export default function AlbumPurchaseGuide({
           let blob = await (await fetch(u.signedUrl)).blob();
           // засвар (байвал) → цомгийн лого
           if (hasEdit(u.adjust)) blob = await preparePrintBlob(blob, 'original', u.adjust!);
-          if (u.brand) blob = await applyBrandToPurchase(blob, u.brand, u.filename);
+          blob = await applyBrandToPurchase(blob, u.brand || '', u.filename);
           const name = /\.(jpe?g|png|webp)$/i.test(u.filename) ? u.filename : `${u.filename}.jpg`;
           const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
           files.push(file);

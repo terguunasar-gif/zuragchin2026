@@ -256,10 +256,9 @@ export default function ReceiptPage() {
   /** Татах файлд: засвар (байвал) → цомгийн лого */
   function transformFor(u: SignedUrlItem, filename: string, original = false) {
     const adj = original ? null : u.adjust;
-    if (!hasEdit(adj) && !u.brand) return undefined;
     return async (b: Blob) => {
       let out = hasEdit(adj) ? await preparePrintBlob(b, 'original', adj!) : b;
-      if (u.brand) out = await applyBrandToPurchase(out, u.brand, filename);
+      out = await applyBrandToPurchase(out, u.brand || '', filename);
       return out;
     };
   }
@@ -346,7 +345,6 @@ export default function ReceiptPage() {
     if (!urlItem?.signedUrl) return;
     setDownloading(prev => ({ ...prev, [p.id]: true }));
     try {
-      const brand = urlItem.brand ?? '';
       const tf = transformFor(urlItem, filename, original);
       const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename, tf);
       // Апп доторх хөтөч эсвэл Android дээр — зургийг томоор харуулж заавар өгнө
@@ -355,7 +353,7 @@ export default function ReceiptPage() {
         // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоос
         // (логотой бол data URL) харуулна
         let manualUrl = urlItem.signedUrl;
-        if (result === 'manual' && (brand || tf) && blobUrl) manualUrl = await blobUrlToDataUrl(blobUrl).catch(() => urlItem.signedUrl);
+        if (result === 'manual' && blobUrl) manualUrl = await blobUrlToDataUrl(blobUrl).catch(() => urlItem.signedUrl);
         setViewer({ url: result === 'manual' ? manualUrl : (blobUrl || urlItem.signedUrl), name: filename, hint: result });
       }
     } catch {

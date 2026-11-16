@@ -641,12 +641,13 @@ export function blurRects(ctx: CanvasRenderingContext2D, rects: Rect[]) {
   }
 }
 
-export async function applyBrandToPurchase(blob: Blob, raw: string, filename: string): Promise<Blob> {
+export async function applyBrandToPurchase(blob: Blob, raw: string, filename: string, siteBadge = true): Promise<Blob> {
   const layers = raw ? brandLayers(raw) : null;
-  if (!layers) return blob;
+  if (!layers && !siteBadge) return blob;
   try {
+    // Цомгийн лого/текст + (татах файлд) жижиг «Zuragchin.mn» тэмдэг цомгийн логогүй буланд
     const out = await applyWatermark(new File([blob], filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }),
-      { type: 'layers', value: layers, position: 'bottom-right', brandOnly: true, quality: 0.95, siteBadge: false });
+      { type: 'layers', value: layers ?? '[]', position: 'bottom-right', brandOnly: true, quality: 0.95, siteBadge });
     const meta = jpegMetaSegments(new Uint8Array(await blob.arrayBuffer()));
     if (!meta.length) return out;
     const body = new Uint8Array(await out.arrayBuffer());

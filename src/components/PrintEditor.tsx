@@ -106,11 +106,11 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
       const cctx = c.getContext('2d')!;
       cctx.drawImage(paper, 0, 0);
       // Цомгийн лого — хүрээн дээр тогтмол (эцсийн файлд яг энд гарна)
-      if ((brand || source) && !compare) {
+      if ((brand || !PRINT_SIZE_CM[size]) && !compare) {
         const token = ++brandTok.current;
         const tmp = document.createElement('canvas');
         tmp.width = c.width; tmp.height = c.height;
-        drawBrandOverlay(tmp.getContext('2d')!, tmp.width, tmp.height, brand, { siteBadge: !!source })
+        drawBrandOverlay(tmp.getContext('2d')!, tmp.width, tmp.height, brand, { siteBadge: !PRINT_SIZE_CM[size] })
           .then(() => { if (token === brandTok.current) cctx.drawImage(tmp, 0, 0); })
           .catch(() => null);
       }
