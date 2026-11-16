@@ -1133,28 +1133,39 @@ export default function AlbumPurchaseGuide({
   );
 }
 
-/** Хөтчийн толгой: одоогийн цомгийн нэр — дарахад энэ төхөөрөмжөөс үзсэн бусад цомгууд доош нээгдэнэ */
+/** Хөтчийн толгой: одоогийн цомгийн нэр — дарахад бусад цомгууд (үзсэн, төлсөн) болон код/нүүр рүү шилжих сонголт */
 function AlbumSwitcher({ albumId, albumName }: { albumId: string; albumName: string }) {
   const [open, setOpen] = useState(false);
-  const others = listVisitedAlbums().filter(a => a.id !== albumId);
+  const others = useMemo(() => {
+    const seen = new Set([albumId]);
+    const out: { id: string; name: string; link: string; cover?: string }[] = [];
+    for (const a of listVisitedAlbums()) {
+      if (seen.has(a.id)) continue;
+      seen.add(a.id); out.push(a);
+    }
+    for (const h of listPurchaseHistory()) {
+      if (!h.albumId || seen.has(h.albumId) || !h.albumLink) continue;
+      seen.add(h.albumId); out.push({ id: h.albumId, name: h.albumName || 'Цомог', link: h.albumLink });
+    }
+    return out;
+  }, [albumId, open]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="relative min-w-0 flex-1">
-      <button type="button" onClick={() => others.length && setOpen(o => !o)}
-        className={`w-full min-w-0 flex items-center gap-2 text-left rounded-xl px-2.5 py-1.5 -ml-1 ${others.length ? 'bg-emerald-500/10 border border-emerald-400/40' : ''}`}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="w-full min-w-0 flex items-center gap-2 text-left rounded-xl px-2.5 py-1.5 -ml-1 bg-emerald-500/10 border border-emerald-400/40">
         <span className="min-w-0 flex-1">
-          <span className="block text-emerald-300 text-[10px] font-semibold leading-tight">{others.length ? 'Таны үзсэн цомог' : 'Zuragchin.mn-д тавтай морил'}</span>
+          <span className="block text-emerald-300 text-[10px] font-semibold leading-tight">{others.length ? 'Таны үзсэн цомог' : 'Цомог'}</span>
           <span className="block font-bold text-sm truncate">{albumName}</span>
         </span>
-        {others.length > 0 && (
-          <span className="shrink-0 flex items-center gap-0.5 text-xs text-emerald-200">
-            +{others.length} <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </span>
-        )}
+        <span className="shrink-0 flex items-center gap-0.5 text-xs text-emerald-200">
+          {others.length > 0 && <>+{others.length}</>} <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </span>
       </button>
       {open && (
         <>
           <button type="button" aria-label="Хаах" className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-stone-900 border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5 shadow-2xl max-h-[60vh] overflow-y-auto">
+          <div className="absolute left-0 w-[min(20rem,calc(100vw-1.5rem))] top-full mt-1 z-20 bg-stone-900 border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5 shadow-2xl max-h-[65vh] overflow-y-auto">
+            {others.length > 0 && <p className="px-3 pt-2.5 pb-1.5 text-[11px] text-stone-500">Бусад цомог</p>}
             {others.map(a => (
               <a key={a.id} href={`/album/${a.link}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5">
                 {a.cover
@@ -1164,6 +1175,15 @@ function AlbumSwitcher({ albumId, albumName }: { albumId: string; albumName: str
                 <ChevronRight className="w-4 h-4 text-stone-500" />
               </a>
             ))}
+            {!others.length && <p className="px-3 py-2.5 text-xs text-stone-400">Энэ утсаар өөр цомог үзээгүй байна. Кодоор эсвэл QR-аар өөр цомог нээж болно.</p>}
+            <a href="/c" className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 text-sm text-amber-300">
+              <span className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0 font-bold">#</span>
+              <span className="flex-1">Цомгийн код оруулах</span>
+            </a>
+            <a href="/" className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 text-sm text-stone-200">
+              <span className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0"><QrCode className="w-4 h-4 text-stone-300" /></span>
+              <span className="flex-1">Нүүр хуудас · QR уншуулах</span>
+            </a>
           </div>
         </>
       )}
