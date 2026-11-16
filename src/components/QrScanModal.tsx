@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import jsQR from 'jsqr';
 import { ImageUp, Loader2, RefreshCw, ScanLine, ShieldAlert, X } from 'lucide-react';
 import { inAppBrowserName, isAndroid, isIOS } from '../lib/browserEnv';
@@ -174,14 +175,15 @@ export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
 
   const inApp = inAppBrowserName();
 
-  return (
-    <div className="fixed inset-0 z-[80] bg-black flex flex-col">
+  // body руу portal — толгой хэсгийн backdrop-blur/transform дотор fixed цонх хавчигдахгүй
+  return createPortal(
+    <div className="fixed inset-0 z-[200] bg-black flex flex-col" style={{ height: '100dvh' }}>
       <div className="flex items-center justify-between px-4 py-3 bg-stone-950 border-b border-white/10">
         <p className="text-white font-semibold flex items-center gap-2"><ScanLine className="w-5 h-5 text-amber-400" />{title}</p>
         <button onClick={onClose} className="p-2 -mr-2 text-stone-300 hover:text-white" aria-label="Хаах"><X className="w-6 h-6" /></button>
       </div>
 
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 min-h-[50vh] overflow-hidden">
         <video ref={videoRef} playsInline muted className={`absolute inset-0 w-full h-full object-cover ${cam === 'ready' ? '' : 'hidden'}`} />
         {cam === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-stone-400 text-sm">
@@ -264,6 +266,7 @@ export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
         </button>
         {footer}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
