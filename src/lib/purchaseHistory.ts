@@ -78,3 +78,39 @@ export function addPurchaseHistory(entry: PurchaseHistoryEntry) {
   list.unshift(entry);
   write(HISTORY_KEY, list.slice(0, 200));
 }
+
+/**
+ * Энэ хөтөч дээрх бүх мэдэгдэх төлсөн нэхэмжлэхүүдийг «Төлсөн» түүхэнд нэгтгэнэ:
+ * цомгийн хөтчийн (guide) төлсөн/эзэмшсэн зургууд түүхэнд ороогүй байж болно
+ * (баримтыг нээгээгүй, эсвэл түүх бичдэг болохоос өмнө төлсөн).
+ */
+export function syncPurchaseHistoryFromGuides(): void {
+  try {
+    const known = new Set(listPurchaseHistory().map(h => h.invoiceId));
+    let visited: { id: string; name: string; link: string }[] = [];
+    try { visited = JSON.parse(localStorage.getItem('zm_visited_albums') || '[]') || []; } catch { /* */ }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('zm_album_guide_')) continue;
+      const albumId = k.slice('zm_album_guide_'.length);
+      let g: { name?: string; paidInvoices?: unknown; owned?: unknown } = {};
+      try { g = JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch { continue; }
+      const owned = Array.isArray(g.owned) ? g.owned as { invoiceId?: string; type?: string }[] : [];
+      const invs = new Set<string>([
+        ...(Array.isArray(g.paidInvoices) ? g.paidInvoices.filter((x): x is string => typeof x === 'string') : []),
+        ...owned.map(o => o.invoiceId).filter((x): x is string => typeof x === 'string'),
+      ]);
+      const va = visited.find(v => v.id === albumId);
+      for (const inv of invs) {
+        if (!inv || known.has(inv)) continue;
+        known.add(inv);
+        const mine = owned.filter(o => o.invoiceId === inv);
+        addPurchaseHistory({
+          invoiceId: inv, albumId, albumName: va?.name || 'Цомог', albumLink: va?.link || albumId,
+          total: 0, downloads: mine.filter(o => o.type === 'download').length, prints: mine.filter(o => o.type === 'print').length,
+          buyerName: typeof g.name === 'string' ? g.name : '', paidAt: new Date().toISOString(),
+        });
+      }
+    }
+  } catch { /* */ }
+}
