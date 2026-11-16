@@ -918,7 +918,12 @@ export default function AlbumPurchaseGuide({
                             return (
                               <button key={f.purchaseId} type="button" onClick={() => toggle(f.purchaseId)}
                                 className={`relative aspect-[3/4] rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : 'opacity-70'}`}>
-                                {ph?.watermarked_url && <img src={ph.watermarked_url} alt="" className="absolute inset-0 h-full w-full object-cover pointer-events-none" />}
+                                {ph?.watermarked_url && (() => {
+                                  const ed = f.adjust ?? session.choices.find(c => c.photoId === f.photoId)?.editDl;
+                                  return hasEdit(ed)
+                                    ? <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><EditedThumb url={ph.watermarked_url} size="original" edit={ed} className="max-h-full max-w-full object-contain" /></div>
+                                    : <img src={ph.watermarked_url} alt="" className="absolute inset-0 h-full w-full object-cover pointer-events-none" />;
+                                })()}
                                 <span className={`absolute top-2 left-2 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80'}`}>
                                   {on && <Check className="w-4 h-4" strokeWidth={3} />}
                                 </span>
