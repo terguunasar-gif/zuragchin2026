@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
@@ -294,6 +294,13 @@ export default function AlbumPurchaseGuide({
       return prev ?? { photoId: id, download: false, print: false, printSize: opts[0]?.[0] };
     });
     go('choices', { choices }, 'Сонгосон зураг бүрээ татах уу, угаалгах уу, эсвэл хоёуланг нь уу?');
+  }
+
+  /** Төлөхөөс өмнө цомог руу буцаж нэмж/дахин сонгох — өмнөх сонголт, тохиргоо хадгалагдана */
+  function backToAlbum() {
+    go('browse', { folderId: session.folderId ?? null },
+      'Цомгийн зургууд. Өмнө сонгосон зургууд хадгалагдсан — нэмж сонгоод «Сонгож дууслаа» дарна уу.');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   }
 
   function setChoice(id: string, patch: Partial<GuideChoice>) {
@@ -729,6 +736,10 @@ export default function AlbumPurchaseGuide({
                 </div>
               );
             })}
+            <button type="button" onClick={backToAlbum}
+              className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl py-3 text-sm font-semibold">
+              <Images className="w-4 h-4 text-amber-400" /> Цомог руу буцаж зураг нэмэх
+            </button>
             <p className="text-right font-bold">Нийт {money(total)}</p>
             <button type="button" disabled={!ready || total <= 0} onClick={beginPay}
               className="w-full bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
