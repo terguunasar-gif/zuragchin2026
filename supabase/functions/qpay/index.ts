@@ -902,7 +902,7 @@ Deno.serve(async (req: Request) => {
 
       let res = await db
         .from("purchases")
-        .select("id, photo_id, album_id, type, download_expires_at, photo_uploads(original_url, filename)")
+        .select("id, photo_id, album_id, type, download_expires_at, download_count, photo_uploads(original_url, filename)")
         .eq("qpay_invoice_id", invoiceId)
         .eq("payment_status", "paid");
       if (res.error) {
@@ -929,7 +929,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const signedUrls: { purchaseId: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string }[] = [];
+      const signedUrls: { purchaseId: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number }[] = [];
       for (const p of purchases) {
         if (p.type === "download" && p.photo_uploads?.original_url) {
           const expiresAt: string | null = p.download_expires_at ?? null;
@@ -943,6 +943,7 @@ Deno.serve(async (req: Request) => {
             expiresAt,
             expired,
             brand: brandByAlbum[p.album_id] ?? "",
+            downloadCount: Number(p.download_count ?? 0),
           });
         } else if (p.type === "print") {
           signedUrls.push({ purchaseId: p.id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false });

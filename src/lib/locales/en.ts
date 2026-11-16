@@ -156,6 +156,8 @@ const EN: Record<string, string> = {
   'Усан тэмдэггүй өндөр нарийвчлалтай зургуудыг татаж авах боломжтой болсон!': 'Your high-resolution, watermark-free photos are ready to download!',
   '✓ Усан тэмдэггүй': '✓ No watermark',
   'Татаж байна…': 'Downloading…',
+  'Татсан ✓': 'Downloaded ✓',
+  'Бүгдийг татсан ✓': 'All downloaded ✓',
   'Боломжгүй': 'Unavailable',
   'Хүлээгдэж байна': 'Pending',
   'Татсан зургууд усан тэмдэггүй бөгөөд өндөр нарийвчлалтай байна.': 'Downloaded photos are high resolution with no watermark.',

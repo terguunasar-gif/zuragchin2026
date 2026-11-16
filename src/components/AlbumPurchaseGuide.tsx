@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Send, X } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, isIOS, socialInAppName } from '../lib/browserEnv';
+import { supabase } from '../lib/supabase';
+import BankLinks, { type BankLink } from './BankLinks';
 import {
-  askHelpBot, clearGuide, dropGuideCartPhoto, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
-  type GuideCartLine, type GuideChoice, type GuideMsg, type GuideSession, type GuideStep,
+  askHelpBot, clearGuide, dropGuideCartPhoto, guidePaySummary, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
+  type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep,
 } from '../lib/albumGuide';
+import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, writeDownloadedIds } from '../lib/receiptDownloads';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -27,6 +30,9 @@ function money(n: number) {
   return `₮${Math.round(n).toLocaleString('mn-MN')}`;
 }
 
+const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
+const QPAY_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
 function closeLightbox(setViewerId: (id: string | null) => void) {
   const state = history.state as { albumGuideLightbox?: boolean } | null;
   if (state?.albumGuideLightbox) history.back();
@@ -34,14 +40,15 @@ function closeLightbox(setViewerId: (id: string | null) => void) {
 }
 
 export default function AlbumPurchaseGuide({
-  album, photos, folders, aiPrice, paidInvoice, onCheckout, onClose,
+  album, photos, folders, aiPrice, paidInvoice, onInvoiceCreated, onPaid, onClose,
 }: {
   album: AlbumData;
   photos: PhotoData[];
   folders: { id: string; name: string }[];
   aiPrice: number;
   paidInvoice: string | null;
-  onCheckout: (lines: GuideCartLine[]) => void;
+  onInvoiceCreated?: (invoiceId: string) => void;
+  onPaid: (invoiceId: string) => void;
   onClose: () => void;
 }) {
   const [session, setSession] = useState<GuideSession>(() => loadGuide(album.id));
@@ -52,6 +59,16 @@ export default function AlbumPurchaseGuide({
   const [busy, setBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
   const [dlNote, setDlNote] = useState('');
+  const [dlGot, setDlGot] = useState<Set<string>>(() => new Set(paidInvoice ? readDownloadedIds(paidInvoice) : []));
+  const [licenseOk, setLicenseOk] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payErr, setPayErr] = useState('');
+  const onPaidRef = useRef(onPaid);
+  const onInvoiceRef = useRef(onInvoiceCreated);
+  onPaidRef.current = onPaid;
+  onInvoiceRef.current = onInvoiceCreated;
+  type PaidFile = { purchaseId: string; signedUrl: string; filename: string; downloadCount?: number };
+  const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -115,6 +132,30 @@ export default function AlbumPurchaseGuide({
     setAlbumGuideActive(true);
     return () => setAlbumGuideActive(false);
   }, []);
+
+  useEffect(() => {
+    const id = session.step === 'pay' ? session.invoice?.invoiceId : undefined;
+    if (!id) return;
+    let stopped = false;
+    let n = 0;
+    const timer = setInterval(async () => {
+      if (stopped) return;
+      n += 1;
+      if (n > 60) { clearInterval(timer); return; }
+      try {
+        const res = await fetch(`${QPAY_FN_URL}/check-payment/${id}`, {
+          headers: { Authorization: `Bearer ${QPAY_ANON}`, apikey: QPAY_ANON },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.isPaid && !stopped) {
+          stopped = true;
+          clearInterval(timer);
+          onPaidRef.current(id);
+        }
+      } catch { /* дараагийн шалгалт */ }
+    }, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [session.step, session.invoice?.invoiceId]);
 
   useEffect(() => {
     if (session.step === 'done' || !session.phone) return;
@@ -262,6 +303,57 @@ export default function AlbumPurchaseGuide({
   }
   const total = lines.reduce((s, l) => s + l.price, 0);
   const ready = session.choices.length > 0 && session.choices.every(c => c.download || c.print);
+
+  function beginPay() {
+    if (!ready || total <= 0) return;
+    const downloads = session.choices.filter(c => c.download).length;
+    const prints = session.choices.filter(c => c.print).length;
+    go('pay', { invoice: null }, guidePaySummary(session.name, session.choices.length, downloads, prints, money(total)));
+  }
+
+  async function startPay() {
+    if (!licenseOk || payBusy) return;
+    setPayBusy(true);
+    setPayErr('');
+    try {
+      const { data: { session: auth } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      const res = await fetch(`${QPAY_FN_URL}/create-invoice`, {
+        method: 'POST',
+        headers: auth?.access_token
+          ? { 'Content-Type': 'application/json', apikey: QPAY_ANON, Authorization: `Bearer ${auth.access_token}` }
+          : { 'Content-Type': 'application/json', Authorization: `Bearer ${QPAY_ANON}` },
+        body: JSON.stringify({
+          cartItems: lines.map(c => ({
+            photoId: c.photoId,
+            photographerId: c.photographerId,
+            type: c.type,
+            printSize: c.printSize,
+            price: c.price,
+          })),
+          buyerName: session.name,
+          buyerPhone: session.phone,
+          buyerEmail: '',
+          albumId: album.id,
+          licenseAccepted: lines.some(l => l.type === 'download') ? true : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || 'Төлбөр эхлүүлж чадсангүй');
+      const invoice: GuideInvoice = {
+        invoiceId: String(data.invoiceId),
+        qrImage: typeof data.qrImage === 'string' ? data.qrImage : '',
+        qrText: typeof data.qrText === 'string' ? data.qrText : '',
+        urls: Array.isArray(data.urls) ? data.urls as BankLink[] : [],
+        grossTotal: Number(data.grossTotal) || total,
+      };
+      commit({ ...session, invoice });
+      onInvoiceRef.current?.(invoice.invoiceId);
+    } catch (err) {
+      setPayErr(err instanceof Error ? err.message : 'Төлбөр эхлүүлж чадсангүй');
+    } finally {
+      setPayBusy(false);
+    }
+  }
   const viewerIdx = session.choices.findIndex(c => c.photoId === viewerId);
   const viewerPhoto = viewerIdx >= 0 ? photos.find(p => p.id === viewerId) : undefined;
 
@@ -282,38 +374,67 @@ export default function AlbumPurchaseGuide({
     stepViewer(dx < 0 ? 1 : -1);
   }
 
-  async function downloadPaid() {
-    if (!paidInvoice) return;
+  function noteGuideDownloaded(ids: string[]) {
+    if (!paidInvoice || !ids.length) return;
+    setDlGot(new Set(writeDownloadedIds(paidInvoice, ids)));
+  }
+
+  const loadPaidFiles = useCallback(async (invoice: string): Promise<PaidFile[]> => {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/signed-urls`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ invoiceId: invoice }),
+    });
+    const body = await res.json().catch(() => ({}));
+    const urls = (body.signedUrls ?? []) as { purchaseId?: string; signedUrl?: string; filename?: string; type?: string; expired?: boolean; downloadCount?: number }[];
+    const files: PaidFile[] = [];
+    for (const u of urls) {
+      if (u.type !== 'download' || !u.signedUrl || u.expired || !u.purchaseId) continue;
+      files.push({ purchaseId: u.purchaseId, signedUrl: u.signedUrl, filename: u.filename || 'zurag.jpg', downloadCount: u.downloadCount });
+    }
+    const counted = idsWithServerDownloads(files.map(f => ({ id: f.purchaseId, downloadCount: f.downloadCount })));
+    if (counted.length) setDlGot(new Set(writeDownloadedIds(invoice, counted)));
+    return files;
+  }, []);
+
+  useEffect(() => {
+    if (session.step !== 'done' || !paidInvoice) return;
+    let cancel = false;
+    loadPaidFiles(paidInvoice).then(files => { if (!cancel) setDlFiles(files); }).catch(() => {});
+    return () => { cancel = true; };
+  }, [session.step, paidInvoice, loadPaidFiles]);
+
+  async function downloadPaid(only?: PaidFile[]) {
+    if (!paidInvoice || dlBusy) return;
     setDlBusy(true);
     setDlNote('');
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/signed-urls`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ invoiceId: paidInvoice }),
-      });
-      const body = await res.json().catch(() => ({}));
-      const urls = (body.signedUrls ?? []) as { signedUrl?: string; filename?: string; type?: string; expired?: boolean }[];
+      const known = dlFiles.length ? dlFiles : await loadPaidFiles(paidInvoice);
+      if (!dlFiles.length) setDlFiles(known);
+      const targets = (only && only.length ? only : (everyDownloaded(known.map(f => f.purchaseId), dlGot) ? known : known.filter(f => !dlGot.has(f.purchaseId))));
+      const list = targets.length ? targets : known;
       const files: File[] = [];
-      for (const u of urls) {
-        if (u.type !== 'download' || !u.signedUrl || u.expired) continue;
-        const blob = await (await fetch(u.signedUrl)).blob();
-        const raw = u.filename || 'zurag.jpg';
-        const name = /\.(jpe?g|png|webp)$/i.test(raw) ? raw : `${raw}.jpg`;
-        const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
-        files.push(file);
-        if (!isIOS) {
-          const href = URL.createObjectURL(file);
-          const a = document.createElement('a');
-          a.href = href; a.download = name;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(href), 60000);
-          await new Promise(r => setTimeout(r, 350));
-        }
+      const savedIds: string[] = [];
+      for (const u of list) {
+        try {
+          const blob = await (await fetch(u.signedUrl)).blob();
+          const name = /\.(jpe?g|png|webp)$/i.test(u.filename) ? u.filename : `${u.filename}.jpg`;
+          const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+          files.push(file);
+          savedIds.push(u.purchaseId);
+          if (!isIOS) {
+            const href = URL.createObjectURL(file);
+            const a = document.createElement('a');
+            a.href = href; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(href), 60000);
+            await new Promise(r => setTimeout(r, 350));
+          }
+        } catch { /* дараагийн зураг */ }
       }
       if (!files.length) { setDlNote('Татах холбоос хараахан бэлэн биш. Хэдэн секундийн дараа дахин дарна уу.'); return; }
       if (isIOS) {
@@ -321,6 +442,7 @@ export default function AlbumPurchaseGuide({
         if (nav.canShare?.({ files }) || 'share' in navigator) {
           try {
             await navigator.share({ files });
+            noteGuideDownloaded(savedIds);
             setDlNote('Нээгдсэн цонхноос «Save Image»-ийг дарж Photos руу хадгална уу.');
             return;
           } catch { /* fallback */ }
@@ -333,6 +455,7 @@ export default function AlbumPurchaseGuide({
           setTimeout(() => URL.revokeObjectURL(href), 60000);
         }
       }
+      noteGuideDownloaded(savedIds);
       setDlNote(isAndroid
         ? 'Зургууд татагдлаа. Утасны Галерей эсвэл Downloads хавтсаас харна уу.'
         : 'Таталт эхэллээ.');
@@ -502,21 +625,87 @@ export default function AlbumPurchaseGuide({
               );
             })}
             <p className="text-right font-bold">Нийт {money(total)}</p>
-            <button type="button" disabled={!ready || total <= 0} onClick={() => onCheckout(lines)}
+            <button type="button" disabled={!ready || total <= 0} onClick={beginPay}
               className="w-full bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
               {total > 0 ? `QPay-ээр төлөх · ${money(total)}` : 'Үнэ байхгүй'}
             </button>
           </div>
         )}
 
+        {session.step === 'pay' && (
+          <div className="max-w-md mx-auto space-y-3">
+            {!session.invoice ? (
+              <>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={licenseOk} onChange={e => setLicenseOk(e.target.checked)}
+                      className="mt-1 h-4 w-4 shrink-0 accent-amber-500" />
+                    <span className="text-sm leading-snug text-stone-200">
+                      Зургаа төлбөр хийснээс хойш 14 хоногт багтаан утасныхаа галерей руу татаж авна. Хувийн хэрэглээнд зориулсан.
+                    </span>
+                  </label>
+                  <a href="/terms" target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-amber-300 underline">Нөхцөл</a>
+                </div>
+                {payErr && <p className="text-red-300 text-sm">{payErr}</p>}
+                <button type="button" disabled={!licenseOk || payBusy} onClick={startPay}
+                  className="w-full bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5 flex items-center justify-center gap-2">
+                  {payBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Төлбөр үргэлжлүүлэх
+                </button>
+              </>
+            ) : (
+              <div className="text-center space-y-3">
+                <p className="text-amber-300 text-sm">Төлбөр хүлээж байна…</p>
+                <div className="bg-white rounded-2xl p-3 inline-block">
+                  {session.invoice.qrImage ? (
+                    <img src={`data:image/png;base64,${session.invoice.qrImage}`} alt="QPay QR" width={200} height={200} className="block" />
+                  ) : (
+                    <div className="w-48 h-48 flex items-center justify-center"><QrCode className="w-12 h-12 text-stone-400" /></div>
+                  )}
+                </div>
+                <p className="text-stone-300 text-sm">QPay-ээр {money(session.invoice.grossTotal)} төлнө үү</p>
+                {session.invoice.urls.length > 0 && <BankLinks urls={session.invoice.urls} />}
+              </div>
+            )}
+          </div>
+        )}
+
         {session.step === 'done' && (
           <div className="max-w-md mx-auto space-y-3">
-            {session.choices.some(c => c.download) && (
-              <button type="button" onClick={downloadPaid} disabled={dlBusy}
-                className="w-full bg-amber-500 disabled:opacity-50 text-stone-950 font-bold rounded-xl py-3.5 flex items-center justify-center gap-2">
-                {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Татах
-              </button>
-            )}
+            {session.choices.some(c => c.download) && (() => {
+              const allGot = everyDownloaded(dlFiles.map(f => f.purchaseId), dlGot);
+              const label = allGot ? (dlFiles.length === 1 ? 'Татсан ✓' : 'Бүгдийг татсан ✓') : 'Татах';
+              return (
+                <>
+                  {dlFiles.length > 0 && (
+                    <div className="space-y-2">
+                      {dlFiles.map(f => {
+                        const got = dlGot.has(f.purchaseId);
+                        return (
+                          <div key={f.purchaseId} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-2">
+                            <p className="min-w-0 flex-1 truncate text-sm">{f.filename}</p>
+                            <button type="button" disabled={dlBusy} onClick={() => downloadPaid([f])}
+                              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                                got ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300' : 'bg-amber-500 text-stone-950'
+                              }`}>
+                              {got ? 'Татсан ✓' : 'Татах'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button type="button" onClick={() => downloadPaid()} disabled={dlBusy}
+                    className={`w-full font-bold rounded-xl py-3.5 flex items-center justify-center gap-2 disabled:opacity-50 ${
+                      allGot
+                        ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300'
+                        : 'bg-amber-500 text-stone-950'
+                    }`}>
+                    {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {label}
+                  </button>
+                </>
+              );
+            })()}
             {dlNote && <p className="text-sm text-stone-300">{dlNote}</p>}
             {paidInvoice && (
               <a href={`/receipt/${paidInvoice}`} className="block text-center text-amber-300 text-sm underline">Баримт үзэх</a>
@@ -525,7 +714,7 @@ export default function AlbumPurchaseGuide({
         )}
       </div>
 
-      {session.step !== 'welcome' && session.step !== 'done' && session.step !== 'browse' && session.step !== 'choices' && (
+      {session.step !== 'welcome' && session.step !== 'done' && session.step !== 'browse' && session.step !== 'choices' && session.step !== 'pay' && (
         <form onSubmit={e => { e.preventDefault(); onFreeText(draft); }} className="shrink-0 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex gap-2 border-t border-white/10">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Бичих..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none" />
