@@ -14,6 +14,7 @@ import PrintEditor from './PrintEditor';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
+import { listPurchaseHistory } from '../lib/purchaseHistory';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -83,6 +84,33 @@ export default function AlbumPurchaseGuide({
   // Төлөхөөс өмнөх засвар: аль зургийн аль төрлийг засаж байгаа
   const [editTarget, setEditTarget] = useState<{ photoId: string; kind: 'dl' | 'pr' } | null>(null);
   const [allowEdit, setAllowEdit] = useState(true);
+  // Төлсөн ч татаж амжаагүй зургууд — «Татах» хэсэгт буцааж хүргэх сануулга
+  const [undl, setUndl] = useState<{ invoice: string; count: number }[]>([]);
+  useEffect(() => {
+    if (session.step === 'done' || session.step === 'pay') return;
+    const invoices = [...new Set([
+      ...(session.paidInvoices ?? []),
+      ...listPurchaseHistory().filter(h => h.albumId === album.id && h.downloads > 0).map(h => h.invoiceId),
+    ])].slice(-6);
+    if (!invoices.length) { setUndl([]); return; }
+    let cancel = false;
+    Promise.all(invoices.map(async inv => {
+      try {
+        const res = await fetch(`${QPAY_FN_URL}/signed-urls`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: QPAY_ANON, Authorization: `Bearer ${QPAY_ANON}` },
+          body: JSON.stringify({ invoiceId: inv }),
+        });
+        const body = await res.json().catch(() => ({}));
+        const local = new Set(readDownloadedIds(inv));
+        const items = (body.signedUrls ?? []) as { purchaseId: string; type: string; signedUrl?: string; expired?: boolean; downloadCount?: number }[];
+        const count = items.filter(u => u.type === 'download' && u.signedUrl && !u.expired
+          && !(Number(u.downloadCount) > 0) && !local.has(u.purchaseId)).length;
+        return { invoice: inv, count };
+      } catch { return { invoice: inv, count: 0 }; }
+    })).then(r => { if (!cancel) setUndl(r.filter(x => x.count > 0)); });
+    return () => { cancel = true; };
+  }, [session.step, album.id, session.paidInvoices?.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     supabase.from('albums').select('allow_buyer_edit').eq('id', album.id).maybeSingle()
       .then(({ data, error }) => { if (!error && data && (data as { allow_buyer_edit?: boolean }).allow_buyer_edit === false) setAllowEdit(false); });
@@ -573,6 +601,20 @@ export default function AlbumPurchaseGuide({
           <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="text-stone-400 text-xs underline">Энгийн харагдац</button>
         </div>
       </header>
+
+      {undl.length > 0 && session.step !== 'done' && session.step !== 'pay' && (
+        <div className="shrink-0 px-3 pt-2 space-y-1.5">
+          {undl.map(u => (
+            <a key={u.invoice} href={`/receipt/${u.invoice}`}
+              className="flex items-center justify-between gap-3 bg-emerald-500/15 border border-emerald-400/50 rounded-xl px-3 py-2.5">
+              <span className="text-sm">
+                <b className="text-emerald-300">Татаагүй {u.count} зураг</b> <span className="text-stone-300">байна</span>
+              </span>
+              <span className="shrink-0 bg-emerald-500 text-stone-950 font-bold text-sm rounded-lg px-3 py-1.5">Татах →</span>
+            </a>
+          ))}
+        </div>
+      )}
 
       {session.step === 'browse' && (
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
