@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Images, KeyRound, LogOut, Receipt, Menu, Settings, Smartphone, X } from 'lucide-react';
+import { LogOut, Receipt, Menu, Settings, Smartphone, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
-import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../../lib/visitedAlbums';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
 import { listPurchaseHistory } from '../../lib/purchaseHistory';
+import { countUndownloaded } from '../../lib/receiptDownloads';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -168,88 +168,37 @@ export default function HomeHeader() {
   );
 }
 
-/** Энэ төхөөрөмжөөс үзсэн цомгууд руу буцах товч */
+/** Нүүрний дээд мөр: QR уншигч + Төлсөн захиалга (татаагүй зургийн тоотой) */
 function MyAlbumsBar() {
   const navigate = useNavigate();
-  const [albums, setAlbums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
-  const [open, setOpen] = useState(false);
-  const last = albums[0];
-  // Төлсөн захиалга (энэ хөтөчид) — баримт руу шууд орж татна
-  const paidCount = listPurchaseHistory().length;
-  const paidBtn = paidCount > 0 ? (
-    <button
-      onClick={() => navigate('/my-purchases')}
-      title="Төлсөн захиалга — зургаа татах"
-      className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-emerald-400/40 text-emerald-300 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
-    >
-      <Receipt className="w-4 h-4" /> Төлсөн
-    </button>
-  ) : null;
-  // Өөр хөтчөөс орсон зочин цомгоо кодоор олно
-  const codeBtn = (
-    <button
-      onClick={() => navigate('/c')}
-      title="Цомгийн кодоор орох"
-      className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-200 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
-    >
-      <KeyRound className="w-4 h-4 text-amber-400" /> <span className="hidden sm:inline">Цомгийн код</span>
-    </button>
-  );
-  if (albums.length === 0) {
-    return (
-      <div className="border-t border-white/5 bg-stone-950/95">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2"><HomeQrButton />{paidBtn}{codeBtn}</div>
-      </div>
-    );
-  }
+  const history = listPurchaseHistory();
+  const [undl, setUndl] = useState(0);
+  useEffect(() => {
+    if (!history.length) return;
+    let cancel = false;
+    countUndownloaded(history.map(h => h.invoiceId)).then(n => { if (!cancel) setUndl(n); });
+    return () => { cancel = true; };
+  }, [history.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="border-t border-white/5 bg-stone-950/95">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2 relative">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2">
         <HomeQrButton />
-        {paidBtn}
-        {codeBtn}
-        <button
-          onClick={() => navigate(`/album/${last.link}`)}
-          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-semibold text-sm pl-1.5 pr-3 py-1.5 rounded-xl transition-colors min-w-0 max-w-[75vw]"
-        >
-          {last.cover
-            ? <img src={last.cover} alt="" className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
-            : <Images className="w-5 h-5 flex-shrink-0 ml-1" />}
-          <span className="flex-shrink-0">Таны цомог</span>
-          <span className="font-normal truncate hidden sm:inline">· {last.name}</span>
-        </button>
-        {albums.length > 1 && (
+        {history.length > 0 && (
           <button
-            onClick={() => setOpen(o => !o)}
-            title="Бусад цомог"
-            className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-stone-300"
+            onClick={() => navigate('/my-purchases')}
+            title="Төлсөн захиалга — зургаа татах"
+            className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-emerald-400/40 text-emerald-300 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
           >
-            <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+            <Receipt className="w-4 h-4" /> Төлсөн
           </button>
         )}
-        <button
-          onClick={() => { clearVisitedAlbums(); setOpen(false); setAlbums([]); }}
-          title="Хаах"
-          aria-label="«Таны цомог» товчийг хаах"
-          className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-stone-400 hover:text-white flex-shrink-0"
-        >
-          <X className="w-4 h-4" />
-        </button>
-        {open && (
-          <div className="absolute right-4 sm:right-6 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] bg-stone-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden z-50">
-            {albums.map(a => (
-              <button
-                key={a.id}
-                onClick={() => { setOpen(false); navigate(`/album/${a.link}`); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 text-left"
-              >
-                {a.cover
-                  ? <img src={a.cover} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
-                  : <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0"><Images className="w-4 h-4 text-stone-400" /></div>}
-                <span className="text-stone-200 text-sm truncate">{a.name}</span>
-              </button>
-            ))}
-          </div>
+        {undl > 0 && (
+          <button
+            onClick={() => navigate('/my-purchases')}
+            className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
+          >
+            Татаагүй {undl} зураг →
+          </button>
         )}
       </div>
     </div>

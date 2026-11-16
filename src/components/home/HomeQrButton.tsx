@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ScanLine } from 'lucide-react';
+import { KeyRound, ScanLine } from 'lucide-react';
 import { normalizeCode } from '../../lib/albumCode';
 
 const QrScanModal = lazy(() => import('../QrScanModal'));
@@ -51,6 +51,11 @@ export default function HomeQrButton({ className = '' }: { className?: string })
             hint="QR кодыг дөрвөлжин хүрээнд оруулна уу. Эсвэл утасныхаа зургийн цомгоос QR-ийн зургийг оруулна."
             onCode={onCode}
             onClose={() => setOpen(false)}
+            secondary={{
+              label: 'Цомгийн код оруулах',
+              icon: <KeyRound className="w-4 h-4 text-amber-400 flex-shrink-0" />,
+              onClick: () => { setOpen(false); navigate('/c'); },
+            }}
           />
         </Suspense>
       )}

@@ -38,3 +38,29 @@ export function everyDownloaded(ids: string[], downloaded: Iterable<string>): bo
   const got = downloaded instanceof Set ? downloaded : new Set(downloaded);
   return ids.every(id => got.has(id));
 }
+
+/** Төлсөн ч татаж амжаагүй зургийн тоо (сервер download_count = 0 ба энэ төхөөрөмж дээр тэмдэглэгдээгүй). */
+export async function undownloadedByInvoice(invoiceIds: string[]): Promise<{ invoice: string; count: number }[]> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/signed-urls`;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const ids = [...new Set(invoiceIds.filter(Boolean))].slice(-10);
+  return Promise.all(ids.map(async invoice => {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: anon, Authorization: `Bearer ${anon}` },
+        body: JSON.stringify({ invoiceId: invoice }),
+      });
+      const body = await res.json().catch(() => ({}));
+      const local = new Set(readDownloadedIds(invoice));
+      const items = (body.signedUrls ?? []) as { purchaseId: string; type: string; signedUrl?: string; expired?: boolean; downloadCount?: number }[];
+      const count = items.filter(u => u.type === 'download' && u.signedUrl && !u.expired
+        && !(Number(u.downloadCount) > 0) && !local.has(u.purchaseId)).length;
+      return { invoice, count };
+    } catch { return { invoice, count: 0 }; }
+  }));
+}
+
+export async function countUndownloaded(invoiceIds: string[]): Promise<number> {
+  return (await undownloadedByInvoice(invoiceIds)).reduce((n, r) => n + r.count, 0);
+}
