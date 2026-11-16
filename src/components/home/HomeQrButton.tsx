@@ -48,7 +48,7 @@ export default function HomeQrButton({ className = '' }: { className?: string })
         <Suspense fallback={null}>
           <QrScanModal
             title="QR уншуулах"
-            hint="QR кодыг дөрвөлжин хүрээнд оруулна уу. Эсвэл QR-ийн зургийг галерейгаас сонгоно."
+            hint="QR кодыг дөрвөлжин хүрээнд оруулна уу. Эсвэл утасныхаа зургийн цомгоос QR-ийн зургийг оруулна."
             onCode={onCode}
             onClose={() => setOpen(false)}
           />
