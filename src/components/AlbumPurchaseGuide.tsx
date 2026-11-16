@@ -14,7 +14,7 @@ import PrintEditor from './PrintEditor';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
-import { listPurchaseHistory } from '../lib/purchaseHistory';
+import { addPurchaseHistory, listPurchaseHistory } from '../lib/purchaseHistory';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -86,6 +86,8 @@ export default function AlbumPurchaseGuide({
   const [allowEdit, setAllowEdit] = useState(true);
   // Төлсөн ч татаж амжаагүй зургууд — «Татах» хэсэгт буцааж хүргэх сануулга
   const [undl, setUndl] = useState<{ invoice: string; count: number }[]>([]);
+  const DEBUG = typeof window !== 'undefined' && /[?&]dbg=1/.test(window.location.search);
+  const [dbg, setDbg] = useState('');
   useEffect(() => {
     if (session.step === 'done' || session.step === 'pay') return;
     // Төлсөн нэхэмжлэхүүдийг бүх эх сурвалжаас: хөтчийн төлөв, эзэмшсэн зургууд, энэ цомгийн худалдан авалтын түүх
@@ -95,6 +97,7 @@ export default function AlbumPurchaseGuide({
       ...listPurchaseHistory().filter(h => h.albumId === album.id).map(h => h.invoiceId),
       ...(paidInvoice ? [paidInvoice] : []),
     ].filter(Boolean))].slice(-8);
+    if (DEBUG) setDbg(`step=${session.step} paid=${(session.paidInvoices ?? []).length} owned=${(session.owned ?? []).length} hist=${listPurchaseHistory().filter(h => h.albumId === album.id).length} inv=${invoices.map(i => i.slice(0, 6)).join(',')}`);
     if (!invoices.length) { setUndl([]); return; }
     let cancel = false;
     Promise.all(invoices.map(async inv => {
@@ -111,7 +114,11 @@ export default function AlbumPurchaseGuide({
           && !(Number(u.downloadCount) > 0) && !local.has(u.purchaseId)).length;
         return { invoice: inv, count };
       } catch { return { invoice: inv, count: 0 }; }
-    })).then(r => { if (!cancel) setUndl(r.filter(x => x.count > 0)); });
+    })).then(r => {
+      if (cancel) return;
+      setUndl(r.filter(x => x.count > 0));
+      if (DEBUG) setDbg(d => `${d} → ${r.map(x => `${x.invoice.slice(0, 6)}:${x.count}`).join(',')}`);
+    });
     return () => { cancel = true; };
   }, [session.step, album.id, session.paidInvoices?.length, session.owned?.length, paidInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
   const undlTotal = undl.reduce((n, u) => n + u.count, 0);
@@ -242,6 +249,18 @@ export default function AlbumPurchaseGuide({
     saveGuide(album.id, slim);
     setSession(s => ({ ...s, step: 'done', messages, paidInvoices: slim.paidInvoices, owned: slim.owned }));
     markGuidePaid(album.id, session.token, paidInvoice);
+    // «Төлсөн» түүхэнд шууд бичнэ — баримт нээгээгүй ч нүүр хуудас «Татаагүй N зураг»-ийг олно
+    try {
+      const total = session.choices.reduce((sum, c) => {
+        const ph = photos.find(p => p.id === c.photoId);
+        return sum + (c.download && ph ? dlPrice(ph, album, aiPrice) : 0);
+      }, 0);
+      addPurchaseHistory({
+        invoiceId: paidInvoice, albumId: album.id, albumName: album.name,
+        albumLink: window.location.pathname.replace(/^\/album\//, '').split('/')[0] || album.id,
+        total, downloads: n, prints: m, buyerName: session.name, paidAt: new Date().toISOString(),
+      });
+    } catch { /* */ }
   }, [paidInvoice, album.id, photos]);
 
   useEffect(() => {
@@ -979,6 +998,7 @@ export default function AlbumPurchaseGuide({
         </div>
       )}
 
+      {DEBUG && dbg && <p className="shrink-0 px-3 py-1 text-[10px] text-amber-300 break-all">{dbg}</p>}
       {session.step === 'browse' && (
         <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-3 bg-stone-950">
           {undlTotal > 0 && session.selected.length === 0 ? (
