@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
-import { isAndroid, isIOS, socialInAppName } from '../lib/browserEnv';
+import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
 import BankLinks, { type BankLink } from './BankLinks';
 import {
-  askHelpBot, clearGuide, dropGuideCartPhoto, guidePaySummary, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
-  type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep,
+  askHelpBot, downloadExpired, dropGuideCartPhoto, fetchLeadPurchases, groupOwned, guidePaySummary, loadGuide, markGuidePaid, mergeOwned, normalizeMnPhone, prepareGuideEntry, rememberPurchase, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
+  type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep, type OwnedPhoto,
 } from '../lib/albumGuide';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, writeDownloadedIds } from '../lib/receiptDownloads';
 
@@ -51,7 +51,7 @@ export default function AlbumPurchaseGuide({
   onPaid: (invoiceId: string) => void;
   onClose: () => void;
 }) {
-  const [session, setSession] = useState<GuideSession>(() => loadGuide(album.id));
+  const [session, setSession] = useState<GuideSession>(() => prepareGuideEntry(loadGuide(album.id), album.name));
   const [draft, setDraft] = useState('');
   const [name, setName] = useState(() => loadGuide(album.id).name);
   const [phone, setPhone] = useState(() => loadGuide(album.id).phone);
@@ -61,13 +61,17 @@ export default function AlbumPurchaseGuide({
   const [dlNote, setDlNote] = useState('');
   const [dlGot, setDlGot] = useState<Set<string>>(() => new Set(paidInvoice ? readDownloadedIds(paidInvoice) : []));
   const [licenseOk, setLicenseOk] = useState(false);
+  const [pastId, setPastId] = useState<string | null>(null);
+  const [pastNote, setPastNote] = useState('');
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState('');
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const onPaidRef = useRef(onPaid);
   const onInvoiceRef = useRef(onInvoiceCreated);
   onPaidRef.current = onPaid;
   onInvoiceRef.current = onInvoiceCreated;
-  type PaidFile = { purchaseId: string; signedUrl: string; filename: string; downloadCount?: number };
+  type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number };
   const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
@@ -166,6 +170,7 @@ export default function AlbumPurchaseGuide({
   useEffect(() => {
     if (!paidInvoice || paidOnce.current) return;
     paidOnce.current = true;
+    const session = sessionRef.current;
     const n = session.choices.filter(c => c.download).length;
     const m = session.choices.filter(c => c.print).length;
     const messages: GuideMsg[] = [
@@ -174,10 +179,33 @@ export default function AlbumPurchaseGuide({
       { role: 'bot', text: `Таны угаалгах зургууд: ${m}` },
       ...(n > 0 ? [{ role: 'bot' as const, text: `Таны татах зураг ${n} ширхэг байна. Татах уу?` }] : []),
     ];
-    setSession(s => ({ ...s, step: 'done', messages }));
-    clearGuide(album.id);
+    const bought = session.choices.flatMap(c => {
+      const photo = photos.find(p => p.id === c.photoId);
+      const filename = photo?.title || photo?.name || c.photoId;
+      const rows: { photoId: string; type: 'download' | 'print'; filename: string }[] = [];
+      if (c.download) rows.push({ photoId: c.photoId, type: 'download', filename });
+      if (c.print) rows.push({ photoId: c.photoId, type: 'print', filename });
+      return rows;
+    });
+    const slim = rememberPurchase(session, paidInvoice, bought);
+    saveGuide(album.id, slim);
+    setSession(s => ({ ...s, step: 'done', messages, paidInvoices: slim.paidInvoices, owned: slim.owned }));
     markGuidePaid(album.id, session.token, paidInvoice);
-  }, [paidInvoice, album.id, session.choices, session.messages, session.token]);
+  }, [paidInvoice, album.id, photos]);
+
+  useEffect(() => {
+    if (!session.known || !session.token) return;
+    let cancel = false;
+    fetchLeadPurchases(album.id, session.token).then(rows => {
+      if (cancel || !rows?.length) return;
+      setSession(s => {
+        const next = { ...s, owned: mergeOwned(s.owned ?? [], rows) };
+        saveGuide(album.id, next);
+        return next;
+      });
+    });
+    return () => { cancel = true; };
+  }, [album.id, session.known, session.token]);
 
   function go(step: GuideStep, extra: Partial<GuideSession> = {}, bot?: string) {
     const messages = bot ? [...session.messages, { role: 'bot' as const, text: bot }] : session.messages;
@@ -304,6 +332,51 @@ export default function AlbumPurchaseGuide({
   const total = lines.reduce((s, l) => s + l.price, 0);
   const ready = session.choices.length > 0 && session.choices.every(c => c.download || c.print);
 
+  async function redownload(item: OwnedPhoto) {
+    setPastNote('');
+    setDlBusy(true);
+    try {
+      const files = await loadPaidFiles(item.invoiceId);
+      const hit = files.find(f => (f.photoId && f.photoId === item.photoId) || f.filename === item.filename);
+      const expired = !hit || hit.expired || !hit.signedUrl || downloadExpired(hit.expiresAt);
+      if (expired) {
+        setSession(s => ({
+          ...s,
+          owned: (s.owned ?? []).map(o => o.photoId === item.photoId && o.invoiceId === item.invoiceId && o.type === 'download'
+            ? { ...o, expiresAt: hit?.expiresAt || '1970-01-01T00:00:00.000Z' }
+            : o),
+        }));
+        setPastNote('Татах хугацаа дууссан.');
+        return;
+      }
+      const blob = await (await fetch(hit.signedUrl)).blob();
+      const name = /\.(jpe?g|png|webp)$/i.test(hit.filename) ? hit.filename : `${hit.filename}.jpg`;
+      const how = await saveFilesToGallery([new File([blob], name, { type: blob.type || 'image/jpeg' })]);
+      if (how === 'cancelled') { setPastNote('Хадгалаагүй.'); return; }
+      setDlGot(new Set(writeDownloadedIds(item.invoiceId, [hit.purchaseId])));
+      setPastNote(how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : 'Зураг татагдлаа.');
+    } catch {
+      setPastNote('Дахин татаж чадсангүй.');
+    } finally {
+      setDlBusy(false);
+    }
+  }
+
+  function reprint(photoId: string) {
+    const photo = photos.find(p => p.id === photoId);
+    const opts = photo ? printOptions(photo) : [];
+    if (!opts.length) { setPastNote('Энэ зурагт угаалгах үнэ байхгүй.'); return; }
+    const choices: GuideChoice[] = [{ photoId, download: false, print: true, printSize: opts[0][0] }];
+    commit({
+      ...session,
+      selected: [photoId],
+      choices,
+      step: 'pay',
+      invoice: null,
+      messages: [...session.messages, { role: 'bot', text: guidePaySummary(session.name, 1, 0, 1, money(opts[0][1])) }],
+    });
+  }
+
   function beginPay() {
     if (!ready || total <= 0) return;
     const downloads = session.choices.filter(c => c.download).length;
@@ -393,8 +466,16 @@ export default function AlbumPurchaseGuide({
     const urls = (body.signedUrls ?? []) as { purchaseId?: string; signedUrl?: string; filename?: string; type?: string; expired?: boolean; downloadCount?: number }[];
     const files: PaidFile[] = [];
     for (const u of urls) {
-      if (u.type !== 'download' || !u.signedUrl || u.expired || !u.purchaseId) continue;
-      files.push({ purchaseId: u.purchaseId, signedUrl: u.signedUrl, filename: u.filename || 'zurag.jpg', downloadCount: u.downloadCount });
+      if (u.type !== 'download' || !u.purchaseId) continue;
+      files.push({
+        purchaseId: u.purchaseId,
+        photoId: typeof (u as { photoId?: string }).photoId === 'string' ? (u as { photoId?: string }).photoId : undefined,
+        signedUrl: u.signedUrl || '',
+        filename: u.filename || 'zurag.jpg',
+        expired: !!u.expired,
+        expiresAt: (u as { expiresAt?: string | null }).expiresAt ?? null,
+        downloadCount: u.downloadCount,
+      });
     }
     const counted = idsWithServerDownloads(files.map(f => ({ id: f.purchaseId, downloadCount: f.downloadCount })));
     if (counted.length) setDlGot(new Set(writeDownloadedIds(invoice, counted)));
@@ -413,10 +494,10 @@ export default function AlbumPurchaseGuide({
     setDlBusy(true);
     setDlNote('');
     try {
-      const known = dlFiles.length ? dlFiles : await loadPaidFiles(paidInvoice);
+      const known = (dlFiles.length ? dlFiles : await loadPaidFiles(paidInvoice)).filter(f => f.signedUrl && !f.expired);
       if (!dlFiles.length) setDlFiles(known);
       const targets = (only && only.length ? only : (everyDownloaded(known.map(f => f.purchaseId), dlGot) ? known : known.filter(f => !dlGot.has(f.purchaseId))));
-      const list = targets.length ? targets : known;
+      const list = (targets.length ? targets : known).filter(f => f.signedUrl && !f.expired);
       const files: File[] = [];
       const savedIds: string[] = [];
       for (const u of list) {
@@ -426,39 +507,17 @@ export default function AlbumPurchaseGuide({
           const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
           files.push(file);
           savedIds.push(u.purchaseId);
-          if (!isIOS) {
-            const href = URL.createObjectURL(file);
-            const a = document.createElement('a');
-            a.href = href; a.download = name;
-            document.body.appendChild(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(href), 60000);
-            await new Promise(r => setTimeout(r, 350));
-          }
         } catch { /* дараагийн зураг */ }
       }
       if (!files.length) { setDlNote('Татах холбоос хараахан бэлэн биш. Хэдэн секундийн дараа дахин дарна уу.'); return; }
-      if (isIOS) {
-        const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-        if (nav.canShare?.({ files }) || 'share' in navigator) {
-          try {
-            await navigator.share({ files });
-            noteGuideDownloaded(savedIds);
-            setDlNote('Нээгдсэн цонхноос «Save Image»-ийг дарж Photos руу хадгална уу.');
-            return;
-          } catch { /* fallback */ }
-        }
-        for (const file of files) {
-          const href = URL.createObjectURL(file);
-          const a = document.createElement('a');
-          a.href = href; a.download = file.name;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(href), 60000);
-        }
-      }
+      const savedHow = await saveFilesToGallery(files);
+      if (savedHow === 'cancelled') { setDlNote('Хадгалаагүй. «Галерей руу хадгалах»-ыг дахин дарна уу.'); return; }
       noteGuideDownloaded(savedIds);
-      setDlNote(isAndroid
-        ? 'Зургууд татагдлаа. Утасны Галерей эсвэл Downloads хавтсаас харна уу.'
-        : 'Таталт эхэллээ.');
+      setDlNote(savedHow === 'shared'
+        ? 'Нээгдсэн цонхноос «Save Image / Хадгалах»-ыг дарж галерей руу хийнэ үү.'
+        : (isAndroid
+          ? 'Зургууд татагдлаа. Утасны Галерей эсвэл Downloads хавтсаас харна уу.'
+          : 'Таталт эхэллээ.'));
     } catch {
       setDlNote('Татаж чадсангүй. Баримтын хуудаснаас дахин оролдоно уу.');
     } finally {
@@ -527,9 +586,45 @@ export default function AlbumPurchaseGuide({
         )}
 
         {session.step === 'greet' && (
-          <div className="flex gap-2 max-w-md mx-auto">
-            <button type="button" onClick={acceptYes} className="flex-1 bg-amber-500 text-stone-950 font-bold rounded-xl py-3">Тийм</button>
-            <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="flex-1 bg-white/10 rounded-xl py-3">Үгүй</button>
+          <div className="max-w-md mx-auto space-y-3">
+            <div className="flex gap-2">
+              <button type="button" onClick={acceptYes} className="flex-1 bg-amber-500 text-stone-950 font-bold rounded-xl py-3">Тийм</button>
+              <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="flex-1 bg-white/10 rounded-xl py-3">Үгүй</button>
+            </div>
+            {session.known && groupOwned(session.owned ?? []).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-stone-200">Таны өмнө авсан {groupOwned(session.owned ?? []).length} зураг энд байна</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {groupOwned(session.owned ?? []).map(row => {
+                    const photo = photos.find(p => p.id === row.photoId);
+                    const expired = !!row.download && downloadExpired(row.download.expiresAt);
+                    return (
+                      <button key={row.photoId} type="button" onClick={() => { setPastId(row.photoId); setPastNote(''); }}
+                        className={`relative aspect-square overflow-hidden rounded-xl bg-stone-900 ${pastId === row.photoId ? 'ring-2 ring-amber-400' : ''}`}>
+                        {photo?.watermarked_url && <img src={photo.watermarked_url} alt="" className="h-full w-full object-cover" />}
+                        {expired && <span className="absolute inset-x-0 bottom-0 bg-black/70 text-[10px] py-0.5">Хугацаа дууссан</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {pastId && (() => {
+                  const row = groupOwned(session.owned ?? []).find(r => r.photoId === pastId);
+                  if (!row) return null;
+                  const expired = !!row.download && downloadExpired(row.download.expiresAt);
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {row.download && (expired
+                        ? <p className="text-sm text-red-300">Татах хугацаа дууссан.</p>
+                        : <button type="button" disabled={dlBusy} onClick={() => redownload(row.download!)}
+                            className="rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm">Дахин татах</button>)}
+                      <button type="button" onClick={() => reprint(row.photoId)}
+                        className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
+                    </div>
+                  );
+                })()}
+                {pastNote && <p className="text-sm text-stone-300">{pastNote}</p>}
+              </div>
+            )}
           </div>
         )}
 
@@ -673,13 +768,14 @@ export default function AlbumPurchaseGuide({
         {session.step === 'done' && (
           <div className="max-w-md mx-auto space-y-3">
             {session.choices.some(c => c.download) && (() => {
-              const allGot = everyDownloaded(dlFiles.map(f => f.purchaseId), dlGot);
-              const label = allGot ? (dlFiles.length === 1 ? 'Татсан ✓' : 'Бүгдийг татсан ✓') : 'Татах';
+              const live = dlFiles.filter(f => f.signedUrl && !f.expired);
+              const allGot = everyDownloaded(live.map(f => f.purchaseId), dlGot);
+              const label = allGot ? (live.length === 1 ? 'Татсан ✓' : 'Бүгдийг татсан ✓') : 'Галерей руу хадгалах';
               return (
                 <>
                   {dlFiles.length > 0 && (
                     <div className="space-y-2">
-                      {dlFiles.map(f => {
+                      {live.map(f => {
                         const got = dlGot.has(f.purchaseId);
                         return (
                           <div key={f.purchaseId} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-2">
@@ -696,10 +792,10 @@ export default function AlbumPurchaseGuide({
                     </div>
                   )}
                   <button type="button" onClick={() => downloadPaid()} disabled={dlBusy}
-                    className={`w-full font-bold rounded-xl py-3.5 flex items-center justify-center gap-2 disabled:opacity-50 ${
+                    className={`w-full font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 ${
                       allGot
-                        ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300'
-                        : 'bg-amber-500 text-stone-950'
+                        ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300 py-3.5'
+                        : 'bg-amber-500 text-stone-950 text-base py-4'
                     }`}>
                     {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {label}
                   </button>

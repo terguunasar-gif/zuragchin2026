@@ -71,7 +71,42 @@ export async function copyText(text: string): Promise<boolean> {
   } catch { return false; }
 }
 
-export type SaveResult = 'shared' | 'downloaded' | 'manual';
+export type SaveResult = 'shared' | 'downloaded' | 'manual' | 'cancelled';
+
+/** Хөтөч галерей рүү чимээгүй бичиж чадахгүй. Файлаар хуваалцах боломжтой бол нэг цонхоор хадгална. */
+export function canShareFiles(files: File[]): boolean {
+  if (!files.length || typeof navigator === 'undefined' || !('share' in navigator)) return false;
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  try { return !!nav.canShare?.({ files }); } catch { return false; }
+}
+
+/**
+ * Утасны «Save Image / Хадгалах» цонх. Олон зургийг нэг хуваалцалтаар.
+ * Дэмжихгүй бол файл таталт руу буцна. Цуцалсан бол татсан гэж тэмдэглэхгүй.
+ */
+export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'downloaded' | 'cancelled'> {
+  if (!files.length) return 'downloaded';
+  if (canShareFiles(files)) {
+    try {
+      await navigator.share({ files });
+      return 'shared';
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled';
+    }
+  }
+  for (const file of files) {
+    const href = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 60000);
+    await new Promise(r => setTimeout(r, 350));
+  }
+  return 'downloaded';
+}
 
 /**
  * Зургийг утсанд хадгална:
@@ -94,12 +129,12 @@ export async function saveImageToDevice(
   try {
     const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-    if (isIOS && nav.canShare?.({ files: [file] })) {
+    if (nav.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file] });
       return { result: 'shared', blobUrl };
     }
   } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') return { result: 'shared', blobUrl };
+    if (e instanceof DOMException && e.name === 'AbortError') return { result: 'cancelled', blobUrl };
   }
 
   const a = document.createElement('a');

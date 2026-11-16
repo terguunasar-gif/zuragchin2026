@@ -7,7 +7,7 @@ import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
-import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
+import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, withoutDownloaded, writeDownloadedIds } from '../lib/receiptDownloads';
 
@@ -261,34 +261,28 @@ export default function ReceiptPage() {
         const p = list[i++];
         try {
           const f = await fetchFile(p);
-          if (f) {
-            saved.push({ id: p.id, file: f });
-            // iPhone биш бол шууд нэг нэгээр нь татна
-            if (!isIOS) {
-              const url = URL.createObjectURL(f);
-              const a = document.createElement('a');
-              a.href = url; a.download = f.name;
-              document.body.appendChild(a); a.click(); a.remove();
-              setTimeout(() => URL.revokeObjectURL(url), 60000);
-              await new Promise(r => setTimeout(r, 350));
-            }
-          } else failed++;
+          if (f) saved.push({ id: p.id, file: f });
+          else failed++;
         } catch { failed++; }
         setBulk(b => (b ? { ...b, done: b.done + 1 } : b));
       }
     };
     await Promise.all([worker(), worker(), worker()]);
     setBulk(null);
-    if (isIOS) {
-      // Хуваалцах цонх хэрэглэгчийн товшилтоор нээгдэх ёстой → «Хадгалах» товч гаргана (10-аар багцлана)
-      const chunks: { id: string; file: File }[][] = [];
-      for (let k = 0; k < saved.length; k += 10) chunks.push(saved.slice(k, k + 10));
-      setReady(chunks);
-    } else {
-      noteDownloaded(saved.map(s => s.id));
-      setBulkMsg(t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: saved.length })
-        + (failed ? ' ' + t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : ''));
+    if (!saved.length) {
+      setBulkMsg(failed ? t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : '');
+      return;
     }
+    const savedHow = await saveFilesToGallery(saved.map(s => s.file));
+    if (savedHow === 'cancelled') {
+      setBulkMsg(t('Хадгалаагүй. Дахин дарна уу.'));
+      return;
+    }
+    noteDownloaded(saved.map(s => s.id));
+    const failNote = failed ? ' ' + t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : '';
+    setBulkMsg((savedHow === 'shared'
+      ? t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгоно уу.')
+      : t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: saved.length })) + failNote);
   }
 
   async function saveChunk(idx: number) {
