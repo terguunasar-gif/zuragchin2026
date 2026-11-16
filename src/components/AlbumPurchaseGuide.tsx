@@ -835,7 +835,7 @@ export default function AlbumPurchaseGuide({
               <Images className="w-4 h-4 text-amber-400" /> Цомог руу буцаж зураг нэмэх
             </button>
             <p className="text-right font-bold">Нийт {money(total)}</p>
-            <button type="button" disabled={!ready || total <= 0} onClick={beginPay}
+            <button id="zm-guide-pay" type="button" disabled={!ready || total <= 0} onClick={beginPay}
               className="w-full bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
               {total > 0 ? `QPay-ээр төлөх · ${money(total)}` : 'Үнэ байхгүй'}
             </button>
@@ -1064,6 +1064,7 @@ export default function AlbumPurchaseGuide({
                 save: async a => { setChoice(c.photoId, isPr ? { editPr: a } : { editDl: a }); },
               }}
               onClose={() => setEditTarget(null)}
+              onSaved={() => { setEditTarget(null); setTimeout(() => document.getElementById('zm-guide-pay')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80); }}
             />
           </div>
         );

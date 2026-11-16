@@ -19,7 +19,9 @@ const PREVIEW_MAX = 1400;
  * Угаалгах захиалгын зургийг хэвлэхээс өмнө гэрэл, сүүдэр, өнгийг тохируулах цонх.
  * Засвар хадгалагдаж, дараагийн «Принт» бүрт эх зурагт хэрэгжинэ (эх файл өөрчлөгдөхгүй).
  */
-export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note, brand: brandProp, formats }: {
+export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note, brand: brandProp, formats, onSaved }: {
+  /** Амжилттай хадгалсны дараа (жишээ нь цонхыг хаагаад төлбөр рүү буцах) */
+  onSaved?: () => void;
   /** Татах горимд санал болгох хэвлэх хэмжээнүүд (зурагчны цомогт тохируулсан) */
   formats?: string[];
   /** Цомгийн брэнд давхарга (watermark_value) — эцсийн байрлалд нь тогтмол харуулна */
@@ -174,6 +176,7 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
       await (source ? source.save(clean(adjust)) : savePrintAdjust(purchaseId, clean(adjust)));
       setSavedAdjust(adjust);
       setSavedMsg('Хадгалагдлаа ✓');
+      onSaved?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
     } finally {
@@ -349,7 +352,7 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
             </p>
           )}
           <div className={`grid ${onPrint ? 'grid-cols-[1fr_1.6fr]' : 'grid-cols-1'} gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
-            <button type="button" onClick={save} disabled={saving || disabled || !dirty}
+            <button type="button" onClick={() => (!dirty && onSaved ? onSaved() : save())} disabled={saving || disabled || (!dirty && !onSaved)}
               className="flex items-center justify-center gap-1.5 border border-white/15 text-white text-sm rounded-xl py-3 disabled:opacity-40">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Хадгалах
             </button>
