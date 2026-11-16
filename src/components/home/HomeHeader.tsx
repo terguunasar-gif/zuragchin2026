@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../../lib/visitedAlbums';
 import { BrandLogo } from '../BrandMark';
+import HomeQrButton from './HomeQrButton';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -185,13 +186,14 @@ function MyAlbumsBar() {
   if (albums.length === 0) {
     return (
       <div className="border-t border-white/5 bg-stone-950/95">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end">{codeBtn}</div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2"><HomeQrButton />{codeBtn}</div>
       </div>
     );
   }
   return (
     <div className="border-t border-white/5 bg-stone-950/95">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2 relative">
+        <HomeQrButton />
         {codeBtn}
         <button
           onClick={() => navigate(`/album/${last.link}`)}
