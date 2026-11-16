@@ -7,6 +7,8 @@ import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
 import { listPurchaseHistory, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
 import { cachedUndownloaded, undownloadedByInvoice } from '../../lib/receiptDownloads';
+import { listAllLater } from '../../lib/savedLater';
+import { listVisitedAlbums } from '../../lib/visitedAlbums';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -176,6 +178,16 @@ function MyAlbumsBar() {
   // Кэшээс шууд, дараа нь серверээс шинэчилнэ (алдаа гарвал кэш хэвээр)
   const [undlList, setUndlList] = useState(() => cachedUndownloaded(history.map(h => h.invoiceId)));
   const undl = undlList.reduce((n, r) => n + r.count, 0);
+  // Түр хадгалсан зургууд — хамгийн сүүлд үзсэн цомгоос нь эхэлнэ
+  const [laterInfo] = useState(() => {
+    const all = listAllLater();
+    const visited = listVisitedAlbums();
+    const withLink = visited.filter(v => all.some(a => a.albumId === v.id));
+    const total = all.filter(a => visited.some(v => v.id === a.albumId)).reduce((n, a) => n + a.ids.length, 0);
+    return { target: withLink[0] ?? null, total };
+  });
+  const laterTarget = laterInfo.target;
+  const laterTotal = laterInfo.total;
   useEffect(() => {
     if (!history.length) return;
     let cancel = false;
@@ -199,9 +211,18 @@ function MyAlbumsBar() {
           <button
             // Нэг захиалга бол шууд баримт (татах хэсэг), олон бол төлсөн жагсаалт
             onClick={() => navigate(undlList.length === 1 ? `/receipt/${undlList[0].invoice}` : '/my-purchases')}
-            className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
+            className="flex flex-col items-center justify-center leading-tight border border-emerald-400/70 bg-emerald-500/10 text-emerald-300 font-semibold text-[11px] px-2.5 py-1 rounded-xl flex-shrink-0"
           >
-            Татаагүй {undl} зураг →
+            <span>Татаагүй</span><span>зураг {undl}</span>
+          </button>
+        )}
+        {laterTarget && (
+          <button
+            // Түр хадгалсан цомог руу → QPay төлөхөд бэлэн хэсэг
+            onClick={() => navigate(`/album/${laterTarget.link}?later=1`)}
+            className="flex flex-col items-center justify-center leading-tight border border-sky-400/70 bg-sky-500/10 text-sky-200 font-semibold text-[11px] px-2.5 py-1 rounded-xl flex-shrink-0"
+          >
+            <span>Түр хадгалсан</span><span>зураг {laterTotal}</span>
           </button>
         )}
       </div>
