@@ -7,7 +7,7 @@ import { inAppBrowserName, isAndroid, isIOS } from '../lib/browserEnv';
 /**
  * QR уншуулах цонх:
  *  • утасны камераар тасралтгүй уншина (ижил кодыг 3 секундын дотор давтан тоолохгүй)
- *  • «Зургаас унших» — галерейд хадгалсан QR зургийг сонгож уншуулна
+ *  • «Зургийн цомгоос QR оруулах» — галерейд хадгалсан QR зургийг сонгож уншуулна
  *  • камерын зөвшөөрөл хаалттай бол утас/хөтөч бүрт хэрхэн нээхийг алхам алхмаар зааж өгнө
  * onCode нь хэрэглэгчид харуулах мессеж буцаана.
  */
@@ -236,8 +236,8 @@ export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
                   )}
                 </>
               )}
-              {cam === 'nocamera' && <p>Энэ төхөөрөмжид камер олдсонгүй. QR-ийн зургийг доорх «Зургаас унших» товчоор сонгож уншуулна уу.</p>}
-              {cam === 'unsupported' && <p>Энэ хөтөч камер ашиглахыг зөвшөөрөхгүй байна. Chrome эсвэл Safari-гаар нээх, эсвэл QR-ийн зургийг доорх «Зургаас унших» товчоор сонгоно уу.</p>}
+              {cam === 'nocamera' && <p>Энэ төхөөрөмжид камер олдсонгүй. QR-ийн зургийг доорх «Зургийн цомгоос QR оруулах» товчоор сонгож уншуулна уу.</p>}
+              {cam === 'unsupported' && <p>Энэ хөтөч камер ашиглахыг зөвшөөрөхгүй байна. Chrome эсвэл Safari-гаар нээх, эсвэл QR-ийн зургийг доорх «Зургийн цомгоос QR оруулах» товчоор сонгоно уу.</p>}
               <p className="text-stone-400">Эсвэл QR-ийн <b>screenshot / зургийг</b> галерейгаас сонгож уншуулж болно 👇</p>
               {cam !== 'nocamera' && (
                 <button onClick={() => setAttempt(a => a + 1)}
@@ -262,7 +262,7 @@ export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
         <button onClick={() => fileRef.current?.click()} disabled={reading}
           className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 disabled:opacity-60 text-white font-semibold py-3 rounded-xl">
           {reading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageUp className="w-4 h-4 text-amber-400" />}
-          {reading ? 'Уншиж байна…' : 'Зургаас унших (галерей)'}
+          {reading ? 'Уншиж байна…' : 'Зургийн цомгоос QR оруулах'}
         </button>
         {footer}
       </div>
