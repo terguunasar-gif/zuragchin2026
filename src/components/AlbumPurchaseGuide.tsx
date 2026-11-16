@@ -67,6 +67,8 @@ export default function AlbumPurchaseGuide({
   const [formErr, setFormErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
+  // Олон зураг татах явц — утас гацаагүйг харуулна
+  const [dlProg, setDlProg] = useState<{ done: number; total: number; saving?: boolean } | null>(null);
   const [dlNote, setDlNote] = useState('');
   const [dlGot, setDlGot] = useState<Set<string>>(() => new Set(paidInvoice ? readDownloadedIds(paidInvoice) : []));
   const [licenseOk, setLicenseOk] = useState(false);
@@ -625,7 +627,11 @@ export default function AlbumPurchaseGuide({
       const list = (targets.length ? targets : known).filter(f => f.signedUrl && !f.expired);
       const files: File[] = [];
       const savedIds: string[] = [];
+      setDlProg({ done: 0, total: list.length });
+      let n = 0;
       for (const u of list) {
+        n += 1;
+        setDlProg({ done: n, total: list.length });
         try {
           let blob = await (await fetch(u.signedUrl)).blob();
           // засвар (байвал) → цомгийн лого
@@ -638,6 +644,7 @@ export default function AlbumPurchaseGuide({
         } catch { /* дараагийн зураг */ }
       }
       if (!files.length) { setDlNote('Татах холбоос хараахан бэлэн биш. Хэдэн секундийн дараа дахин дарна уу.'); return; }
+      setDlProg({ done: files.length, total: list.length, saving: true });
       const savedHow = await saveFilesToGallery(files);
       if (savedHow === 'cancelled') { setDlNote('Хадгалаагүй. «Галерей руу хадгалах»-ыг дахин дарна уу.'); return; }
       noteGuideDownloaded(savedIds);
@@ -650,6 +657,7 @@ export default function AlbumPurchaseGuide({
       setDlNote('Татаж чадсангүй. Баримтын хуудаснаас дахин оролдоно уу.');
     } finally {
       setDlBusy(false);
+      setDlProg(null);
     }
   }
 
@@ -1007,18 +1015,26 @@ export default function AlbumPurchaseGuide({
                               : 'bg-amber-500 text-stone-950 text-base py-4'
                           }`}>
                           {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                          {chosen.length === 0 ? 'Татах зургаа сонгоно уу'
+                          {dlProg ? (dlProg.saving ? `Галерей руу хадгалж байна… ${dlProg.done} зураг` : `Татаж байна… ${dlProg.done} / ${dlProg.total}`)
+                            : chosen.length === 0 ? 'Татах зургаа сонгоно уу'
                             : chosen.every(f => dlGot.has(f.purchaseId)) ? `Дахин татах · ${chosen.length} зураг`
                             : `${chosen.length} зураг галерей руу татах`}
                         </button>
-                        {allGot && <p className="text-center text-emerald-300 text-sm">{label}</p>}
+                        {dlProg && (
+                          <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden" aria-hidden>
+                            <div className="h-full bg-amber-400 transition-all duration-300"
+                              style={{ width: `${Math.round(((dlProg.saving ? dlProg.total : Math.max(0, dlProg.done - 1)) / Math.max(1, dlProg.total)) * 100)}%` }} />
+                          </div>
+                        )}
+                        {allGot && !dlProg && <p className="text-center text-emerald-300 text-sm">{label}</p>}
                       </>
                     );
                   })()}
                   {live.length === 0 && (
                     <button type="button" onClick={() => downloadPaid()} disabled={dlBusy}
                       className="w-full font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 bg-amber-500 text-stone-950 text-base py-4">
-                      {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Галерей руу хадгалах
+                      {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {dlProg ? (dlProg.saving ? `Галерей руу хадгалж байна… ${dlProg.done} зураг` : `Татаж байна… ${dlProg.done} / ${dlProg.total}`) : 'Галерей руу хадгалах'}
                     </button>
                   )}
                 </>
