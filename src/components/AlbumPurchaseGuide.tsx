@@ -827,6 +827,15 @@ export default function AlbumPurchaseGuide({
             {paidInvoice && (
               <a href={`/receipt/${paidInvoice}`} className="block text-center text-amber-300 text-sm underline">Баримт үзэх</a>
             )}
+            <button type="button"
+              onClick={() => {
+                go('browse', { folderId: null, selected: [], choices: [], invoice: null },
+                  'Цомгийн зургууд. Дахин авах зургаа тэмдэглээд «Сонгож дууслаа» дарна уу.');
+                setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl py-3 text-sm font-semibold">
+              <Images className="w-4 h-4 text-amber-400" /> Цомог руу буцах
+            </button>
           </div>
         )}
       </div>
