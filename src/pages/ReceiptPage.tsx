@@ -9,6 +9,8 @@ import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
+import { hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
+import PrintEditor from '../components/PrintEditor';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, withoutDownloaded, writeDownloadedIds } from '../lib/receiptDownloads';
 
 async function blobUrlToDataUrl(u: string): Promise<string> {
@@ -71,6 +73,10 @@ interface SignedUrlItem {
   brand?: string;
   /** Сервер дээрх таталтын тоо. 0-ээс их бол энэ төхөөрөмж дээр татсан гэж үзнэ. */
   downloadCount?: number;
+  /** Худалдан авагчийн хадгалсан засвар (тайралт, гэрэл/өнгө) */
+  adjust?: PhotoAdjust & PrintCrop;
+  /** Засах боломжтой эсэх (цомгийн тохиргоо, угаалгах төлөв/хугацаа) */
+  canEdit?: boolean;
 }
 
 /** Үлдсэн хугацааг «5 хоног 3 цаг» хэлбэрээр */
@@ -231,6 +237,29 @@ export default function ReceiptPage() {
   const [ready, setReady] = useState<{ id: string; file: File }[][]>([]); // iPhone: хадгалахад бэлэн багцууд
   const [bulkMsg, setBulkMsg] = useState('');
 
+  // ── Худалдан авагчийн засвар ─────────────────────────────────────────
+  const [editing, setEditing] = useState<PurchaseRow | null>(null);
+  async function saveBuyerAdjust(purchaseId: string, adjust: PhotoAdjust & PrintCrop) {
+    const res = await fetch(`${QPAY_FN_URL}/buyer-adjust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ invoiceId, purchaseId, adjust }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t('Хадгалж чадсангүй'));
+    setSignedUrls(list => list.map(u => (u.purchaseId === purchaseId ? { ...u, adjust: data.adjust ?? adjust } : u)));
+  }
+  /** Татах файлд: засвар (байвал) → цомгийн лого */
+  function transformFor(u: SignedUrlItem, filename: string, original = false) {
+    const adj = original ? null : u.adjust;
+    if (!hasEdit(adj) && !u.brand) return undefined;
+    return async (b: Blob) => {
+      let out = hasEdit(adj) ? await preparePrintBlob(b, 'original', adj!) : b;
+      if (u.brand) out = await applyBrandToPurchase(out, u.brand, filename);
+      return out;
+    };
+  }
+
   async function fetchFile(p: PurchaseRow): Promise<File | null> {
     const u = signedUrls.find(x => x.purchaseId === p.id);
     if (!u?.signedUrl) return null;
@@ -239,7 +268,8 @@ export default function ReceiptPage() {
     const res = await fetch(u.signedUrl);
     if (!res.ok) throw new Error('fetch');
     let blob = await res.blob();
-    if (u.brand) blob = await applyBrandToPurchase(blob, u.brand, raw);
+    const tf = transformFor(u, raw);
+    if (tf) blob = await tf(blob);
     return new File([blob], name, { type: blob.type || 'image/jpeg' });
   }
 
@@ -305,22 +335,23 @@ export default function ReceiptPage() {
   }
 
   /** Зургийг утасны галерей / компьютерт хадгална */
-  async function handleDownload(p: PurchaseRow) {
-    const urlItem  = signedUrls.find(u => u.purchaseId === p.id);
+  async function handleDownload(p: PurchaseRow, original = false, adjustOverride?: PhotoAdjust & PrintCrop) {
+    const found    = signedUrls.find(u => u.purchaseId === p.id);
+    const urlItem  = found && adjustOverride ? { ...found, adjust: adjustOverride } : found;
     const filename = urlItem?.filename || p.photo_uploads?.filename || `zuragchin_${p.id.slice(0, 8)}`;
     if (!urlItem?.signedUrl) return;
     setDownloading(prev => ({ ...prev, [p.id]: true }));
     try {
       const brand = urlItem.brand ?? '';
-      const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename,
-        brand ? b => applyBrandToPurchase(b, brand, filename) : undefined);
+      const tf = transformFor(urlItem, filename, original);
+      const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename, tf);
       // Апп доторх хөтөч эсвэл Android дээр — зургийг томоор харуулж заавар өгнө
       if (result === 'downloaded' || result === 'shared') noteDownloaded([p.id]);
       if (result === 'manual' || result === 'downloaded') {
         // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоос
         // (логотой бол data URL) харуулна
         let manualUrl = urlItem.signedUrl;
-        if (result === 'manual' && brand && blobUrl) manualUrl = await blobUrlToDataUrl(blobUrl).catch(() => urlItem.signedUrl);
+        if (result === 'manual' && (brand || tf) && blobUrl) manualUrl = await blobUrlToDataUrl(blobUrl).catch(() => urlItem.signedUrl);
         setViewer({ url: result === 'manual' ? manualUrl : (blobUrl || urlItem.signedUrl), name: filename, hint: result });
       }
     } catch {
@@ -593,6 +624,19 @@ export default function ReceiptPage() {
                       {isPaid && (
                         <p className="text-green-400 text-xs mt-0.5">{t('✓ Усан тэмдэггүй')}</p>
                       )}
+                      {canDownload && (urlItem?.canEdit || hasEdit(urlItem?.adjust)) && (
+                        <p className="flex items-center gap-2 mt-1 text-xs">
+                          {urlItem?.canEdit && (
+                            <button onClick={() => setEditing(p)} className="text-amber-300 hover:text-amber-200 font-semibold">✂ {t('Засах')}</button>
+                          )}
+                          {hasEdit(urlItem?.adjust) && (
+                            <>
+                              <span className="text-sky-300">{t('Засварласан')}</span>
+                              <button onClick={() => handleDownload(p, true)} className="text-stone-400 hover:text-white underline">{t('Эх зургийг татах')}</button>
+                            </>
+                          )}
+                        </p>
+                      )}
                     </div>
 
                     {canDownload ? (
@@ -658,6 +702,16 @@ export default function ReceiptPage() {
                         <p className="text-stone-400 text-xs">
                           {PRINT_SIZE_LABELS[p.print_size] ?? p.print_size} — ₮{Number(p.gross_amount).toLocaleString()}
                         </p>
+                        {(() => {
+                          const u = signedUrls.find(x => x.purchaseId === p.id);
+                          if (!u || (!u.canEdit && !hasEdit(u.adjust))) return null;
+                          return (
+                            <p className="flex items-center gap-2 mt-1 text-xs">
+                              {u.canEdit && <button onClick={() => setEditing(p)} className="text-amber-300 hover:text-amber-200 font-semibold">✂ {t('Хэвлэх хэлбэрийг засах')}</button>}
+                              {hasEdit(u.adjust) && <span className="text-sky-300">{t('Засварласан')}</span>}
+                            </p>
+                          );
+                        })()}
                       </div>
                       {p.payment_status === 'paid' && (
                         <span className={`text-xs font-medium px-2 py-1 rounded-lg flex-shrink-0 ${
@@ -752,6 +806,37 @@ export default function ReceiptPage() {
           </div>
         </div>
       )}
+
+      {editing && (() => {
+        const u = signedUrls.find(x => x.purchaseId === editing.id);
+        const isPrintRow = editing.type === 'print';
+        return (
+          <PrintEditor
+            purchaseId={editing.id}
+            title={editing.photo_uploads?.filename}
+            heading={isPrintRow ? t('Хэвлэх хэлбэрийг засах') : t('Зургаа засах')}
+            note={isPrintRow
+              ? t('Зурагчин угаахдаа энэ засварыг ашиглана. Урьдчилан харахад усан тэмдэг харагдах ч хэвлэгдэхгүй.')
+              : t('Татахад засварласан хувилбар гарна. Урьдчилан харахад усан тэмдэг харагдах ч татсан зурагт байхгүй.')}
+            source={{
+              load: async () => ({
+                url: editing.photo_uploads?.preview_url ?? '',
+                size: isPrintRow ? editing.print_size : 'original',
+                adjust: u?.adjust ?? {},
+              }),
+              save: a => saveBuyerAdjust(editing.id, a),
+            }}
+            actionLabel={isPrintRow ? undefined : t('Хадгалаад татах')}
+            onPrint={isPrintRow ? undefined : (a => {
+              const row = editing;
+              setSignedUrls(list => list.map(x => (x.purchaseId === row.id ? { ...x, adjust: a } : x)));
+              setEditing(null);
+              void handleDownload(row, false, a);
+            })}
+            onClose={() => setEditing(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

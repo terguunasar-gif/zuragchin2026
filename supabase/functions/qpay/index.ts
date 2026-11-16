@@ -862,15 +862,7 @@ Deno.serve(async (req: Request) => {
       if (p.type !== "print" || p.payment_status !== "paid") return json({ error: "Зөвхөн төлөгдсөн угаалгах захиалга" }, 400);
       const { data: album } = await db.from("albums").select("owner_id").eq("id", p.album_id).maybeSingle();
       if (p.photographer_id !== uid && album?.owner_id !== uid && !(await isAdmin(db, uid))) return json({ error: "Эрх хүрэлцэхгүй" }, 403);
-      const clean: Record<string, number> = {};
-      for (const k of PRINT_ADJUST_KEYS) {
-        const v = Math.round(Number(adjust?.[k]) || 0);
-        if (v) clean[k] = Math.max(-100, Math.min(100, v));
-      }
-      for (const [k, lo, hi] of PRINT_CROP_KEYS) {
-        const v = Math.round(Number(adjust?.[k]) || 0);
-        if (v) clean[k] = Math.max(lo, Math.min(hi, v));
-      }
+      const clean = sanitizeAdjust(adjust);
       const { error } = await db.storage.from("purchases").upload(`adjust/${p.id}.json`,
         new Blob([JSON.stringify({ ...clean, by: uid, at: new Date().toISOString() })], { type: "application/json" }),
         { upsert: true, contentType: "application/json" });
@@ -910,6 +902,35 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Худалдан авсан зургийн татах холбоосууд (төлсний дараа 14 хоног) ──
+    // ── Худалдан авагч зургаа засах (тайрах, гэрэл/өнгө): баримтын холбоосоор (invoice) эрх шалгана ──
+    if (req.method === "POST" && path === "/buyer-adjust") {
+      const { invoiceId, purchaseId, adjust } = await req.json() as { invoiceId: string; purchaseId: string; adjust: Record<string, unknown> };
+      if (!invoiceId || !purchaseId) return json({ error: "Мэдээлэл дутуу" }, 400);
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      let pr = await db.from("purchases").select("id, type, payment_status, qpay_invoice_id, album_id, print_status, download_expires_at").eq("id", purchaseId).maybeSingle();
+      if (pr.error) pr = await db.from("purchases").select("id, type, payment_status, qpay_invoice_id, album_id").eq("id", purchaseId).maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const p = pr.data as any;
+      if (!p || p.qpay_invoice_id !== invoiceId || p.payment_status !== "paid") return json({ error: "Захиалга олдсонгүй" }, 404);
+      let aq = await db.from("albums").select("allow_buyer_edit, print_deadline").eq("id", p.album_id).maybeSingle();
+      if (aq.error) aq = await db.from("albums").select("print_deadline").eq("id", p.album_id).maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const a = (aq.data ?? {}) as any;
+      if (a.allow_buyer_edit === false) return json({ error: "Энэ цомогт засвар хийх боломжгүй" }, 403);
+      if (p.type === "print") {
+        if (p.print_status && p.print_status !== "pending") return json({ error: "Зураг аль хэдийн угаагдсан тул засах боломжгүй" }, 409);
+        if (a.print_deadline && new Date(a.print_deadline).getTime() < Date.now()) return json({ error: "Угаалгах хугацаа дууссан" }, 409);
+      } else if (p.download_expires_at && new Date(p.download_expires_at).getTime() < Date.now()) {
+        return json({ error: "Татах хугацаа дууссан" }, 410);
+      }
+      const clean = sanitizeAdjust(adjust);
+      const { error } = await db.storage.from("purchases").upload(`adjust/${p.id}.json`,
+        new Blob([JSON.stringify({ ...clean, by: "buyer", at: new Date().toISOString() })], { type: "application/json" }),
+        { upsert: true, contentType: "application/json" });
+      if (error) return json({ error: "Хадгалж чадсангүй: " + error.message }, 500);
+      return json({ ok: true, adjust: clean });
+    }
+
     if (req.method === "POST" && path === "/signed-urls") {
       const { invoiceId } = await req.json() as { invoiceId: string };
       if (!invoiceId) return json({ error: "invoiceId дутуу" }, 400);
@@ -917,7 +938,7 @@ Deno.serve(async (req: Request) => {
 
       let res = await db
         .from("purchases")
-        .select("id, photo_id, album_id, type, download_expires_at, download_count, photo_uploads(original_url, filename)")
+        .select("id, photo_id, album_id, type, download_expires_at, download_count, print_status, photo_uploads(original_url, filename)")
         .eq("qpay_invoice_id", invoiceId)
         .eq("payment_status", "paid");
       if (res.error) {
@@ -944,7 +965,25 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const signedUrls: { purchaseId: string; photoId?: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number }[] = [];
+      // Худалдан авагч зургаа засах эрх (цомгийн тохиргоо + угаалгах хугацаа/төлөв)
+      const editByAlbum: Record<string, { allow: boolean; printOpen: boolean }> = {};
+      if (albumIds.length) {
+        let q = await db.from("albums").select("id, allow_buyer_edit, print_deadline").in("id", albumIds);
+        if (q.error) q = await db.from("albums").select("id, print_deadline").in("id", albumIds);
+        if (q.error) q = await db.from("albums").select("id").in("id", albumIds);
+        // deno-lint-ignore no-explicit-any
+        for (const a of (q.data ?? []) as any[]) {
+          editByAlbum[a.id] = {
+            allow: a.allow_buyer_edit !== false,
+            printOpen: !a.print_deadline || new Date(a.print_deadline).getTime() > Date.now(),
+          };
+        }
+      }
+      const adjusts = await Promise.all(purchases.map(p => readPrintAdjust(db, p.id)));
+      const adjustById: Record<string, Record<string, number>> = {};
+      purchases.forEach((p, i) => { adjustById[p.id] = adjusts[i]; });
+
+      const signedUrls: { purchaseId: string; photoId?: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number; adjust?: Record<string, number>; canEdit?: boolean }[] = [];
       for (const p of purchases) {
         if (p.type === "download" && p.photo_uploads?.original_url) {
           const expiresAt: string | null = p.download_expires_at ?? null;
@@ -960,9 +999,16 @@ Deno.serve(async (req: Request) => {
             expired,
             brand: brandByAlbum[p.album_id] ?? "",
             downloadCount: Number(p.download_count ?? 0),
+            adjust: adjustById[p.id],
+            canEdit: !expired && (editByAlbum[p.album_id]?.allow ?? true),
           });
         } else if (p.type === "print") {
-          signedUrls.push({ purchaseId: p.id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false });
+          const e = editByAlbum[p.album_id] ?? { allow: true, printOpen: true };
+          signedUrls.push({
+            purchaseId: p.id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false,
+            adjust: adjustById[p.id],
+            canEdit: e.allow && e.printOpen && (!p.print_status || p.print_status === "pending"),
+          });
         }
       }
       return json({ signedUrls });
@@ -1619,7 +1665,20 @@ function xmlEscape(v: string): string {
 
 const PRINT_ADJUST_KEYS = ["exposure", "contrast", "highlights", "shadows", "saturation", "temperature"] as const;
 // Хэвлэх тайралт: [түлхүүр, доод, дээд]
-const PRINT_CROP_KEYS: [string, number, number][] = [["cropZoom", 100, 400], ["cropX", -100, 100], ["cropY", -100, 100], ["cropOrient", 0, 2], ["cropFit", 0, 1]];
+const PRINT_CROP_KEYS: [string, number, number][] = [["cropZoom", 100, 400], ["cropX", -100, 100], ["cropY", -100, 100], ["cropOrient", 0, 2], ["cropFit", 0, 1], ["cropAspect", 0, 3000]];
+
+function sanitizeAdjust(adjust: Record<string, unknown> | null | undefined): Record<string, number> {
+  const clean: Record<string, number> = {};
+  for (const k of PRINT_ADJUST_KEYS) {
+    const v = Math.round(Number(adjust?.[k]) || 0);
+    if (v) clean[k] = Math.max(-100, Math.min(100, v));
+  }
+  for (const [k, lo, hi] of PRINT_CROP_KEYS) {
+    const v = Math.round(Number(adjust?.[k]) || 0);
+    if (v) clean[k] = Math.max(lo, Math.min(hi, v));
+  }
+  return clean;
+}
 
 /** Угаалгах захиалгын хадгалсан гэрэл/өнгөний засвар (purchases bucket: adjust/<id>.json) */
 // deno-lint-ignore no-explicit-any

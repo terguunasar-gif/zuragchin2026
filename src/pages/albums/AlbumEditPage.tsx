@@ -210,6 +210,7 @@ export default function AlbumEditPage() {
   const [description, setDescription] = useState('');
   const [status, setStatus]           = useState('draft');
   const [isFree, setIsFree]           = useState(false);
+  const [allowBuyerEdit, setAllowBuyerEdit] = useState(true);
 
   const [layers, setLayers]               = useState<WatermarkLayer[]>([makeTextLayer()]);
   const [activeId, setActiveId]           = useState('');
@@ -238,6 +239,7 @@ export default function AlbumEditPage() {
     setDescription(data.description || '');
     setStatus(data.status || 'draft');
     setIsFree(data.is_free ?? false);
+    setAllowBuyerEdit(data.allow_buyer_edit !== false);
 
     // watermark_value (шинэ формат) → layers
     // Үнэгүй цомогт өмнө хадгалагдсан битүү тамгыг анхдагчаар хасна (хүсвэл товчоор дахин нэмнэ)
@@ -397,8 +399,8 @@ export default function AlbumEditPage() {
     };
     let { data: savedRows, error: err } = await supabase.from('albums').update(patch).eq('id', albumId).select('id');
     if (err && isMissingColumnError(err)) {
-      const without = { ...patch };
-      delete without.print_deadline;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { print_deadline: _omit, ...without } = patch;
       ({ data: savedRows, error: err } = await supabase.from('albums').update(without).eq('id', albumId).select('id'));
     }
     setSaving(false);
@@ -412,6 +414,8 @@ export default function AlbumEditPage() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    // Тусад нь хадгална — SQL ажиллаагүй (багана байхгүй) үед үндсэн хадгалалтыг эвдэхгүй
+    await supabase.from('albums').update({ allow_buyer_edit: allowBuyerEdit }).eq('id', albumId);
     setSaved(true); setTimeout(() => setSaved(false), 4000);
   }
 
@@ -514,6 +518,15 @@ export default function AlbumEditPage() {
                   </div>
                 </div>
               </div>
+              {!isFree && (
+                <label className="flex items-start gap-3 bg-stone-900/60 border border-white/10 rounded-xl px-4 py-3 cursor-pointer">
+                  <input type="checkbox" checked={allowBuyerEdit} onChange={e => setAllowBuyerEdit(e.target.checked)} className="mt-0.5 w-4 h-4 accent-amber-500" />
+                  <span>
+                    <span className="block text-white text-sm font-medium">Худалдан авагч зургаа засаж болно</span>
+                    <span className="block text-stone-500 text-xs mt-0.5">Төлсний дараа баримтын хуудсанд тайрах, томруулах, гэрэл/өнгө тохируулах. Эх зураг өөрчлөгдөхгүй, цомгийн лого үлдэнэ. Угаалгах зургийг угаагдах хүртэл засна.</span>
+                  </span>
+                </label>
+              )}
             </section>
 
             <section className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
