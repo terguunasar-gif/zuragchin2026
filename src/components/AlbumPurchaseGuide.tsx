@@ -668,9 +668,9 @@ export default function AlbumPurchaseGuide({
                 const on = session.selected.includes(p.id);
                 return (
                   <button key={p.id} type="button" onClick={() => togglePhoto(p.id)}
-                    className={`relative ${cols === 1 ? '' : 'aspect-[3/4]'} rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
+                    className={`relative ${cols === 1 ? 'flex justify-center bg-black' : 'aspect-[3/4] bg-stone-900'} rounded-xl overflow-hidden text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
                     {cols === 1
-                      ? <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none block w-full h-auto min-h-[200px]" />
+                      ? <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none block mx-auto w-auto max-w-full h-auto max-h-[calc(100dvh-270px)] min-h-[200px] object-contain" />
                       : <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover" />}
                     <span className={`pointer-events-none absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80 text-white'}`}>
                       {on ? <Check className="w-4 h-4" strokeWidth={3} /> : <span className="block h-3.5 w-3.5 rounded-sm border border-white/80" />}
