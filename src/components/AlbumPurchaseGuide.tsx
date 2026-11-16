@@ -900,6 +900,12 @@ export default function AlbumPurchaseGuide({
                               }`}>
                               {got ? 'Татсан ✓' : 'Татах'}
                             </button>
+                            {got && (
+                              <button type="button" disabled={dlBusy} onClick={() => downloadPaid([f])}
+                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-500 text-stone-950 disabled:opacity-50">
+                                Дахин татах
+                              </button>
+                            )}
                           </div>
                         );
                       })}
