@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { dropGuideCartPhoto, emptyGuide, normalizeMnPhone, ruleReply } from '../src/lib/albumGuide.ts';
+import { dropGuideCartPhoto, emptyGuide, guidePaySummary, normalizeMnPhone, readGuideInvoice, ruleReply } from '../src/lib/albumGuide.ts';
 
 assert.equal(normalizeMnPhone('99112233'), '99112233');
 assert.equal(normalizeMnPhone('9911 2233'), '99112233');
@@ -34,5 +34,12 @@ assert.deepEqual(emptied.choices, []);
 assert.deepEqual(emptied.selected, []);
 assert.match(emptied.messages.at(-1)?.text ?? '', /Сагс хоосон/);
 assert.equal(dropGuideCartPhoto(cart, 'missing'), cart);
+
+assert.equal(
+  guidePaySummary('Бат', 3, 2, 1, '₮4,000'),
+  'Бат, та 3 зураг сонгосон байна (татах 2, угаалгах 1). Нийт ₮4,000 төлнө.',
+);
+assert.equal(readGuideInvoice(null), null);
+assert.equal(readGuideInvoice({ invoiceId: 'inv', qrImage: 'aa', grossTotal: 1000, urls: [{ name: 'QPay', link: 'qpaywallet://x' }, { name: 1 }] })?.urls.length, 1);
 
 console.log('album guide ok');

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
+import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
@@ -153,7 +153,6 @@ export default function PublicAlbumPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const guideCheckout = useRef(false);
   const [guideOn, setGuideOn] = useState(false);
   useEffect(() => {
     if (!album) return;
@@ -808,10 +807,12 @@ export default function PublicAlbumPage() {
           folders={folders}
           aiPrice={aiPrice}
           paidInvoice={guidePaid}
-          onCheckout={lines => {
-            guideCheckout.current = true;
-            setCart(lines.map(l => ({ ...l, id: crypto.randomUUID() })));
-            setCheckoutOpen(true);
+          onInvoiceCreated={id => setPendingInvoice(album.id, id)}
+          onPaid={invoiceId => {
+            setPendingInvoice(album.id, null);
+            saveCart(album.id, []);
+            setCart([]);
+            setGuidePaid(invoiceId);
           }}
           onClose={() => setGuideOn(false)}
         />
@@ -1232,11 +1233,6 @@ export default function PublicAlbumPage() {
             setPendingInvoice(album.id, null);
             saveCart(album.id, []);
             setCart([]);
-            if (guideCheckout.current) {
-              guideCheckout.current = false;
-              setGuidePaid(invoiceId);
-              return;
-            }
             navigate(`/receipt/${invoiceId}`);
           }}
         />

@@ -28,7 +28,15 @@ export function normalizeMnPhone(raw: string): string | null {
   return null;
 }
 
-export type GuideStep = 'welcome' | 'greet' | 'topics' | 'browse' | 'choices' | 'done';
+export type GuideStep = 'welcome' | 'greet' | 'topics' | 'browse' | 'choices' | 'pay' | 'done';
+
+export interface GuideInvoice {
+  invoiceId: string;
+  qrImage: string;
+  qrText: string;
+  urls: { name: string; description?: string; link: string; logo?: string }[];
+  grossTotal: number;
+}
 
 export interface GuideChoice {
   photoId: string;
@@ -59,6 +67,8 @@ export interface GuideSession {
   choices: GuideChoice[];
   messages: GuideMsg[];
   declined?: boolean;
+  /** QPay нэхэмжлэх. Чат доторх төлбөр дахин ачаалахад үргэлжилнэ. */
+  invoice?: GuideInvoice | null;
 }
 
 const keyOf = (albumId: string) => `zm_album_guide_${albumId}`;
@@ -88,7 +98,8 @@ export function loadGuide(albumId: string): GuideSession {
       selected: Array.isArray(s.selected) ? s.selected.filter(x => typeof x === 'string') : [],
       choices: Array.isArray(s.choices) ? s.choices : [],
       messages: Array.isArray(s.messages) ? s.messages.slice(-30) : [],
-      step: (['welcome', 'greet', 'topics', 'browse', 'choices', 'done'] as const).includes(s.step as GuideStep)
+      invoice: readGuideInvoice(s.invoice),
+      step: (['welcome', 'greet', 'topics', 'browse', 'choices', 'pay', 'done'] as const).includes(s.step as GuideStep)
         ? s.step as GuideStep : 'welcome',
     };
   } catch {
@@ -98,6 +109,28 @@ export function loadGuide(albumId: string): GuideSession {
 
 export function saveGuide(albumId: string, session: GuideSession) {
   try { localStorage.setItem(keyOf(albumId), JSON.stringify(session)); } catch { /* хувийн цонх */ }
+}
+
+export function guidePaySummary(name: string, photoCount: number, downloads: number, prints: number, totalLabel: string): string {
+  return `${name}, та ${photoCount} зураг сонгосон байна (татах ${downloads}, угаалгах ${prints}). Нийт ${totalLabel} төлнө.`;
+}
+
+export function readGuideInvoice(raw: unknown): GuideInvoice | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const i = raw as Partial<GuideInvoice>;
+  if (typeof i.invoiceId !== 'string' || !i.invoiceId) return null;
+  const urls = (Array.isArray(i.urls) ? i.urls as unknown[] : []).filter((u): u is GuideInvoice['urls'][number] => {
+    if (!u || typeof u !== 'object') return false;
+    const row = u as { name?: unknown; link?: unknown };
+    return typeof row.name === 'string' && typeof row.link === 'string';
+  });
+  return {
+    invoiceId: i.invoiceId,
+    qrImage: typeof i.qrImage === 'string' ? i.qrImage : '',
+    qrText: typeof i.qrText === 'string' ? i.qrText : '',
+    urls,
+    grossTotal: Number(i.grossTotal) || 0,
+  };
 }
 
 export function clearGuide(albumId: string) {

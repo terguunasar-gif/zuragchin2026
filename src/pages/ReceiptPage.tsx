@@ -9,6 +9,7 @@ import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import { inAppBrowserName, isIOS, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
+import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, withoutDownloaded, writeDownloadedIds } from '../lib/receiptDownloads';
 
 async function blobUrlToDataUrl(u: string): Promise<string> {
   const blob = await (await fetch(u)).blob();
@@ -50,6 +51,7 @@ interface PurchaseRow {
   album_id: string;
   created_at: string;
   print_status?: string;
+  download_count?: number;
   photo_uploads: {
     preview_url: string;
     original_url: string;
@@ -67,6 +69,8 @@ interface SignedUrlItem {
   expired?: boolean;
   /** Цомгийн брэнд давхаргууд (лого/текст) — татсан зурагт шингээнэ */
   brand?: string;
+  /** Сервер дээрх таталтын тоо. 0-ээс их бол энэ төхөөрөмж дээр татсан гэж үзнэ. */
+  downloadCount?: number;
 }
 
 /** Үлдсэн хугацааг «5 хоног 3 цаг» хэлбэрээр */
@@ -97,6 +101,7 @@ export default function ReceiptPage() {
   // Зурагчны профайлд холбоо барих мэдээлэл байхгүй үед цомгийн (зохион байгуулагчийн) мэдээллийг харуулна.
   const [albumContact, setAlbumContact] = useState<PhotographerContact | null>(null);
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
+  const [downloaded, setDownloaded] = useState<Set<string>>(() => new Set(invoiceId ? readDownloadedIds(invoiceId) : []));
   // Цомог хаагдах огноо — зургаа түүнээс өмнө татаж авахыг сануулна
   const [albumExpiresAt, setAlbumExpiresAt] = useState<string | null>(null);
   // Зургийг томоор харуулж «удаан дарж хадгалах» заавар өгөх цонх
@@ -120,9 +125,12 @@ export default function ReceiptPage() {
 
       const rows: PurchaseRow[] = (data as any[]).map(r => ({
         ...r,
+        download_count: Number(r.download_count ?? 0),
         photo_uploads: { preview_url: r.preview_url ?? '', original_url: r.original_url ?? '', filename: r.filename ?? '' },
       }));
       setPurchases(rows);
+      const counted = idsWithServerDownloads(rows.map(r => ({ id: r.id, downloadCount: r.download_count })));
+      if (counted.length) setDownloaded(new Set(writeDownloadedIds(id, counted)));
 
       // Album share link
       if (rows[0]?.album_id) {
@@ -208,7 +216,10 @@ export default function ReceiptPage() {
       }), 15000);
       if (!res.ok) throw new Error(String(res.status));
       const { signedUrls: urls } = await res.json();
-      setSignedUrls(urls ?? []);
+      const list = (urls ?? []) as SignedUrlItem[];
+      setSignedUrls(list);
+      const counted = idsWithServerDownloads(list.map(u => ({ id: u.purchaseId, downloadCount: u.downloadCount })));
+      if (counted.length) setDownloaded(new Set(writeDownloadedIds(id, counted)));
     } catch {
       if (attempt < 3) setTimeout(() => loadSignedUrls(id, attempt + 1), 1500 * attempt);
     }
@@ -217,7 +228,7 @@ export default function ReceiptPage() {
   // ── Олноор нь татах ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string> | null>(null); // null = анхдагч (бүгд)
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
-  const [ready, setReady] = useState<File[][]>([]); // iPhone: хадгалахад бэлэн багцууд
+  const [ready, setReady] = useState<{ id: string; file: File }[][]>([]); // iPhone: хадгалахад бэлэн багцууд
   const [bulkMsg, setBulkMsg] = useState('');
 
   async function fetchFile(p: PurchaseRow): Promise<File | null> {
@@ -232,11 +243,18 @@ export default function ReceiptPage() {
     return new File([blob], name, { type: blob.type || 'image/jpeg' });
   }
 
+  function noteDownloaded(ids: string[]) {
+    if (!invoiceId || !ids.length) return;
+    const next = new Set(writeDownloadedIds(invoiceId, ids));
+    setDownloaded(next);
+    setSelected(prev => (prev ? new Set(withoutDownloaded(prev, ids)) : prev));
+  }
+
   async function bulkDownload(list: PurchaseRow[]) {
     if (!list.length) return;
     setBulkMsg(''); setReady([]);
     setBulk({ done: 0, total: list.length });
-    const files: File[] = [];
+    const saved: { id: string; file: File }[] = [];
     let failed = 0, i = 0;
     const worker = async () => {
       while (i < list.length) {
@@ -244,7 +262,7 @@ export default function ReceiptPage() {
         try {
           const f = await fetchFile(p);
           if (f) {
-            files.push(f);
+            saved.push({ id: p.id, file: f });
             // iPhone биш бол шууд нэг нэгээр нь татна
             if (!isIOS) {
               const url = URL.createObjectURL(f);
@@ -263,26 +281,30 @@ export default function ReceiptPage() {
     setBulk(null);
     if (isIOS) {
       // Хуваалцах цонх хэрэглэгчийн товшилтоор нээгдэх ёстой → «Хадгалах» товч гаргана (10-аар багцлана)
-      const chunks: File[][] = [];
-      for (let k = 0; k < files.length; k += 10) chunks.push(files.slice(k, k + 10));
+      const chunks: { id: string; file: File }[][] = [];
+      for (let k = 0; k < saved.length; k += 10) chunks.push(saved.slice(k, k + 10));
       setReady(chunks);
     } else {
-      setBulkMsg(t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: files.length })
+      noteDownloaded(saved.map(s => s.id));
+      setBulkMsg(t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: saved.length })
         + (failed ? ' ' + t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : ''));
     }
   }
 
   async function saveChunk(idx: number) {
-    const files = ready[idx];
-    if (!files) return;
+    const chunk = ready[idx];
+    if (!chunk) return;
+    let saved = false;
     try {
-      await navigator.share({ files });
+      await navigator.share({ files: chunk.map(c => c.file) });
+      saved = true;
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) {
         setBulkMsg(t('Хадгалж чадсангүй. Зураг тус бүрийн «Татах»-ыг дарна уу.'));
         return;
       }
     }
+    if (saved) noteDownloaded(chunk.map(c => c.id));
     const rest = ready.filter((_, k) => k !== idx);
     setReady(rest);
     if (!rest.length) setBulkMsg(t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгосон бол зургууд Photos-д орсон.'));
@@ -299,6 +321,7 @@ export default function ReceiptPage() {
       const { result, blobUrl } = await saveImageToDevice(urlItem.signedUrl, filename,
         brand ? b => applyBrandToPurchase(b, brand, filename) : undefined);
       // Апп доторх хөтөч эсвэл Android дээр — зургийг томоор харуулж заавар өгнө
+      if (result === 'downloaded' || result === 'shared') noteDownloaded([p.id]);
       if (result === 'manual' || result === 'downloaded') {
         // Апп доторх хөтөчид blob холбоосыг удаан дарж хадгалах боломжгүй тул жинхэнэ холбоос
         // (логотой бол data URL) харуулна
@@ -325,7 +348,9 @@ export default function ReceiptPage() {
   const downloadPurchases = purchases.filter(p => p.type === 'download');
   const printPurchases    = purchases.filter(p => p.type === 'print');
   const downloadable = downloadPurchases.filter(p => isPaid && !!signedUrls.find(u => u.purchaseId === p.id)?.signedUrl);
-  const sel = selected ?? new Set(downloadable.map(p => p.id));
+  const pendingIds = withoutDownloaded(downloadable.map(p => p.id), downloaded);
+  const sel = selected ?? new Set(pendingIds);
+  const allGot = everyDownloaded(downloadable.map(p => p.id), downloaded);
   const toggle = (id: string) => { const n = new Set(sel); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
   const allOn = downloadable.length > 0 && downloadable.every(p => sel.has(p.id));
   const chosen = downloadable.filter(p => sel.has(p.id));
@@ -508,21 +533,27 @@ export default function ReceiptPage() {
                   <span className="text-stone-400 text-xs">{t('{n} сонгосон', { n: chosen.length })}</span>
                 </div>
                 {ready.length === 0 && (
-                  <button onClick={() => bulkDownload(chosen)} disabled={!!bulk || chosen.length === 0}
-                    className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 font-bold py-3.5 rounded-xl">
-                    {bulk ? <Loader2 className="w-5 h-5 animate-spin" /> : <Images className="w-5 h-5" />}
+                  <button onClick={() => bulkDownload(allGot ? downloadable : chosen)} disabled={!!bulk || (!allGot && chosen.length === 0)}
+                    className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 rounded-xl disabled:opacity-60 ${
+                      allGot
+                        ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                        : 'bg-amber-500 hover:bg-amber-400 text-stone-950'
+                    }`}>
+                    {bulk ? <Loader2 className="w-5 h-5 animate-spin" /> : allGot ? <CheckCircle2 className="w-5 h-5" /> : <Images className="w-5 h-5" />}
                     {bulk
                       ? t('Бэлдэж байна… {d}/{n}', { d: bulk.done, n: bulk.total })
-                      : t('Сонгосон {n} зургийг татах', { n: chosen.length })}
+                      : allGot
+                        ? t('Бүгдийг татсан ✓')
+                        : t('Сонгосон {n} зургийг татах', { n: chosen.length })}
                   </button>
                 )}
-                {ready.map((files, k) => (
+                {ready.map((chunk, k) => (
                   <button key={k} onClick={() => saveChunk(k)}
                     className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold py-3.5 rounded-xl">
                     <Download className="w-5 h-5" />
                     {ready.length > 1
-                      ? t('Галерейд хадгалах — {n} зураг (багц {k})', { n: files.length, k: k + 1 })
-                      : t('Галерейд хадгалах — {n} зураг', { n: files.length })}
+                      ? t('Галерейд хадгалах — {n} зураг (багц {k})', { n: chunk.length, k: k + 1 })
+                      : t('Галерейд хадгалах — {n} зураг', { n: chunk.length })}
                   </button>
                 ))}
                 {ready.length > 0 && (
@@ -537,6 +568,7 @@ export default function ReceiptPage() {
                 const urlItem     = signedUrls.find(u => u.purchaseId === p.id);
                 const canDownload = isPaid && !!urlItem?.signedUrl;
                 const isLoading   = downloading[p.id];
+                const got         = downloaded.has(p.id);
 
                 return (
                   <div key={p.id} className="flex items-center gap-4 px-5 py-3">
@@ -573,12 +605,16 @@ export default function ReceiptPage() {
                       <button
                         onClick={() => handleDownload(p)}
                         disabled={isLoading}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-stone-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+                        className={`flex items-center gap-1.5 text-xs font-semibold disabled:opacity-60 px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
+                          got
+                            ? 'text-emerald-300 border border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20'
+                            : 'text-stone-950 bg-amber-500 hover:bg-amber-400'
+                        }`}
                       >
                         {isLoading
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          : <Download className="w-3.5 h-3.5" />}
-                        {isLoading ? t('Татаж байна…') : t('Татах')}
+                          : got ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                        {isLoading ? t('Татаж байна…') : got ? t('Татсан ✓') : t('Татах')}
                       </button>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
