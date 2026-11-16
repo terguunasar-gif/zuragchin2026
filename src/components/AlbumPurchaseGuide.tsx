@@ -8,7 +8,7 @@ import {
   askHelpBot, downloadExpired, dropGuideCartPhoto, fetchLeadPurchases, groupOwned, guidePaySummary, loadGuide, markGuidePaid, mergeOwned, normalizeMnPhone, prepareGuideEntry, rememberPurchase, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
   type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep, type OwnedPhoto,
 } from '../lib/albumGuide';
-import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, writeDownloadedIds } from '../lib/receiptDownloads';
+import { cachedUndownloaded, everyDownloaded, idsWithServerDownloads, readDownloadedIds, undownloadedByInvoice, writeDownloadedIds } from '../lib/receiptDownloads';
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import PrintEditor from './PrintEditor';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
@@ -100,25 +100,13 @@ export default function AlbumPurchaseGuide({
     if (DEBUG) setDbg(`step=${session.step} paid=${(session.paidInvoices ?? []).length} owned=${(session.owned ?? []).length} hist=${listPurchaseHistory().filter(h => h.albumId === album.id).length} inv=${invoices.map(i => i.slice(0, 6)).join(',')}`);
     if (!invoices.length) { setUndl([]); return; }
     let cancel = false;
-    Promise.all(invoices.map(async inv => {
-      try {
-        const res = await fetch(`${QPAY_FN_URL}/signed-urls`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: QPAY_ANON, Authorization: `Bearer ${QPAY_ANON}` },
-          body: JSON.stringify({ invoiceId: inv }),
-        });
-        const body = await res.json().catch(() => ({}));
-        const local = new Set(readDownloadedIds(inv));
-        const items = (body.signedUrls ?? []) as { purchaseId: string; type: string; signedUrl?: string; expired?: boolean; downloadCount?: number }[];
-        const count = items.filter(u => u.type === 'download' && u.signedUrl && !u.expired
-          && !(Number(u.downloadCount) > 0) && !local.has(u.purchaseId)).length;
-        return { invoice: inv, count };
-      } catch { return { invoice: inv, count: 0 }; }
-    })).then(r => {
+    // Кэшээс шууд харуулаад серверээс (нэг хурдан хүсэлтээр) шинэчилнэ; алдаа гарвал кэш хэвээр үлдэнэ
+    setUndl(prev => (prev.length ? prev : cachedUndownloaded(invoices)));
+    undownloadedByInvoice(invoices).then(r => {
       if (cancel) return;
-      setUndl(r.filter(x => x.count > 0));
-      if (DEBUG) setDbg(d => `${d} → ${r.map(x => `${x.invoice.slice(0, 6)}:${x.count}`).join(',')}`);
-    });
+      setUndl(r);
+      if (DEBUG) setDbg(d => `${d} → ${r.map(x => `${x.invoice.slice(0, 6)}:${x.count}`).join(',') || '0'}`);
+    }).catch(e => { if (DEBUG) setDbg(d => `${d} → ERR ${String(e)}`); });
     return () => { cancel = true; };
   }, [session.step, album.id, session.paidInvoices?.length, session.owned?.length, paidInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
   const undlTotal = undl.reduce((n, u) => n + u.count, 0);

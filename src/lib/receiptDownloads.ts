@@ -39,26 +39,44 @@ export function everyDownloaded(ids: string[], downloaded: Iterable<string>): bo
   return ids.every(id => got.has(id));
 }
 
-/** Төлсөн ч татаж амжаагүй зургийн тоо (сервер download_count = 0 ба энэ төхөөрөмж дээр тэмдэглэгдээгүй). */
-export async function undownloadedByInvoice(invoiceIds: string[]): Promise<{ invoice: string; count: number }[]> {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/signed-urls`;
-  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const ids = [...new Set(invoiceIds.filter(Boolean))].slice(-10);
-  return Promise.all(ids.map(async invoice => {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: anon, Authorization: `Bearer ${anon}` },
-        body: JSON.stringify({ invoiceId: invoice }),
-      });
-      const body = await res.json().catch(() => ({}));
+/** Төлсөн ч татаж амжаагүй зургууд: нэг хурдан хүсэлтээр (сервер download_count = 0, хугацаа дуусаагүй),
+ *  энэ төхөөрөмж дээр татсан гэж тэмдэглэгдсэнийг хасна. Сүүлийн хариуг кэшлэнэ. */
+const UNDL_CACHE = 'zm_undl_cache';
+export function cachedUndownloaded(invoiceIds: string[]): { invoice: string; count: number }[] {
+  try {
+    const all = JSON.parse(localStorage.getItem(UNDL_CACHE) || '{}') as Record<string, string[]>;
+    return invoiceIds.map(invoice => {
       const local = new Set(readDownloadedIds(invoice));
-      const items = (body.signedUrls ?? []) as { purchaseId: string; type: string; signedUrl?: string; expired?: boolean; downloadCount?: number }[];
-      const count = items.filter(u => u.type === 'download' && u.signedUrl && !u.expired
-        && !(Number(u.downloadCount) > 0) && !local.has(u.purchaseId)).length;
-      return { invoice, count };
-    } catch { return { invoice, count: 0 }; }
-  }));
+      return { invoice, count: (all[invoice] ?? []).filter(id => !local.has(id)).length };
+    }).filter(x => x.count > 0);
+  } catch { return []; }
+}
+
+export async function undownloadedByInvoice(invoiceIds: string[]): Promise<{ invoice: string; count: number }[]> {
+  const ids = [...new Set(invoiceIds.filter(Boolean))].slice(-30);
+  if (!ids.length) return [];
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/undownloaded`;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: anon, Authorization: `Bearer ${anon}` },
+    body: JSON.stringify({ invoiceIds: ids }),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  const body = await res.json().catch(() => ({}));
+  const items = (body.items ?? []) as { invoiceId: string; purchaseIds: string[] }[];
+  // кэш шинэчлэх
+  try {
+    const all = JSON.parse(localStorage.getItem(UNDL_CACHE) || '{}') as Record<string, string[]>;
+    for (const id of ids) delete all[id];
+    for (const it of items) all[it.invoiceId] = it.purchaseIds;
+    localStorage.setItem(UNDL_CACHE, JSON.stringify(all));
+  } catch { /* */ }
+  return ids.map(invoice => {
+    const local = new Set(readDownloadedIds(invoice));
+    const it = items.find(x => x.invoiceId === invoice);
+    return { invoice, count: (it?.purchaseIds ?? []).filter(id => !local.has(id)).length };
+  }).filter(x => x.count > 0);
 }
 
 export async function countUndownloaded(invoiceIds: string[]): Promise<number> {

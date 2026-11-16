@@ -931,6 +931,27 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, adjust: clean });
     }
 
+    // ── Татаагүй зургууд: олон нэхэмжлэхийг нэг хүсэлтээр, хурдан (сануулгад) ──
+    if (req.method === "POST" && path === "/undownloaded") {
+      const { invoiceIds } = await req.json() as { invoiceIds: string[] };
+      const ids = [...new Set((Array.isArray(invoiceIds) ? invoiceIds : []).filter(x => typeof x === "string" && x.length > 10))].slice(0, 30);
+      if (!ids.length) return json({ items: [] });
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data, error } = await db.from("purchases")
+        .select("id, qpay_invoice_id, download_count, download_expires_at")
+        .in("qpay_invoice_id", ids).eq("type", "download").eq("payment_status", "paid");
+      if (error) return json({ error: error.message }, 500);
+      const now = Date.now();
+      const map: Record<string, string[]> = {};
+      // deno-lint-ignore no-explicit-any
+      for (const p of (data ?? []) as any[]) {
+        if (Number(p.download_count ?? 0) > 0) continue;
+        if (p.download_expires_at && new Date(p.download_expires_at).getTime() < now) continue;
+        (map[p.qpay_invoice_id] ??= []).push(p.id);
+      }
+      return json({ items: Object.entries(map).map(([invoiceId, purchaseIds]) => ({ invoiceId, purchaseIds })) });
+    }
+
     if (req.method === "POST" && path === "/signed-urls") {
       const { invoiceId } = await req.json() as { invoiceId: string };
       if (!invoiceId) return json({ error: "invoiceId дутуу" }, 400);
