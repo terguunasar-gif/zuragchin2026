@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Loader2, MessageCircle, Send } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, isIOS, socialInAppName } from '../lib/browserEnv';
 import {
-  askHelpBot, clearGuide, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
+  askHelpBot, clearGuide, dropGuideCartPhoto, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
   type GuideCartLine, type GuideChoice, type GuideMsg, type GuideSession, type GuideStep,
 } from '../lib/albumGuide';
 
@@ -27,6 +27,12 @@ function money(n: number) {
   return `₮${Math.round(n).toLocaleString('mn-MN')}`;
 }
 
+function closeLightbox(setViewerId: (id: string | null) => void) {
+  const state = history.state as { albumGuideLightbox?: boolean } | null;
+  if (state?.albumGuideLightbox) history.back();
+  else setViewerId(null);
+}
+
 export default function AlbumPurchaseGuide({
   album, photos, folders, aiPrice, paidInvoice, onCheckout, onClose,
 }: {
@@ -47,7 +53,13 @@ export default function AlbumPurchaseGuide({
   const [dlBusy, setDlBusy] = useState(false);
   const [dlNote, setDlNote] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const choicesRef = useRef(session.choices);
+  const viewerIdRef = useRef(viewerId);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  choicesRef.current = session.choices;
+  viewerIdRef.current = viewerId;
   const paidOnce = useRef(false);
   const inApp = typeof navigator !== 'undefined' && !!socialInAppName(navigator.userAgent || '');
 
@@ -63,6 +75,42 @@ export default function AlbumPurchaseGuide({
   }, [session.messages, session.step, chatOpen]);
 
   useEffect(() => { setChatOpen(false); }, [session.step]);
+
+  const viewerOpen = viewerId !== null;
+  useEffect(() => {
+    if (!viewerOpen) return;
+    const marker = { ...(history.state || {}), albumGuideLightbox: true };
+    if (!(history.state as { albumGuideLightbox?: boolean } | null)?.albumGuideLightbox) {
+      history.pushState(marker, '');
+    }
+    const move = (dir: number) => {
+      const choices = choicesRef.current;
+      const i = choices.findIndex(c => c.photoId === viewerIdRef.current);
+      if (i < 0 || choices.length < 2) return;
+      setViewerId(choices[(i + dir + choices.length) % choices.length].photoId);
+    };
+    const onPop = (e: PopStateEvent) => {
+      e.stopImmediatePropagation();
+      setViewerId(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeLightbox(setViewerId); }
+      else if (e.key === 'ArrowRight') move(1);
+      else if (e.key === 'ArrowLeft') move(-1);
+    };
+    window.addEventListener('popstate', onPop, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('popstate', onPop, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [viewerOpen]);
+
+  useEffect(() => {
+    if (!viewerId || session.choices.some(c => c.photoId === viewerId)) return;
+    closeLightbox(setViewerId);
+  }, [viewerId, session.choices]);
+
   useLayoutEffect(() => {
     setAlbumGuideActive(true);
     return () => setAlbumGuideActive(false);
@@ -183,6 +231,16 @@ export default function AlbumPurchaseGuide({
     commit({ ...session, choices });
   }
 
+  function removeChoice(photoId: string) {
+    commit(dropGuideCartPhoto(session, photoId));
+  }
+
+  function stepViewer(dir: number) {
+    const i = session.choices.findIndex(c => c.photoId === viewerId);
+    if (i < 0 || session.choices.length < 2) return;
+    setViewerId(session.choices[(i + dir + session.choices.length) % session.choices.length].photoId);
+  }
+
   const lines: GuideCartLine[] = [];
   for (const c of session.choices) {
     const p = photos.find(x => x.id === c.photoId);
@@ -204,6 +262,25 @@ export default function AlbumPurchaseGuide({
   }
   const total = lines.reduce((s, l) => s + l.price, 0);
   const ready = session.choices.length > 0 && session.choices.every(c => c.download || c.print);
+  const viewerIdx = session.choices.findIndex(c => c.photoId === viewerId);
+  const viewerPhoto = viewerIdx >= 0 ? photos.find(p => p.id === viewerId) : undefined;
+
+  function onViewerTouchStart(e: React.TouchEvent) {
+    if ((e.target as HTMLElement).closest('button')) { swipe.current = null; return; }
+    swipe.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  function onViewerTouchEnd(e: React.TouchEvent) {
+    if (!swipe.current) return;
+    const dx = e.changedTouches[0].clientX - swipe.current.x;
+    const dy = e.changedTouches[0].clientY - swipe.current.y;
+    swipe.current = null;
+    if (Math.abs(dx) < 48 && Math.abs(dy) < 48) return;
+    if (Math.abs(dy) >= Math.abs(dx) || session.choices.length < 2) {
+      closeLightbox(setViewerId);
+      return;
+    }
+    stepViewer(dx < 0 ? 1 : -1);
+  }
 
   async function downloadPaid() {
     if (!paidInvoice) return;
@@ -384,9 +461,20 @@ export default function AlbumPurchaseGuide({
               const dlp = dlPrice(p, album, aiPrice);
               return (
                 <div key={c.photoId} className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2">
-                  <img src={p.watermarked_url} alt="" className="w-16 h-20 object-cover rounded-lg shrink-0" />
+                  <button type="button" onClick={() => setViewerId(c.photoId)} aria-label="Томоор харах"
+                    className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-stone-900">
+                    <img src={p.watermarked_url} alt="" draggable={false} onContextMenu={e => e.preventDefault()}
+                      className="h-full w-full object-cover" />
+                  </button>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm truncate">{p.name || p.title}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm truncate">{p.name || p.title}</p>
+                      <button type="button" onClick={() => removeChoice(c.photoId)}
+                        className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold text-white"
+                        aria-label="Хасах">
+                        <X className="w-3.5 h-3.5" /> Хасах
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <button type="button" onClick={() => setChoice(c.photoId, { download: !c.download })}
                         className={`text-xs rounded-full px-3 py-1.5 border ${c.download ? 'bg-amber-500 text-stone-950 border-amber-500' : 'border-white/15'}`}>
@@ -443,6 +531,51 @@ export default function AlbumPurchaseGuide({
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none" />
           <button type="submit" className="bg-white/10 rounded-xl px-3" aria-label="Илгээх"><Send className="w-4 h-4" /></button>
         </form>
+      )}
+
+      {viewerPhoto && (
+        <div
+          className="fixed inset-0 z-[80] bg-black text-white flex flex-col touch-none"
+          onTouchStart={onViewerTouchStart}
+          onTouchEnd={onViewerTouchEnd}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Зургийн урьдчилсан харагдац"
+        >
+          <div className="flex items-center justify-between px-2 py-2 shrink-0">
+            <button type="button" onClick={() => closeLightbox(setViewerId)} aria-label="Буцах" className="p-2 text-white">
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <p className="text-sm text-stone-300">{viewerIdx + 1} / {session.choices.length}</p>
+            <button type="button" onClick={() => closeLightbox(setViewerId)} aria-label="Хаах" className="p-2 text-white">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="relative flex-1 min-h-0 flex items-center justify-center px-12">
+            {session.choices.length > 1 && (
+              <>
+                <button type="button" onClick={() => stepViewer(-1)} aria-label="Өмнөх"
+                  className="absolute left-2 p-3 rounded-full bg-white/10 text-white">
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button type="button" onClick={() => stepViewer(1)} aria-label="Дараах"
+                  className="absolute right-2 p-3 rounded-full bg-white/10 text-white">
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+            <img
+              src={viewerPhoto.watermarked_url}
+              alt={viewerPhoto.name || viewerPhoto.title || ''}
+              draggable={false}
+              onContextMenu={e => e.preventDefault()}
+              className="max-h-full max-w-full object-contain select-none"
+            />
+          </div>
+          <p className="shrink-0 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-stone-300 truncate">
+            {viewerPhoto.name || viewerPhoto.title}
+          </p>
+        </div>
       )}
 
       {session.step === 'browse' && (
