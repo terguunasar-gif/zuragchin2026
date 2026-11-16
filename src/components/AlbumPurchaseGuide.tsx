@@ -10,6 +10,10 @@ import {
 } from '../lib/albumGuide';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, writeDownloadedIds } from '../lib/receiptDownloads';
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
+import PrintEditor from './PrintEditor';
+import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
+import { applyBrandToPurchase } from '../lib/watermark';
+import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -72,10 +76,17 @@ export default function AlbumPurchaseGuide({
   const onInvoiceRef = useRef(onInvoiceCreated);
   onPaidRef.current = onPaid;
   onInvoiceRef.current = onInvoiceCreated;
-  type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number };
+  type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number; brand?: string; adjust?: PhotoAdjust & PrintCrop };
   const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  // Төлөхөөс өмнөх засвар: аль зургийн аль төрлийг засаж байгаа
+  const [editTarget, setEditTarget] = useState<{ photoId: string; kind: 'dl' | 'pr' } | null>(null);
+  const [allowEdit, setAllowEdit] = useState(true);
+  useEffect(() => {
+    supabase.from('albums').select('allow_buyer_edit').eq('id', album.id).maybeSingle()
+      .then(({ data, error }) => { if (!error && data && (data as { allow_buyer_edit?: boolean }).allow_buyer_edit === false) setAllowEdit(false); });
+  }, [album.id]);
   // Зургийн тор: 1 (том, доош гүйлгэнэ) / 2 / 3 багана — сонголт төхөөрөмж дээр хадгалагдана
   const [cols, setColsState] = useState<1 | 2 | 3>(() => {
     try { const v = Number(localStorage.getItem('zm_guide_cols')); return v === 1 || v === 3 ? v : 2; } catch { return 2; }
@@ -426,6 +437,10 @@ export default function AlbumPurchaseGuide({
         grossTotal: Number(data.grossTotal) || total,
       };
       commit({ ...session, invoice });
+      savePendingEdits(invoice.invoiceId, session.choices.flatMap(c => [
+        ...(c.download && hasEdit(c.editDl) ? [{ photoId: c.photoId, type: 'download' as const, adjust: c.editDl! }] : []),
+        ...(c.print && hasEdit(c.editPr) ? [{ photoId: c.photoId, type: 'print' as const, adjust: c.editPr! }] : []),
+      ]));
       onInvoiceRef.current?.(invoice.invoiceId);
     } catch (err) {
       setPayErr(err instanceof Error ? err.message : 'Төлбөр эхлүүлж чадсангүй');
@@ -459,6 +474,8 @@ export default function AlbumPurchaseGuide({
   }
 
   const loadPaidFiles = useCallback(async (invoice: string): Promise<PaidFile[]> => {
+    // Төлөхөөс өмнө хийсэн засваруудыг эхлээд хадгална (дараа нь signed-urls-д adjust ирнэ)
+    await flushPendingEdits(invoice).catch(() => ({}));
     const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/signed-urls`, {
       method: 'POST',
       headers: {
@@ -481,6 +498,8 @@ export default function AlbumPurchaseGuide({
         expired: !!u.expired,
         expiresAt: (u as { expiresAt?: string | null }).expiresAt ?? null,
         downloadCount: u.downloadCount,
+        brand: (u as { brand?: string }).brand ?? '',
+        adjust: (u as { adjust?: PhotoAdjust & PrintCrop }).adjust,
       });
     }
     const counted = idsWithServerDownloads(files.map(f => ({ id: f.purchaseId, downloadCount: f.downloadCount })));
@@ -508,7 +527,10 @@ export default function AlbumPurchaseGuide({
       const savedIds: string[] = [];
       for (const u of list) {
         try {
-          const blob = await (await fetch(u.signedUrl)).blob();
+          let blob = await (await fetch(u.signedUrl)).blob();
+          // засвар (байвал) → цомгийн лого
+          if (hasEdit(u.adjust)) blob = await preparePrintBlob(blob, 'original', u.adjust!);
+          if (u.brand) blob = await applyBrandToPurchase(blob, u.brand, u.filename);
           const name = /\.(jpe?g|png|webp)$/i.test(u.filename) ? u.filename : `${u.filename}.jpg`;
           const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
           files.push(file);
@@ -735,6 +757,22 @@ export default function AlbumPurchaseGuide({
                         </button>
                       )}
                     </div>
+                    {allowEdit && (c.download || (c.print && printsOpen)) && (
+                      <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                        {c.download && (
+                          <button type="button" onClick={() => setEditTarget({ photoId: c.photoId, kind: 'dl' })}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1 text-amber-200">
+                            ✂ {c.print ? 'Татахыг засах' : 'Засах'}{hasEdit(c.editDl) ? ' ✓' : ''}
+                          </button>
+                        )}
+                        {c.print && printsOpen && (
+                          <button type="button" onClick={() => setEditTarget({ photoId: c.photoId, kind: 'pr' })}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1 text-amber-200">
+                            ✂ Угаах хэлбэрийг засах{hasEdit(c.editPr) ? ' ✓' : ''}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {c.print && prints.length > 1 && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {prints.map(([size, price]) => (
@@ -915,6 +953,32 @@ export default function AlbumPurchaseGuide({
           </button>
         </div>
       )}
+      {editTarget && (() => {
+        const c = session.choices.find(x => x.photoId === editTarget.photoId);
+        const p = photos.find(x => x.id === editTarget.photoId);
+        if (!c || !p) return null;
+        const isPr = editTarget.kind === 'pr';
+        return (
+          <div className="fixed inset-0 z-[60]">
+            <PrintEditor
+              purchaseId={`pre-${p.id}`}
+              title={p.name || p.title}
+              heading={isPr ? 'Угаах хэлбэрийг засах' : 'Зургаа засах'}
+              brand={album.watermark_value || ''}
+              note="Тамга зурагтайгаа хөдөлнө — төлсний дараах файлд тамга байхгүй. Цомгийн лого хүрээн дээр тогтмол харагдаж буй байрлалдаа гарна."
+              source={{
+                load: async () => ({
+                  url: p.watermarked_url,
+                  size: isPr ? (c.printSize || printOptions(p)[0]?.[0] || '10x15') : 'original',
+                  adjust: (isPr ? c.editPr : c.editDl) ?? {},
+                }),
+                save: async a => { setChoice(c.photoId, isPr ? { editPr: a } : { editDl: a }); },
+              }}
+              onClose={() => setEditTarget(null)}
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 }

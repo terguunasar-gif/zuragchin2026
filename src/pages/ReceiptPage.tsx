@@ -11,6 +11,7 @@ import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '
 import { applyBrandToPurchase } from '../lib/watermark';
 import { hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
 import PrintEditor from '../components/PrintEditor';
+import { flushPendingEdits } from '../lib/pendingEdits';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, withoutDownloaded, writeDownloadedIds } from '../lib/receiptDownloads';
 
 async function blobUrlToDataUrl(u: string): Promise<string> {
@@ -206,8 +207,9 @@ export default function ReceiptPage() {
       }
 
       // Татах холбоосууд — хуудсыг хүлээлгэхгүй, араас нь ачаална (2 удаа оролдоно)
-      const hasPaidDownloads = rows.some(r => r.type === 'download' && r.payment_status === 'paid');
-      if (hasPaidDownloads) loadSignedUrls(id);
+      // Угаалгах захиалгын засварын эрх/засвар ч эндээс ирдэг тул төлөгдсөн мөр байвал ачаална
+      const hasPaid = rows.some(r => r.payment_status === 'paid');
+      if (hasPaid) loadSignedUrls(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load receipt');
     } finally {
@@ -217,6 +219,8 @@ export default function ReceiptPage() {
 
   async function loadSignedUrls(id: string, attempt = 1): Promise<void> {
     try {
+      // Сагсанд (төлөхөөс өмнө) хийсэн засварууд үлдсэн бол эхлээд хадгална
+      if (attempt === 1) await flushPendingEdits(id).catch(() => ({}));
       const res = await withTimeout(fetch(`${QPAY_FN_URL}/signed-urls`, {
         method: 'POST', headers: fnHeaders, body: JSON.stringify({ invoiceId: id }),
       }), 15000);
@@ -815,6 +819,7 @@ export default function ReceiptPage() {
             purchaseId={editing.id}
             title={editing.photo_uploads?.filename}
             heading={isPrintRow ? t('Хэвлэх хэлбэрийг засах') : t('Зургаа засах')}
+            brand={u?.brand}
             note={isPrintRow
               ? t('Зурагчин угаахдаа энэ засварыг ашиглана. Урьдчилан харахад усан тэмдэг харагдах ч хэвлэгдэхгүй.')
               : t('Татахад засварласан хувилбар гарна. Урьдчилан харахад усан тэмдэг харагдах ч татсан зурагт байхгүй.')}

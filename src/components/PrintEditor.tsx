@@ -12,6 +12,7 @@ export interface EditorSource {
 
 const ASPECTS: [string, number][] = [['Эх', 0], ['2:3', 667], ['3:2', 1500], ['4:5', 800], ['1:1', 1000], ['16:9', 1778], ['9:16', 563]];
 import { loadPrintSource, savePrintAdjust } from '../lib/printPhoto';
+import { drawBrandOverlay } from '../lib/watermark';
 
 const PREVIEW_MAX = 1400;
 
@@ -19,7 +20,9 @@ const PREVIEW_MAX = 1400;
  * Угаалгах захиалгын зургийг хэвлэхээс өмнө гэрэл, сүүдэр, өнгийг тохируулах цонх.
  * Засвар хадгалагдаж, дараагийн «Принт» бүрт эх зурагт хэрэгжинэ (эх файл өөрчлөгдөхгүй).
  */
-export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note }: {
+export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note, brand: brandProp }: {
+  /** Цомгийн брэнд давхарга (watermark_value) — эцсийн байрлалд нь тогтмол харуулна */
+  brand?: string;
   purchaseId: string;
   title?: string;
   onClose: () => void;
@@ -35,6 +38,9 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
   const baseRef = useRef<ImageData | null>(null);
   const rafRef = useRef(0);
   const workRef = useRef<HTMLCanvasElement | null>(null);
+  const brandTok = useRef(0);
+  const [loadedBrand, setLoadedBrand] = useState('');
+  const brand = brandProp ?? loadedBrand;
   const [adjust, setAdjust] = useState<Edit>({});
   const [savedAdjust, setSavedAdjust] = useState<Edit>({});
   const [size, setSize] = useState('10x15');
@@ -51,7 +57,7 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
       try {
         const src = source
           ? await source.load().then(r => ({ signedUrl: r.url, size: r.size, adjust: r.adjust }))
-          : await loadPrintSource(purchaseId);
+          : await loadPrintSource(purchaseId).then(r => { setLoadedBrand(r.brand || ''); return r; });
         const im = await loadImg(src.signedUrl);
         if (!alive) return;
         const scale = Math.min(1, PREVIEW_MAX / Math.max(im.naturalWidth, im.naturalHeight));
@@ -86,9 +92,19 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
       if (!compare) applyAdjustToCanvas(wctx, w.width, w.height, adjust);
       const paper = compare ? w : renderPaper(w, w.width, w.height, size, adjust);
       c.width = paper.width; c.height = paper.height;
-      c.getContext('2d')!.drawImage(paper, 0, 0);
+      const cctx = c.getContext('2d')!;
+      cctx.drawImage(paper, 0, 0);
+      // Цомгийн лого — хүрээн дээр тогтмол (эцсийн файлд яг энд гарна)
+      if (brand && !compare) {
+        const token = ++brandTok.current;
+        const tmp = document.createElement('canvas');
+        tmp.width = c.width; tmp.height = c.height;
+        drawBrandOverlay(tmp.getContext('2d')!, tmp.width, tmp.height, brand)
+          .then(() => { if (token === brandTok.current) cctx.drawImage(tmp, 0, 0); })
+          .catch(() => null);
+      }
     });
-  }, [adjust, compare, loading, size]);
+  }, [adjust, compare, loading, size, brand]);
 
   // Чирж байрлал өөрчлөх (дүүргэх горимд)
   function onDown(e: React.PointerEvent<HTMLCanvasElement>) {
