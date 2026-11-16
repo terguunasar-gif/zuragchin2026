@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, MessageCircle, Send } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, isIOS, socialInAppName } from '../lib/browserEnv';
 import {
-  askHelpBot, clearGuide, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, syncGuideLead,
+  askHelpBot, clearGuide, loadGuide, markGuidePaid, normalizeMnPhone, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
   type GuideCartLine, type GuideChoice, type GuideMsg, type GuideSession, type GuideStep,
 } from '../lib/albumGuide';
 
@@ -46,7 +46,7 @@ export default function AlbumPurchaseGuide({
   const [busy, setBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
   const [dlNote, setDlNote] = useState('');
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const paidOnce = useRef(false);
   const inApp = typeof navigator !== 'undefined' && !!socialInAppName(navigator.userAgent || '');
@@ -62,9 +62,11 @@ export default function AlbumPurchaseGuide({
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [session.messages, session.step, chatOpen]);
 
-  useEffect(() => {
-    setChatOpen(session.step !== 'browse');
-  }, [session.step]);
+  useEffect(() => { setChatOpen(false); }, [session.step]);
+  useLayoutEffect(() => {
+    setAlbumGuideActive(true);
+    return () => setAlbumGuideActive(false);
+  }, []);
 
   useEffect(() => {
     if (session.step === 'done' || !session.phone) return;
@@ -265,18 +267,19 @@ export default function AlbumPurchaseGuide({
   }
 
   const others = named.filter(f => f.id !== session.folderId);
+  const shownMessages = chatOpen ? session.messages : session.messages.slice(-1);
 
   return (
-    <div className={`fixed inset-x-0 bottom-0 z-[35] bg-stone-950 text-white flex flex-col ${inApp ? 'top-24' : 'top-0'}`}>
+    <div className={`fixed inset-x-0 bottom-0 z-[45] bg-stone-950 text-white flex flex-col ${inApp ? 'top-24' : 'top-0'}`}>
       <header className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="font-bold truncate">Zuragchin.mn-д тавтай морил</p>
           <p className="text-stone-400 text-xs truncate">{album.name}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {session.step === 'browse' && session.messages.length > 0 && (
+          {session.messages.length > 1 && (
             <button type="button" onClick={() => setChatOpen(o => !o)} aria-pressed={chatOpen} aria-label="Чат"
-              className={`p-2 rounded-lg ${chatOpen ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
+              className={`p-2 rounded-lg ${chatOpen ? 'bg-white/15 text-white' : 'bg-white/10 text-white'}`}>
               <MessageCircle className="w-4 h-4" />
             </button>
           )}
@@ -299,9 +302,9 @@ export default function AlbumPurchaseGuide({
         </div>
       )}
 
-      {chatOpen && session.messages.length > 0 && (
-        <div ref={listRef} className="px-4 py-3 space-y-2 overflow-y-auto max-h-[34dvh] shrink-0">
-          {session.messages.map((m, i) => (
+      {shownMessages.length > 0 && (
+        <div ref={listRef} className={`px-4 py-2 space-y-2 shrink-0 ${chatOpen ? 'overflow-y-auto max-h-[34dvh]' : ''}`}>
+          {shownMessages.map((m, i) => (
             <div key={i} className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm leading-snug ${
               m.role === 'bot' ? 'bg-white/10' : 'bg-amber-500 text-stone-950 ml-auto'
             }`}>{m.text}</div>
@@ -434,8 +437,8 @@ export default function AlbumPurchaseGuide({
         )}
       </div>
 
-      {session.step !== 'welcome' && session.step !== 'done' && session.step !== 'browse' && (
-        <form onSubmit={e => { e.preventDefault(); onFreeText(draft); }} className="px-3 pt-2 flex gap-2 border-t border-white/10">
+      {session.step !== 'welcome' && session.step !== 'done' && session.step !== 'browse' && session.step !== 'choices' && (
+        <form onSubmit={e => { e.preventDefault(); onFreeText(draft); }} className="shrink-0 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex gap-2 border-t border-white/10">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Бичих..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none" />
           <button type="submit" className="bg-white/10 rounded-xl px-3" aria-label="Илгээх"><Send className="w-4 h-4" /></button>
@@ -443,7 +446,7 @@ export default function AlbumPurchaseGuide({
       )}
 
       {session.step === 'browse' && (
-        <div className="px-3 py-3 border-t border-white/10 flex items-center gap-3 bg-stone-950">
+        <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-3 bg-stone-950">
           <p className="text-sm flex-1">{session.selected.length} зураг · {money(running)}</p>
           <button type="button" onClick={finishSelect} disabled={!session.selected.length}
             className="bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl px-4 py-3 text-sm">

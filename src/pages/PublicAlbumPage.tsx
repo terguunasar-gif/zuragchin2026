@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
@@ -7,6 +7,7 @@ import QrScanModal from '../components/QrScanModal';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
+import { setAlbumGuideActive } from '../lib/albumGuide';
 import CheckoutModal from './checkout/CheckoutModal';
 import AlbumPurchaseGuide from '../components/AlbumPurchaseGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -584,6 +585,11 @@ export default function PublicAlbumPage() {
 
   // Томоор харуулах дэлгэцийн QR-ийг утасны камераар уншуулж орсон: ?add=<зураг> → сагсанд нэмнэ
   const addParam = searchParams.get('add');
+  const guideVisible = guideOn && !addParam;
+  useLayoutEffect(() => {
+    setAlbumGuideActive(guideVisible);
+    return () => setAlbumGuideActive(false);
+  }, [guideVisible]);
   useEffect(() => {
     if (!addParam || !cartReady || photos.length === 0) return;
     const r = addPhotoById(addParam);
