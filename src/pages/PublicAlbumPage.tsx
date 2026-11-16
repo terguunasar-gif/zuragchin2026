@@ -146,9 +146,9 @@ export default function PublicAlbumPage() {
   const { t, lang, locale } = useI18n();
   // Гадаад хэлээр үзэж буй зочид зөвхөн татаж авна (угаалгах захиалга монгол хэрэглэгчдэд)
   const allowPrint = lang === 'mn';
-  const printOpen = !album || printOrdersOpen(album.print_deadline);
 
   const [album, setAlbum] = useState<AlbumData | null>(null);
+  const printOpen = !album || printOrdersOpen(album.print_deadline);
   const [photos, setPhotos] = useState<PhotoData[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -218,7 +218,7 @@ export default function PublicAlbumPage() {
       if (!res.ok || !data.signedUrl) throw new Error(data.error || 'error');
       try {
         const { result, blobUrl } = await saveImageToDevice(data.signedUrl, data.filename);
-        if (result !== 'shared') setFreeViewer({ url: result === 'manual' ? data.signedUrl : (blobUrl || data.signedUrl), name: data.filename, hint: result });
+        if (result !== 'shared' && result !== 'cancelled') setFreeViewer({ url: result === 'manual' ? data.signedUrl : (blobUrl || data.signedUrl), name: data.filename, hint: result });
       } catch {
         setFreeViewer({ url: data.signedUrl, name: data.filename, hint: 'manual' });
       }
