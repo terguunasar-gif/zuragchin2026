@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Images, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, Images, X } from 'lucide-react';
 import { listVisitedAlbums } from '../../lib/visitedAlbums';
 
 const HIDE_KEY = 'zm_resume_hidden';
@@ -15,7 +15,10 @@ export default function ResumeAlbumCard() {
   const [hidden, setHidden] = useState(() => {
     try { return sessionStorage.getItem(HIDE_KEY) === '1'; } catch { return false; }
   });
-  const last = listVisitedAlbums()[0];
+  const [open, setOpen] = useState(false);
+  const all = listVisitedAlbums();
+  const last = all[0];
+  const others = all.slice(1);
   if (hidden || !last || Date.now() - last.at > MAX_AGE) return null;
 
   return (
@@ -43,6 +46,30 @@ export default function ResumeAlbumCard() {
         >
           <X className="w-4 h-4" />
         </button>
+        {others.length > 0 && (
+          <button
+            onClick={() => setOpen(o => !o)}
+            aria-label="Бусад цомог"
+            title="Бусад үзсэн цомгууд"
+            className="absolute bottom-2 right-2 h-8 px-2 flex items-center gap-1 rounded-lg text-emerald-200 hover:text-white bg-white/5 hover:bg-white/10 text-xs"
+          >
+            +{others.length} <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+        {open && others.length > 0 && (
+          <div className="mt-2 bg-stone-900 border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5">
+            {others.map(a => (
+              <button key={a.id} onClick={() => navigate(`/album/${a.link}`)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 text-left">
+                {a.cover
+                  ? <img src={a.cover} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                  : <span className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0"><Images className="w-4 h-4 text-stone-400" /></span>}
+                <span className="text-stone-200 text-sm truncate flex-1">{a.name}</span>
+                <ArrowRight className="w-4 h-4 text-stone-500" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

@@ -62,7 +62,9 @@ export async function decodeQrFromFile(file: File): Promise<string | null> {
 
 type CamState = 'starting' | 'ready' | 'denied' | 'nocamera' | 'unsupported';
 
-export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
+export default function QrScanModal({ onCode, onClose, title, hint, footer, secondary }: {
+  /** «Зургийн цомгоос QR оруулах»-ын хажууд гарах нэмэлт товч */
+  secondary?: { label: string; icon?: React.ReactNode; onClick: () => void };
   onCode: (text: string) => { ok: boolean; message: string };
   onClose: () => void;
   title: string;
@@ -259,11 +261,19 @@ export default function QrScanModal({ onCode, onClose, title, hint, footer }: {
       <div className="bg-stone-950 border-t border-white/10 px-4 py-3 space-y-3">
         <p className="text-stone-400 text-sm text-center">{hint}</p>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
-        <button onClick={() => fileRef.current?.click()} disabled={reading}
-          className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 disabled:opacity-60 text-white font-semibold py-3 rounded-xl">
-          {reading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageUp className="w-4 h-4 text-amber-400" />}
-          {reading ? 'Уншиж байна…' : 'Зургийн цомгоос QR оруулах'}
-        </button>
+        <div className={`grid gap-2 ${secondary ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <button onClick={() => fileRef.current?.click()} disabled={reading}
+            className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 disabled:opacity-60 text-white font-semibold py-3 px-2 rounded-xl text-sm leading-tight">
+            {reading ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <ImageUp className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+            {reading ? 'Уншиж байна…' : 'Зургийн цомгоос QR оруулах'}
+          </button>
+          {secondary && (
+            <button onClick={secondary.onClick}
+              className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold py-3 px-2 rounded-xl text-sm leading-tight">
+              {secondary.icon}{secondary.label}
+            </button>
+          )}
+        </div>
         {footer}
       </div>
     </div>,
