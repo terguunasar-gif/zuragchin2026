@@ -223,13 +223,10 @@ export default function AlbumPurchaseGuide({
     commit({ ...session, name: nm, phone: ph, step: 'greet', messages: [{ role: 'bot', text: greet }] });
   }
 
+  // «Тийм» → сэдэв асуулгүй шууд бүх зураг (сэдвүүд зургийн дээд мөрөнд товчоор харагдана)
+  const BROWSE_ALL_MSG = 'Бүх зургийг харууллаа. Дээрх сэдвээр шүүж болно. Хүссэн зургаа тэмдэглээд «Сонгож дууслаа» дарна уу.';
   function acceptYes() {
-    if (named.length > 0) {
-      const list = named.map(f => f.name).join(', ');
-      go('topics', {}, `Энэ цомогт ийм сэдвүүдээр ангилсан зураг байна: ${list}. Алийг нь сонирхож байна?`);
-    } else {
-      go('browse', { folderId: null }, 'Бүх зургийг харууллаа. Хүссэн зургаа тэмдэглээд «Сонгож дууслаа» дарна уу.');
-    }
+    go('browse', { folderId: null }, BROWSE_ALL_MSG);
   }
 
   function openFolder(id: string | null, label: string) {
@@ -248,12 +245,7 @@ export default function AlbumPurchaseGuide({
       return;
     }
     if (ruled?.action === 'yes') {
-      if (named.length > 0) {
-        const list = named.map(f => f.name).join(', ');
-        commit({ ...session, messages: [...messages, { role: 'bot', text: `Энэ цомогт ийм сэдвүүдээр ангилсан зураг байна: ${list}. Алийг нь сонирхож байна?` }], step: 'topics' });
-      } else {
-        commit({ ...session, messages: [...messages, { role: 'bot', text: 'Бүх зургийг харууллаа. Хүссэн зургаа тэмдэглээд «Сонгож дууслаа» дарна уу.' }], step: 'browse', folderId: null });
-      }
+      commit({ ...session, messages: [...messages, { role: 'bot', text: BROWSE_ALL_MSG }], step: 'browse', folderId: null });
       return;
     }
     if (ruled?.action === 'folder' && ruled.folderId) {
