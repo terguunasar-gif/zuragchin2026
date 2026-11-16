@@ -1,41 +1,44 @@
-import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
+import { useEffect, useState, useCallback, useLayoutEffect, useRef, Fragment, lazy, Suspense } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
 } from 'lucide-react';
-import QrScanModal from '../components/QrScanModal';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import { setAlbumGuideActive } from '../lib/albumGuide';
-import CheckoutModal from './checkout/CheckoutModal';
-import AlbumPurchaseGuide from '../components/AlbumPurchaseGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 import { loadCart, saveCart, getPendingInvoice, setPendingInvoice, listPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { albumCode, codeUrl } from '../lib/albumCode';
 import { LanguagePickerModal, LanguageSwitcher } from '../components/LanguagePicker';
-import FaceSearchModal from '../components/FaceSearchModal';
-import SaveImageViewer from '../components/SaveImageViewer';
-import PrintRequestModal, { PrintPick } from '../components/PrintRequestModal';
+import type { PrintPick } from '../components/PrintRequestModal';
 import { saveImageToDevice } from '../lib/browserEnv';
 import { clampOffset, offsetWrapStyle } from '../components/WatermarkOffset';
 import { useAuth } from '../contexts/AuthContext';
 import AlbumExpiredView from '../components/AlbumExpiredView';
 import AlbumPinGate from '../components/AlbumPinGate';
 import AiTemplateStrip from '../components/AiTemplateStrip';
-import { albumLockState } from '../lib/albumLock';
-import { albumFaceSearchEnabled } from '../lib/faceSearch';
-import PriceOfferModal from '../components/PriceOfferModal';
+import { albumLockState, savedAlbumKey } from '../lib/albumLock';
 import { rememberAlbum } from '../lib/visitedAlbums';
 import BrandMark from '../components/BrandMark';
-import AlbumVideoCreator from '../components/AlbumVideoCreator';
 import AlbumVideosGrid from '../components/AlbumVideosGrid';
 import GuestPhotosSection from '../components/GuestPhotosSection';
 import { GuestInfo, guestPhotoInfo } from '../lib/guestPhotos';
 import { albumVideoApi, AlbumVideo, fetchAlbumVideos, fetchOwnerVideos, OwnerVideo } from '../lib/albumVideo';
 import { usePageMeta } from '../seo/head';
+import { previewPathFromUrl } from '../lib/thumbs';
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
+
+// Цонхнууд нээгдэх үедээ л ачаалагдана — цомгийн эхний ачаалалд ~300KB JS-ийг хэмнэнэ.
+const QrScanModal = lazy(() => import('../components/QrScanModal'));
+const CheckoutModal = lazy(() => import('./checkout/CheckoutModal'));
+const AlbumPurchaseGuide = lazy(() => import('../components/AlbumPurchaseGuide'));
+const FaceSearchModal = lazy(() => import('../components/FaceSearchModal'));
+const SaveImageViewer = lazy(() => import('../components/SaveImageViewer'));
+const PrintRequestModal = lazy(() => import('../components/PrintRequestModal'));
+const PriceOfferModal = lazy(() => import('../components/PriceOfferModal'));
+const AlbumVideoCreator = lazy(() => import('../components/AlbumVideoCreator'));
 
 export interface AlbumData {
   id: string;
@@ -72,6 +75,8 @@ export interface PhotoData {
   download_price?: number | null;
   /** Зурагчны өгсөн нэр (update-50) */
   name?: string | null;
+  /** Жижиг (~640px) хувилбар — сүлжээнд ашиглана. Хуучин зурагт null */
+  thumb_url?: string | null;
 }
 
 /** Зургийн татах үнэ: AI бүүт → админы үнэ, зурагчны тавьсан үнэ → цомгийн анхдагч үнэ */
@@ -83,6 +88,9 @@ export function photoDownloadPrice(photo: PhotoData, album: AlbumData, aiPrice: 
 }
 
 interface AlbumFolder { id: string; name: string; }
+
+/** Цомгийн сүлжээнд нэг удаад зурах зургийн тоо */
+const GRID_PAGE = 60;
 
 /** platform_settings-д утга байхгүй үеийн AI зургийн үнэ (qpay функцтэй ижил) */
 const AI_ALBUM_PRICE_DEFAULT = 3000;
@@ -277,8 +285,12 @@ export default function PublicAlbumPage() {
     if (!window.confirm(t('Сонгосон {n} зургийг цомгоос устгах уу? Буцаах боломжгүй.', { n: ids.length }))) return;
     setDelBusy(true);
     // Файлыг цэвэрлэхэд эх файлын замыг урьдчилан авна (эрх хүрэхгүй бол бичлэг л устгагдана)
-    const { data: paths } = await authDb.from('photo_uploads').select('id, original_url, preview_url').in('id', ids);
-    const pathById = new Map((paths ?? []).map((r: { id: string; original_url: string | null; preview_url: string | null }) => [r.id, r]));
+    type PathRow = { id: string; original_url: string | null; preview_url: string | null; thumb_url?: string | null };
+    const withThumb = await authDb.from('photo_uploads').select('id, original_url, preview_url, thumb_url').in('id', ids);
+    const paths: PathRow[] | null = withThumb.error
+      ? (await authDb.from('photo_uploads').select('id, original_url, preview_url').in('id', ids)).data
+      : withThumb.data;
+    const pathById = new Map((paths ?? []).map(r => [r.id, r]));
     const done: string[] = [];
     let hidden = 0, failed = 0;
     for (const id of ids) {
@@ -290,9 +302,11 @@ export default function PublicAlbumPage() {
       if (r) {
         const orig = String(r.original_url ?? '').replace(/^photos-original\//, '');
         const prev = String(r.preview_url ?? '').includes('/photos-preview/') ? String(r.preview_url).split('/photos-preview/')[1]?.split('?')[0] : '';
+        const thumb = previewPathFromUrl(r.thumb_url);
         await Promise.all([
           orig ? authDb.storage.from('photos-original').remove([orig]).catch(() => null) : null,
           prev ? authDb.storage.from('photos-preview').remove([prev]).catch(() => null) : null,
+          thumb ? authDb.storage.from('photos-preview').remove([thumb]).catch(() => null) : null,
         ]);
       }
     }
@@ -364,27 +378,18 @@ export default function PublicAlbumPage() {
     setLoadError(false);
     const link = normalizeShareLink(rawLink);
     if (!link) { setNotFound(true); setLoading(false); return; }
-    const BASE_COLS = 'id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices';
+    // Цомгийн бүх тохиргоог НЭГ хүсэлтээр уншина (өмнө нь 4–5 тусдаа хүсэлт байсан).
+    const BASE_COLS = 'id, name, title, event_date, description, is_free, download_price, owner_id, status, watermark_layers, watermark_type, watermark_value, watermark_position, watermark_opacity, watermark_logo_url, size_prices, expires_at, files_purged_at';
+    const FULL_COLS = BASE_COLS + ', share_link, free_activated, print_deadline, accept_offers, offer_auto_accept_ratio, ai_video_enabled, face_search_enabled';
     const byLink = albumOrFilter(link);
-    const FULL_COLS = BASE_COLS + ', expires_at, files_purged_at, free_activated';
-    // Хугацаа/багцын багана байхгүй (SQL ажиллуулаагүй) үед л нарийсгана.
-    // Сүлжээ, timeout, бусад query алдаа «олдсонгүй» биш.
-    const read = (cols: string, activeOnly = false) => readAlbumQuery(() => {
-      let q = supabase.from('albums').select(cols).or(byLink);
-      if (activeOnly) q = q.eq('status', 'active');
-      return q.maybeSingle();
-    });
-    let withExpiry = await read(FULL_COLS + ', print_deadline');
-    if (withExpiry.error && isMissingColumnError(withExpiry.error)) withExpiry = await read(FULL_COLS);
-    if (withExpiry.error && isMissingColumnError(withExpiry.error)) {
-      withExpiry = await read(BASE_COLS + ', expires_at, files_purged_at');
-    }
-    if (withExpiry.error && isMissingColumnError(withExpiry.error)) {
-      withExpiry = await read(BASE_COLS, true);
-    }
-    if (withExpiry.error) { setLoadError(true); setLoading(false); return; }
+    const read = (cols: string) => readAlbumQuery(() => supabase.from('albums').select(cols).or(byLink).maybeSingle());
+    let res = await read(FULL_COLS);
+    // Шинэ багана нэмэгдсэн боловч SQL ажиллуулаагүй үед л үндсэн баганаар уншина.
+    let legacy = false;
+    if (res.error && isMissingColumnError(res.error)) { legacy = true; res = await read(BASE_COLS); }
+    if (res.error) { setLoadError(true); setLoading(false); return; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const albumData = withExpiry.data as any;
+    const albumData = res.data as any;
 
     if (!albumData || (albumData.status !== 'active' && !albumData.files_purged_at)) { setNotFound(true); setLoading(false); return; }
 
@@ -401,10 +406,46 @@ export default function PublicAlbumPage() {
     }
     setExpired(null);
 
-    // Кодоор түгжээтэй цомог — код оруулаагүй бол зургийг ачаалахгүй
-    const lock = await albumLockState(albumData.id);
+    const albumId: string = albumData.id;
+    // Кодоор нээсэн түлхүүр (санах ойд) байвал зургийг шууд түлхүүрээр уншина.
+    const knownToken = savedAlbumKey(albumId);
+    const PHOTO_COLS = 'id, preview_url, thumb_url, filename, photographer_id, print_prices, folder_id, source, download_price, title';
+    const PHOTO_COLS_OLD = 'id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price, title';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type Rows = { data: any[] | null; error: { code?: string; message?: string } | null };
+    const photoQuery = async (from?: number, to?: number): Promise<Rows> => {
+      if (knownToken) {
+        let q = supabase.rpc('locked_album_photos', { p_album_id: albumId, p_token: knownToken });
+        if (from !== undefined && to !== undefined) q = q.range(from, to);
+        return await q as Rows;
+      }
+      const run = async (cols: string) => {
+        let q = supabase.from('photo_uploads').select(cols)
+          .eq('album_id', albumId).is('hidden_at', null)
+          .order('created_at', { ascending: true });
+        if (from !== undefined && to !== undefined) q = q.range(from, to);
+        return await q as Rows;
+      };
+      const r = await run(PHOTO_COLS);
+      // thumb_url багана (update-photo-thumbs SQL) нэмэгдээгүй бол хуучнаар
+      return r.error && isMissingColumnError(r.error) ? run(PHOTO_COLS_OLD) : r;
+    };
+
+    // Үлдсэн бүх хүсэлтийг ЗЭРЭГ явуулна — өмнө нь 8 хүсэлт нэг нэгээрээ хүлээлгэдэг байсан.
+    const FIRST_PAGE = 60;
+    const lockP = albumLockState(albumId);
+    const ownerP = supabase.from('profiles').select('full_name, name, display_name').eq('id', albumData.owner_id).maybeSingle();
+    const firstP = photoQuery(0, FIRST_PAGE - 1);
+    const allP = photoQuery();
+    const foldersP = supabase.from('album_folders').select('id, name').eq('album_id', albumId)
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+    const aiP = supabase.from('platform_settings').select('value').eq('key', 'ai_album_price').maybeSingle();
+    const photographersP = supabase.rpc('album_public_photographers', { p_album_id: albumId });
+
+    // Кодоор түгжээтэй цомог — код оруулаагүй бол зургийг харуулахгүй
+    const lock = await lockP;
     if (lock.state === 'locked') {
-      setPinGate({ id: albumData.id, name: albumData.title || albumData.name });
+      setPinGate({ id: albumId, name: albumData.title || albumData.name });
       setLoading(false);
       return;
     }
@@ -412,83 +453,30 @@ export default function PublicAlbumPage() {
     const lockToken = lock.state === 'ok' ? lock.token : '';
     setLockTokenState(lockToken);
 
-    const { data: ownerData } = await supabase
-      .from('profiles').select('*')
-      .eq('id', albumData.owner_id).maybeSingle();
-
-    // Үнийн санал хүлээн авах эсэх (update-40-ийн SQL ажиллаагүй бол асаалттай гэж үзэхгүй)
-    let { data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers, offer_auto_accept_ratio').eq('id', albumData.id).maybeSingle();
-    if (offerCfgErr) ({ data: offerCfg, error: offerCfgErr } = await supabase.from('albums').select('accept_offers').eq('id', albumData.id).maybeSingle());
-    setOfferRatio(Number((offerCfg as { offer_auto_accept_ratio?: number | null } | null)?.offer_auto_accept_ratio) || null);
-    // SQL (update-77) ажиллаагүй бол асаалттай гэж үзнэ
-    const { data: vidCfg, error: vidCfgErr } = await supabase.from('albums').select('ai_video_enabled').eq('id', albumData.id).maybeSingle();
-    setVideoOn(vidCfgErr ? true : (vidCfg as { ai_video_enabled?: boolean } | null)?.ai_video_enabled !== false);
+    const { data: ownerData } = await ownerP;
+    setOfferRatio(legacy ? null : Number(albumData.offer_auto_accept_ratio) || null);
+    setVideoOn(legacy ? true : albumData.ai_video_enabled !== false);
+    setFaceEnabled(legacy ? false : !!albumData.face_search_enabled);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const owner = ownerData as any;
     const albumObj: AlbumData = {
       ...albumData,
       name: albumData.title || albumData.name,
-      organizer_name: ownerData?.full_name ?? ownerData?.name ?? ownerData?.display_name ?? '',
-      accept_offers: !offerCfgErr && (offerCfg as { accept_offers?: boolean } | null)?.accept_offers === true,
+      organizer_name: owner?.full_name ?? owner?.name ?? owner?.display_name ?? '',
+      accept_offers: !legacy && albumData.accept_offers === true,
     };
     setAlbum(albumObj);
 
-    // Хавтасны багана байхгүй (SQL ажиллуулаагүй) үед хуучин хэлбэрээр уншина
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let photoData: any[] | null = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let first: { data: any[] | null; error: unknown } = lockToken
-      // Түгжээтэй цомгийг кодоор нээсэн зочин — зургийг түлхүүрээр уншина
-      ? await supabase.rpc('locked_album_photos', { p_album_id: albumData.id, p_token: lockToken })
-      : await supabase
-        .from('photo_uploads')
-        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price, title')
-        .eq('album_id', albumData.id)
-        .order('created_at', { ascending: true });
-    if (first.error) {
-      // Зургийн нэрийн багана байхгүй (update-50-ийн SQL ажиллаагүй)
-      first = await supabase
-        .from('photo_uploads')
-        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source, download_price')
-        .eq('album_id', albumData.id)
-        .order('created_at', { ascending: true });
-    }
-    if (first.error) {
-      // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
-      first = await supabase
-        .from('photo_uploads')
-        .select('id, preview_url, filename, photographer_id, print_prices, folder_id, source')
-        .eq('album_id', albumData.id)
-        .order('created_at', { ascending: true });
-    }
-    photoData = first.data;
-    if (first.error) {
-      ({ data: photoData } = await supabase
-        .from('photo_uploads')
-        .select('id, preview_url, filename, photographer_id, print_prices')
-        .eq('album_id', albumData.id)
-        .order('created_at', { ascending: true }));
-    }
-    const { data: folderData } = await supabase
-      .from('album_folders')
-      .select('id, name')
-      .eq('album_id', albumData.id)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true });
-    setFolders((folderData ?? []) as AlbumFolder[]);
-    albumFaceSearchEnabled(albumData.id).then(setFaceEnabled);
-    supabase.rpc('album_public_photographers', { p_album_id: albumData.id })
-      .then(({ data }) => setAlbumPhotographers((data ?? []) as { photographer_id: string; name: string; photo_count: number }[]));
-
     // Зурагт тусдаа угаалгах үнэ тохируулаагүй бол цомгийн «Үнэ тариф»-ыг ашиглана.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const albumPrint = albumPrintPrices((albumData as any).size_prices);
-    // Нуусан (худалдагдсан тул устгаагүй) зургийг харуулахгүй
-    const { data: hiddenRows, error: hiddenErr } = await supabase.from('photo_uploads').select('id')
-      .eq('album_id', albumData.id).not('hidden_at', 'is', null);
-    const hiddenSet = new Set(hiddenErr ? [] : (hiddenRows ?? []).map((h: { id: string }) => h.id));
-    const mapped: PhotoData[] = (photoData ?? []).filter((p: any) => !hiddenSet.has(p.id)).map((p: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mapRows = (rows: any[] | null): PhotoData[] => (rows ?? []).map((p: any) => {
       const own = p.print_prices && typeof p.print_prices === 'object' ? p.print_prices : {};
       return {
         id: p.id,
         watermarked_url: p.preview_url,
+        thumb_url: p.thumb_url ?? null,
         title: p.filename ?? p.id,
         photographer_id: p.photographer_id,
         print_prices: Object.keys(own).length > 0 ? own : albumPrint,
@@ -498,7 +486,22 @@ export default function PublicAlbumPage() {
         name: typeof p.title === 'string' && p.title.trim() ? p.title.trim() : null,
       };
     });
+
+    // Эхний 60 зургийг шууд харуулна — бүх жагсаалт (1000 зураг ≈ 0.5 MB) араас нь ирнэ.
+    const first = await firstP;
+    const firstRows = first.error ? [] : (first.data ?? []);
+    const complete = !first.error && firstRows.length < FIRST_PAGE;
+    if (firstRows.length) {
+      setPhotos(mapRows(firstRows));
+      setLoading(false);
+    }
+
+    const [all, folderRes, aiSetting] = await Promise.all([complete ? first : allP, foldersP, aiP]);
+    setFolders(((folderRes as { data: AlbumFolder[] | null }).data ?? []) as AlbumFolder[]);
+    photographersP.then(({ data }) => setAlbumPhotographers((data ?? []) as { photographer_id: string; name: string; photo_count: number }[]));
+    const mapped = mapRows(all.data);
     setPhotos(mapped);
+
     // Нүүр хуудасны хайлтаас ирсэн бол тухайн зураг руу гүйлгэнэ
     const focusId = searchParams.get('photo');
     if (focusId && mapped.some(p => p.id === focusId)) {
@@ -507,22 +510,22 @@ export default function PublicAlbumPage() {
       setTimeout(() => setFocusPhoto(null), 6000);
     }
     // Нүүр хуудсанд «Таны цомог» товчоор буцаж орох боломжтой болгоно
+    const coverPh = mapped.find(p => p.source !== 'ai_booth') ?? mapped[0];
     rememberAlbum({
       id: albumObj.id,
       name: albumObj.name,
       link: String(albumData.share_link || link),
-      cover: mapped.find(p => p.source !== 'ai_booth')?.watermarked_url ?? mapped[0]?.watermarked_url,
+      cover: coverPh ? (coverPh.thumb_url || coverPh.watermarked_url) : undefined,
     });
     // AI бүүтийн зургийн цомог дахь үнийг сайтын админ тогтооно
-    const { data: aiSetting } = await supabase.from('platform_settings').select('value').eq('key', 'ai_album_price').maybeSingle();
-    const aiVal = Number((aiSetting as { value?: unknown } | null)?.value);
-    const aiP = Number.isFinite(aiVal) && aiVal >= 0 ? aiVal : AI_ALBUM_PRICE_DEFAULT;
-    setAiPrice(aiP);
-    await restoreCart(albumData.id, mapped, albumObj, aiP);
+    const aiVal = Number((aiSetting.data as { value?: unknown } | null)?.value);
+    const aiPr = Number.isFinite(aiVal) && aiVal >= 0 ? aiVal : AI_ALBUM_PRICE_DEFAULT;
+    setAiPrice(aiPr);
     setLoading(false);
+    await restoreCart(albumId, mapped, albumObj, aiPr);
     // AI видео — боловсруулж буйг ахиулаад жагсаалтыг уншина
-    fetchAlbumVideos(albumData.id, lockToken).then(setVideos);
-    albumVideoApi.advance(albumData.id).then(r => { if (r.done > 0) fetchAlbumVideos(albumData.id, lockToken).then(setVideos); });
+    fetchAlbumVideos(albumId, lockToken).then(setVideos);
+    albumVideoApi.advance(albumId).then(r => { if (r.done > 0) fetchAlbumVideos(albumId, lockToken).then(setVideos); });
   }
 
   const refreshVideos = useCallback(() => {
@@ -655,6 +658,35 @@ export default function PublicAlbumPage() {
     : folderFilter === 'ai' ? isAi(p)
     : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
     : !isAi(p) && p.folder_id === folderFilter);
+
+  // Зургийг хэсэгчлэн (60-аар) зурна — 1000 зурагтай цомогт бүх картыг нэг дор үүсгэдэг байсан.
+  const orderedPhotos = folderFilter === 'mine' && faceIds
+    ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
+    : visiblePhotos;
+  const [renderLimit, setRenderLimit] = useState(GRID_PAGE);
+  useEffect(() => { setRenderLimit(GRID_PAGE); }, [folderFilter, phFilter, album?.id]);
+  // Тодруулах зураг (QR, хайлт, жижиг харагдацаас дарсан) зурагдсан байх ёстой
+  useEffect(() => {
+    if (!focusPhoto) return;
+    const i = orderedPhotos.findIndex(p => p.id === focusPhoto);
+    if (i >= 0) setRenderLimit(l => Math.max(l, Math.ceil((i + 1) / GRID_PAGE) * GRID_PAGE));
+  }, [focusPhoto, orderedPhotos]);
+  const hasMorePhotos = renderLimit < orderedPhotos.length;
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || !hasMorePhotos) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) setRenderLimit(l => l + GRID_PAGE);
+    }, { rootMargin: '1500px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMorePhotos, renderLimit, view, delMode]);
+  // Хэсэг бүр тусдаа багана — шинэ хэсэг нэмэгдэхэд дээрх зургууд байраа солихгүй
+  const photoChunks: PhotoData[][] = [];
+  for (let i = 0; i < Math.min(renderLimit, orderedPhotos.length); i += GRID_PAGE) {
+    photoChunks.push(orderedPhotos.slice(i, Math.min(i + GRID_PAGE, renderLimit)));
+  }
 
   usePageMeta(!loading && album && !loadError ? {
     title: `${album.name} — Zuragchin.mn`,
@@ -806,7 +838,7 @@ export default function PublicAlbumPage() {
   return (
     <div className="min-h-screen bg-stone-950">
       <LanguagePickerModal />
-      {guideOn && !addParam && (
+      <Suspense fallback={null}>{guideOn && !addParam && (
         <AlbumPurchaseGuide
           album={album}
           photos={photos}
@@ -822,7 +854,7 @@ export default function PublicAlbumPage() {
           }}
           onClose={() => setGuideOn(false)}
         />
-      )}
+      )}</Suspense>
       <header className="border-b border-white/10 sticky top-0 z-30 bg-stone-950/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1052,14 +1084,13 @@ export default function PublicAlbumPage() {
           {!delMode && (
             <p className="text-stone-500 text-xs mb-3">{t('Татах, угаалгах захиалга өгөхдөө зураг дээр дарна уу.')}</p>
           )}
-          <div className={view !== 'small' ? 'columns-2 sm:columns-3 md:columns-4 lg:columns-6 gap-2.5' : 'columns-3 sm:columns-5 md:columns-6 lg:columns-8 gap-1.5'}>
-            {(folderFilter === 'mine' && faceIds
-              ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
-              : visiblePhotos).map(photo => (
+          {photoChunks.map((chunk, ci) => (
+          <div key={ci} className={view !== 'small' ? 'columns-2 sm:columns-3 md:columns-4 lg:columns-6 gap-2.5' : 'columns-3 sm:columns-5 md:columns-6 lg:columns-8 gap-1.5'}>
+            {chunk.map(photo => (
               <button key={photo.id} onClick={() => (delMode ? toggleDelPick(photo.id) : openLarge(photo.id))}
                 className={`relative block w-full break-inside-avoid bg-stone-900 overflow-hidden group ${view !== 'small' ? 'rounded-xl mb-2.5' : 'rounded-md mb-1.5'} ${
                   delMode && delPicks.has(photo.id) ? 'ring-4 ring-red-500' : ''}`}>
-                <MasonryThumb url={photo.watermarked_url} alt={photo.name || photo.title} />
+                <MasonryThumb photo={photo} alt={photo.name || photo.title} sizes={view === 'small' ? SIZES.small : SIZES.pick} />
                 {cart.some(c => c.photoId === photo.id) && (
                   <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-stone-950 text-[10px] font-bold">✓</span>
                 )}
@@ -1076,17 +1107,21 @@ export default function PublicAlbumPage() {
               </button>
             ))}
           </div>
+          ))}
+          {hasMorePhotos && <div ref={moreRef} className="h-24 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-stone-500" /></div>}
           </>
           ) : (
           // Том болон дунд харагдац: зураг бүрийн доор «Татах», «Угаалгах» товчнууд харагдана
+          <>
+          {photoChunks.map((chunk, ci) => (
+          <Fragment key={ci}>
           <div className={view === 'medium' ? 'columns-2 sm:columns-3 lg:columns-5 gap-2.5 [&>*]:mb-2.5' : 'columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 [&>*]:mb-4'}>
-            {(folderFilter === 'mine' && faceIds
-              ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
-              : visiblePhotos).map(photo => (
+            {chunk.map(photo => (
               <PhotoCard
                 key={photo.id}
                 photo={photo}
                 album={album}
+                sizes={view === 'medium' ? SIZES.medium : SIZES.large}
                 focused={focusPhoto === photo.id}
                 wmLayers={freeMode ? [] : wmLayers}
                 freeDownload={photo.source !== 'ai_booth' && (freeActive || photoDownloadPrice(photo, album, aiPrice) === 0)}
@@ -1127,6 +1162,10 @@ export default function PublicAlbumPage() {
               />
             ))}
           </div>
+          </Fragment>
+          ))}
+          {hasMorePhotos && <div ref={moreRef} className="h-24 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-stone-500" /></div>}
+          </>
           )
         )}
         {freeMode && (
@@ -1156,12 +1195,12 @@ export default function PublicAlbumPage() {
         </div>
       )}
 
-      {videoPhoto && album && (
+      <Suspense fallback={null}>{videoPhoto && album && (
         <AlbumVideoCreator albumId={album.id} photo={videoPhoto} isAdmin={!!profile && hasRole(profile, 'admin')}
           onClose={() => { setVideoPhoto(null); refreshVideos(); }} onChanged={refreshVideos} />
-      )}
+      )}</Suspense>
 
-      {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}
+      <Suspense fallback={null}>{freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}</Suspense>
 
       {freeActive && printOpen && printPicks.length > 0 && !printReqOpen && (
         <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 z-40">
@@ -1171,12 +1210,12 @@ export default function PublicAlbumPage() {
           </button>
         </div>
       )}
-      {printReqOpen && album && (
+      <Suspense fallback={null}>{printReqOpen && album && (
         <PrintRequestModal albumId={album.id} picks={printPicks} onChange={setPrintPicks}
           onClose={() => setPrintReqOpen(false)} onSent={() => setPrintPicks([])} />
-      )}
+      )}</Suspense>
 
-      {scanOpen && (
+      <Suspense fallback={null}>{scanOpen && (
         <QrScanModal
           title={t('Зургийн QR уншуулах')}
           hint={t('Том дэлгэц дээрх зургийн хажууд байгаа QR-ийг уншуулахад тэр зураг сагсанд орно. Дараагийн зургийн QR-ийг шууд үргэлжлүүлэн уншуулна.')}
@@ -1189,7 +1228,7 @@ export default function PublicAlbumPage() {
             </button>
           }
         />
-      )}
+      )}</Suspense>
       {notice && (
         <div className={`fixed left-4 right-4 sm:left-auto sm:right-6 sm:w-96 bottom-6 z-[75] rounded-2xl px-4 py-3 font-semibold shadow-2xl ${
           notice.ok ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}>
@@ -1215,24 +1254,24 @@ export default function PublicAlbumPage() {
         />
       )}
 
-      {offerPhoto && album && (
+      <Suspense fallback={null}>{offerPhoto && album && (
         <PriceOfferModal
           photoId={offerPhoto.id}
           previewUrl={offerPhoto.watermarked_url}
           listPrice={photoDownloadPrice(offerPhoto, album, aiPrice)}
           onClose={() => setOfferPhoto(null)}
         />
-      )}
+      )}</Suspense>
 
-      {faceOpen && album && (
+      <Suspense fallback={null}>{faceOpen && album && (
         <FaceSearchModal
           albumId={album.id}
           onClose={() => setFaceOpen(false)}
           onResult={ids => { setFaceIds(ids); setFolderFilter('mine'); }}
         />
-      )}
+      )}</Suspense>
 
-      {checkoutOpen && album && (
+      <Suspense fallback={null}>{checkoutOpen && album && (
         <CheckoutModal
           cart={cart} album={album}
           onClose={() => setCheckoutOpen(false)}
@@ -1245,7 +1284,7 @@ export default function PublicAlbumPage() {
             navigate(`/receipt/${invoiceId}`);
           }}
         />
-      )}
+      )}</Suspense>
     </div>
   );
 }
@@ -1298,19 +1337,37 @@ function useImgRatio(url: string) {
   return { ratio: ratio ?? 4 / 5, onLoad };
 }
 
-function MasonryThumb({ url, alt }: { url: string; alt: string }) {
-  const { ratio, onLoad } = useImgRatio(url);
+/**
+ * Сүлжээний зураг: жижиг хувилбар (640px) байвал түүнийг, дэлгэц том/нягт үед л preview-г хөтөч өөрөө сонгоно.
+ * Хуучин (жижиг хувилбаргүй) зурагт preview хэвээр.
+ */
+function gridImg(photo: PhotoData, sizes: string): { src: string; srcSet?: string; sizes?: string } {
+  if (!photo.thumb_url) return { src: photo.watermarked_url };
+  const big = photo.watermarked_url.includes('preview_p2_') ? 1000 : 1600;
+  return { src: photo.thumb_url, srcSet: `${photo.thumb_url} 640w, ${photo.watermarked_url} ${big}w`, sizes };
+}
+const SIZES = {
+  small: '(min-width:1024px) 13vw, (min-width:768px) 17vw, (min-width:640px) 20vw, 33vw',
+  pick: '(min-width:1024px) 17vw, (min-width:768px) 25vw, (min-width:640px) 33vw, 50vw',
+  medium: '(min-width:1024px) 20vw, (min-width:640px) 33vw, 50vw',
+  large: '(min-width:1024px) 25vw, (min-width:768px) 33vw, (min-width:640px) 50vw, 100vw',
+};
+
+function MasonryThumb({ photo, alt, sizes }: { photo: PhotoData; alt: string; sizes: string }) {
+  const { ratio, onLoad } = useImgRatio(photo.watermarked_url);
   return (
     <span className="block w-full" style={{ aspectRatio: String(ratio) }}>
-      <img src={url} alt={alt} loading="lazy" draggable={false} onLoad={onLoad}
+      <img {...gridImg(photo, sizes)} alt={alt} loading="lazy" decoding="async" draggable={false} onLoad={onLoad}
         onContextMenu={e => e.preventDefault()}
         className="w-full h-full object-cover" />
     </span>
   );
 }
 
-function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
+function PhotoCard({ photo, album, sizes, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
   focused?: boolean;
+  /** <img sizes> — харагдацын баганын өргөн */
+  sizes: string;
   /** Цомгийн эзэн: энэ зургаас AI видео үүсгэх */
   onMakeVideo?: () => void;
   onOffer?: () => void;
@@ -1343,10 +1400,11 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
       focused ? 'border-amber-400 ring-2 ring-amber-400/60 shadow-lg shadow-amber-500/20' : 'border-white/10 hover:border-white/20'}`}>
       <div className="relative bg-stone-900 overflow-hidden select-none" style={{ aspectRatio: String(ratio) }}>
         <img
-          src={photo.watermarked_url}
+          {...gridImg(photo, sizes)}
           alt={photo.name || photo.title}
           className="w-full h-full object-cover"
           loading="lazy"
+          decoding="async"
           onLoad={onLoad}
           draggable={false}
           onContextMenu={e => e.preventDefault()}

@@ -7,6 +7,7 @@ import QuotaPayModal, { QuotaPackage, normalizeQuotaPackages, DEFAULT_QUOTA_PACK
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/watermark';
+import { IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, uploadThumb } from '../../lib/thumbs';
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
 
@@ -339,8 +340,13 @@ export default function PhotoUploadPage() {
 
         const { error: prevErr } = await supabase.storage
           .from('photos-preview')
-          .upload(previewPath, previewBlob, { contentType: 'image/jpeg', upsert: false });
+          .upload(previewPath, previewBlob, { contentType: 'image/jpeg', upsert: false, cacheControl: IMMUTABLE_CACHE });
         if (prevErr) throw new Error(prevErr.message);
+
+        // Цомгийн сүлжээнд харуулах жижиг (~640px) хувилбар — алдаа гарвал preview-ээр харагдана
+        let thumb: { path: string; url: string } | null = null;
+        try { thumb = await uploadThumb(await makeThumb(previewBlob), profile.id, album.id); }
+        catch (e) { console.warn('thumb failed', e); }
 
         setFileStatus(entry.id, { progress: 85 });
 
@@ -358,7 +364,7 @@ export default function PhotoUploadPage() {
           }
         }
 
-        const { data: inserted, error: dbErr } = await supabase.from('photo_uploads').insert({
+        const row = {
           album_id: album.id,
           photographer_id: profile.id,
           original_url: originalStoragePath,
@@ -366,11 +372,19 @@ export default function PhotoUploadPage() {
           print_prices: printPricesJson,
           filename: entry.file.name,
           ...(folderId ? { folder_id: folderId } : {}),
-        }).select('id').single();
+        };
+        let { data: inserted, error: dbErr } = await supabase.from('photo_uploads')
+          .insert(thumb ? { ...row, thumb_url: thumb.url } : row).select('id').single();
+        if (dbErr && thumb && isThumbSqlMissing(dbErr)) {
+          // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) — жижиг хувилбаргүйгээр бүртгэнэ
+          await supabase.storage.from('photos-preview').remove([thumb.path]).catch(() => null);
+          thumb = null;
+          ({ data: inserted, error: dbErr } = await supabase.from('photo_uploads').insert(row).select('id').single());
+        }
         if (dbErr) {
           // Бүртгэл амжилтгүй бол байршуулсан файлуудыг устгана (зай эзлэхгүй)
           await supabase.storage.from('photos-original').remove([originalPath]).catch(() => null);
-          await supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null);
+          await supabase.storage.from('photos-preview').remove(thumb ? [previewPath, thumb.path] : [previewPath]).catch(() => null);
           if (/QUOTA_EXCEEDED/.test(dbErr.message)) {
             remaining = 0;
             throw new Error(dbErr.message.replace(/^.*QUOTA_EXCEEDED:\s*/, ''));
