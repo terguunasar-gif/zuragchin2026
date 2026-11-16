@@ -137,6 +137,17 @@ export function returningWelcome(name: string, albumName: string): string {
 
 const MID_FLOW = new Set<GuideStep>(['topics', 'browse', 'choices', 'pay']);
 
+/** Цомгийн хөтчид сонгосон боловч төлөөгүй зургууд (захиалга дундуурх үед л) */
+export function guideSelectedUnpaid(albumId: string): string[] {
+  try {
+    if (!localStorage.getItem(keyOf(albumId))) return [];
+  } catch { return []; }
+  const g = loadGuide(albumId);
+  if (!MID_FLOW.has(g.step)) return [];
+  const owned = new Set((g.owned ?? []).map(o => o.photoId));
+  return g.selected.filter(id => !owned.has(id));
+}
+
 /** Нэр нь хадгалагдсан зочин дахин нээхэд мэндчилгээ. Захиалга дундуурх алхмыг хэвээр үлдээнэ. */
 export function prepareGuideEntry(session: GuideSession, albumName: string): GuideSession {
   if (session.name.trim().length < 2) return session;
