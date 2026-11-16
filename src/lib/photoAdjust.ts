@@ -79,3 +79,79 @@ export async function applyAdjustToBlob(blob: Blob, a: PhotoAdjust): Promise<Blo
     URL.revokeObjectURL(url);
   }
 }
+
+// ── Хэвлэх тайралт (цаасны харьцаанд тааруулах) ─────────────────────────────
+// Засварын JSON-д хамт хадгалагдана: cropZoom 100–400 (%), cropX/cropY −100…100 (чөлөөт зайн хувь),
+// cropOrient 0=зургийнхаар 1=босоо 2=хэвтээ, cropFit 1 = тайрахгүй (цагаан хүрээтэй бүтэн зураг)
+export interface PrintCrop {
+  cropZoom?: number;
+  cropX?: number;
+  cropY?: number;
+  cropOrient?: number;
+  cropFit?: number;
+}
+export const CROP_KEYS = ['cropZoom', 'cropX', 'cropY', 'cropOrient', 'cropFit'] as const;
+
+/** Хэвлэх хэмжээ (см) — богино тал × урт тал */
+export const PRINT_SIZE_CM: Record<string, [number, number]> = {
+  '10x15': [10, 15], '13x18': [13, 18], '15x21': [15, 21], '20x30': [20, 30], '21x30': [21, 30], '30x40': [30, 40], '40x60': [40, 60], A4: [21, 29.7],
+};
+
+/** Цаасны өргөн/өндрийн харьцаа (чиглэлийг тооцож) */
+export function paperRatio(size: string, imgW: number, imgH: number, orient = 0): number {
+  const [s, l] = PRINT_SIZE_CM[size] ?? PRINT_SIZE_CM['10x15'];
+  const landscape = orient === 2 || (orient !== 1 && imgW > imgH);
+  return landscape ? l / s : s / l;
+}
+
+/** Эх зургаас авах тэгш өнцөгт (fill горим) */
+export function cropRect(W: number, H: number, R: number, c: PrintCrop) {
+  let cw: number, ch: number;
+  if (W / H > R) { ch = H; cw = H * R; } else { cw = W; ch = W / R; }
+  const z = Math.min(4, Math.max(1, (Number(c.cropZoom) || 100) / 100));
+  cw /= z; ch /= z;
+  const fx = W - cw, fy = H - ch;
+  const ox = Math.max(-100, Math.min(100, Number(c.cropX) || 0)) / 100;
+  const oy = Math.max(-100, Math.min(100, Number(c.cropY) || 0)) / 100;
+  return { sx: fx / 2 + ox * fx / 2, sy: fy / 2 + oy * fy / 2, sw: cw, sh: ch };
+}
+
+/** Canvas/зургийг цаасны харьцаанд оруулж шинэ canvas буцаана */
+export function renderPaper(src: CanvasImageSource, W: number, H: number, size: string, c: PrintCrop, maxOut = 0): HTMLCanvasElement {
+  const R = paperRatio(size, W, H, Number(c.cropOrient) || 0);
+  const out = document.createElement('canvas');
+  const ctx = out.getContext('2d')!;
+  if (Number(c.cropFit) === 1) {
+    // Тайрахгүй: бүтэн зураг + цагаан хүрээ
+    let ow: number, oh: number;
+    if (W / H > R) { ow = W; oh = W / R; } else { oh = H; ow = H * R; }
+    const k = maxOut ? Math.min(1, maxOut / Math.max(ow, oh)) : 1;
+    out.width = Math.round(ow * k); out.height = Math.round(oh * k);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(src, Math.round((ow - W) / 2 * k), Math.round((oh - H) / 2 * k), Math.round(W * k), Math.round(H * k));
+    return out;
+  }
+  const r = cropRect(W, H, R, c);
+  const k = maxOut ? Math.min(1, maxOut / Math.max(r.sw, r.sh)) : 1;
+  out.width = Math.round(r.sw * k); out.height = Math.round(r.sh * k);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, r.sx, r.sy, r.sw, r.sh, 0, 0, out.width, out.height);
+  return out;
+}
+
+/** Хэвлэхэд: засвар → цаасны харьцаанд тайрах → JPEG */
+export async function preparePrintBlob(blob: Blob, size: string, a: PhotoAdjust & PrintCrop): Promise<Blob> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const im = await loadImg(url);
+    const c = document.createElement('canvas');
+    c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(im, 0, 0);
+    applyAdjustToCanvas(ctx, c.width, c.height, a);
+    const paper = renderPaper(c, c.width, c.height, size, a);
+    return await new Promise<Blob>((res, rej) => paper.toBlob(b => (b ? res(b) : rej(new Error('toBlob'))), 'image/jpeg', 0.95));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

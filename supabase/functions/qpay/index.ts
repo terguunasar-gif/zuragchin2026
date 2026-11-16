@@ -867,6 +867,10 @@ Deno.serve(async (req: Request) => {
         const v = Math.round(Number(adjust?.[k]) || 0);
         if (v) clean[k] = Math.max(-100, Math.min(100, v));
       }
+      for (const [k, lo, hi] of PRINT_CROP_KEYS) {
+        const v = Math.round(Number(adjust?.[k]) || 0);
+        if (v) clean[k] = Math.max(lo, Math.min(hi, v));
+      }
       const { error } = await db.storage.from("purchases").upload(`adjust/${p.id}.json`,
         new Blob([JSON.stringify({ ...clean, by: uid, at: new Date().toISOString() })], { type: "application/json" }),
         { upsert: true, contentType: "application/json" });
@@ -1614,6 +1618,8 @@ function xmlEscape(v: string): string {
 }
 
 const PRINT_ADJUST_KEYS = ["exposure", "contrast", "highlights", "shadows", "saturation", "temperature"] as const;
+// Хэвлэх тайралт: [түлхүүр, доод, дээд]
+const PRINT_CROP_KEYS: [string, number, number][] = [["cropZoom", 100, 400], ["cropX", -100, 100], ["cropY", -100, 100], ["cropOrient", 0, 2], ["cropFit", 0, 1]];
 
 /** Угаалгах захиалгын хадгалсан гэрэл/өнгөний засвар (purchases bucket: adjust/<id>.json) */
 // deno-lint-ignore no-explicit-any
@@ -1624,6 +1630,7 @@ async function readPrintAdjust(db: any, purchaseId: string): Promise<Record<stri
     const raw = JSON.parse(await data.text());
     const out: Record<string, number> = {};
     for (const k of PRINT_ADJUST_KEYS) if (Number(raw?.[k])) out[k] = Number(raw[k]);
+    for (const [k] of PRINT_CROP_KEYS) if (Number(raw?.[k])) out[k] = Number(raw[k]);
     return out;
   } catch { return {}; }
 }
