@@ -86,7 +86,9 @@ export function canShareFiles(files: File[]): boolean {
  */
 export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'downloaded' | 'cancelled'> {
   if (!files.length) return 'downloaded';
-  if (canShareFiles(files)) {
+  // Android-ийн хуваалцах цонхонд «Галерейд хадгалах» байдаггүй (Gmail, Messenger л гарна) —
+  // тиймээс Android дээр шууд татна (Downloads → Галерейд харагдана). Хуваалцах цонх зөвхөн iPhone-д.
+  if (!isAndroid && canShareFiles(files)) {
     try {
       await navigator.share({ files });
       return 'shared';
@@ -129,7 +131,7 @@ export async function saveImageToDevice(
   try {
     const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-    if (nav.canShare?.({ files: [file] })) {
+    if (!isAndroid && nav.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file] });
       return { result: 'shared', blobUrl };
     }
