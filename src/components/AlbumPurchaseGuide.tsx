@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Loader2, Send } from 'lucide-react';
+import { Check, Loader2, MessageCircle, Send } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, isIOS, socialInAppName } from '../lib/browserEnv';
 import {
@@ -46,6 +46,7 @@ export default function AlbumPurchaseGuide({
   const [busy, setBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
   const [dlNote, setDlNote] = useState('');
+  const [chatOpen, setChatOpen] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const paidOnce = useRef(false);
   const inApp = typeof navigator !== 'undefined' && !!socialInAppName(navigator.userAgent || '');
@@ -59,7 +60,11 @@ export default function AlbumPurchaseGuide({
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [session.messages, session.step]);
+  }, [session.messages, session.step, chatOpen]);
+
+  useEffect(() => {
+    setChatOpen(session.step !== 'browse');
+  }, [session.step]);
 
   useEffect(() => {
     if (session.step === 'done' || !session.phone) return;
@@ -268,17 +273,42 @@ export default function AlbumPurchaseGuide({
           <p className="font-bold truncate">Zuragchin.mn-д тавтай морил</p>
           <p className="text-stone-400 text-xs truncate">{album.name}</p>
         </div>
-        <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="text-stone-400 text-xs underline shrink-0">Энгийн харагдац</button>
+        <div className="flex items-center gap-2 shrink-0">
+          {session.step === 'browse' && session.messages.length > 0 && (
+            <button type="button" onClick={() => setChatOpen(o => !o)} aria-pressed={chatOpen} aria-label="Чат"
+              className={`p-2 rounded-lg ${chatOpen ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
+              <MessageCircle className="w-4 h-4" />
+            </button>
+          )}
+          <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="text-stone-400 text-xs underline">Энгийн харагдац</button>
+        </div>
       </header>
 
-      <div ref={listRef} className="px-4 py-3 space-y-2 overflow-y-auto max-h-[34dvh]">
-        {session.messages.map((m, i) => (
-          <div key={i} className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm leading-snug ${
-            m.role === 'bot' ? 'bg-white/10' : 'bg-amber-500 text-stone-950 ml-auto'
-          }`}>{m.text}</div>
-        ))}
-        {busy && <div className="text-stone-500 text-xs flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> ...</div>}
-      </div>
+      {session.step === 'browse' && named.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-white/10 shrink-0 [scrollbar-width:none]">
+          <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === null ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
+            Бүгд
+          </button>
+          {named.map(f => (
+            <button key={f.id} type="button" onClick={() => openFolder(f.id, f.name)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === f.id ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
+              {f.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {chatOpen && session.messages.length > 0 && (
+        <div ref={listRef} className="px-4 py-3 space-y-2 overflow-y-auto max-h-[34dvh] shrink-0">
+          {session.messages.map((m, i) => (
+            <div key={i} className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm leading-snug ${
+              m.role === 'bot' ? 'bg-white/10' : 'bg-amber-500 text-stone-950 ml-auto'
+            }`}>{m.text}</div>
+          ))}
+          {busy && <div className="text-stone-500 text-xs flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> ...</div>}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3">
         {session.step === 'welcome' && (
@@ -319,9 +349,9 @@ export default function AlbumPurchaseGuide({
                 return (
                   <button key={p.id} type="button" onClick={() => togglePhoto(p.id)}
                     className={`relative aspect-[3/4] rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
-                    <img src={p.watermarked_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                    <span className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-md border flex items-center justify-center ${on ? 'bg-amber-500 border-amber-500 text-stone-950' : 'bg-black/50 border-white/60'}`}>
-                      {on && <Check className="w-4 h-4" />}
+                    <img src={p.watermarked_url} alt="" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover" />
+                    <span className={`pointer-events-none absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80 text-white'}`}>
+                      {on ? <Check className="w-4 h-4" strokeWidth={3} /> : <span className="block h-3.5 w-3.5 rounded-sm border border-white/80" />}
                     </span>
                     <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded px-1.5 text-[11px]">{money(dlPrice(p, album, aiPrice))}</span>
                   </button>
@@ -404,7 +434,7 @@ export default function AlbumPurchaseGuide({
         )}
       </div>
 
-      {session.step !== 'welcome' && session.step !== 'done' && (
+      {session.step !== 'welcome' && session.step !== 'done' && session.step !== 'browse' && (
         <form onSubmit={e => { e.preventDefault(); onFreeText(draft); }} className="px-3 pt-2 flex gap-2 border-t border-white/10">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Бичих..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none" />
