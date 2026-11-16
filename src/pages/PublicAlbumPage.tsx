@@ -158,7 +158,8 @@ export default function PublicAlbumPage() {
     if (!album) return;
     try {
       const raw = JSON.parse(localStorage.getItem(`zm_album_guide_${album.id}`) || 'null');
-      setGuideOn(!raw?.declined);
+      const known = typeof raw?.name === 'string' && raw.name.trim().length >= 2;
+      setGuideOn(known || !raw?.declined);
     } catch { setGuideOn(true); }
   }, [album?.id]);
   const [guidePaid, setGuidePaid] = useState<string | null>(null);

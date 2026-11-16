@@ -929,7 +929,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const signedUrls: { purchaseId: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number }[] = [];
+      const signedUrls: { purchaseId: string; photoId?: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number }[] = [];
       for (const p of purchases) {
         if (p.type === "download" && p.photo_uploads?.original_url) {
           const expiresAt: string | null = p.download_expires_at ?? null;
@@ -940,6 +940,7 @@ Deno.serve(async (req: Request) => {
             signedUrl: expired ? "" : `${SUPABASE_URL}/functions/v1/qpay/file/${p.id}?inv=${encodeURIComponent(invoiceId)}`,
             filename: p.photo_uploads.filename ?? "photo.jpg",
             type: "download",
+            photoId: p.photo_id,
             expiresAt,
             expired,
             brand: brandByAlbum[p.album_id] ?? "",

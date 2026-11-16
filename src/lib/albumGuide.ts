@@ -67,8 +67,21 @@ export interface GuideSession {
   choices: GuideChoice[];
   messages: GuideMsg[];
   declined?: boolean;
+  /** Дахин орсон зочин. Нэр, утас аль хэдийн мэдэгдсэн. */
+  known?: boolean;
+  /** Энэ төхөөрөмж дээр төлсөн нэхэмжлэхүүд. Утасны дугаараар хайхгүй. */
+  paidInvoices?: string[];
+  owned?: OwnedPhoto[];
   /** QPay нэхэмжлэх. Чат доторх төлбөр дахин ачаалахад үргэлжилнэ. */
   invoice?: GuideInvoice | null;
+}
+
+export interface OwnedPhoto {
+  photoId: string;
+  invoiceId: string;
+  type: 'download' | 'print';
+  filename: string;
+  expiresAt?: string | null;
 }
 
 const keyOf = (albumId: string) => `zm_album_guide_${albumId}`;
@@ -99,6 +112,9 @@ export function loadGuide(albumId: string): GuideSession {
       choices: Array.isArray(s.choices) ? s.choices : [],
       messages: Array.isArray(s.messages) ? s.messages.slice(-30) : [],
       invoice: readGuideInvoice(s.invoice),
+      paidInvoices: readIdList(s.paidInvoices),
+      owned: readOwned(s.owned),
+      known: s.known === true,
       step: (['welcome', 'greet', 'topics', 'browse', 'choices', 'pay', 'done'] as const).includes(s.step as GuideStep)
         ? s.step as GuideStep : 'welcome',
     };
@@ -109,6 +125,95 @@ export function loadGuide(albumId: string): GuideSession {
 
 export function saveGuide(albumId: string, session: GuideSession) {
   try { localStorage.setItem(keyOf(albumId), JSON.stringify(session)); } catch { /* хувийн цонх */ }
+}
+
+export function returningWelcome(name: string, albumName: string): string {
+  return `Сайн байна уу, ${name}! «${albumName}» цомогт орсон байна. Цомог үзэх үү?`;
+}
+
+const MID_FLOW = new Set<GuideStep>(['topics', 'browse', 'choices', 'pay']);
+
+/** Нэр нь хадгалагдсан зочин дахин нээхэд мэндчилгээ. Захиалга дундуурх алхмыг хэвээр үлдээнэ. */
+export function prepareGuideEntry(session: GuideSession, albumName: string): GuideSession {
+  if (session.name.trim().length < 2) return session;
+  if (MID_FLOW.has(session.step)) return session;
+  return {
+    ...session,
+    known: true,
+    declined: false,
+    step: 'greet',
+    messages: [{ role: 'bot', text: returningWelcome(session.name.trim(), albumName) }],
+  };
+}
+
+export function downloadExpired(expiresAt: string | null | undefined, now = Date.now()): boolean {
+  if (!expiresAt) return false;
+  const t = new Date(expiresAt).getTime();
+  return Number.isFinite(t) && t < now;
+}
+
+/** Нэг зураг нэг мөр. Татах, угаалгах нь тусдаа үлдэнэ. */
+export function groupOwned(owned: OwnedPhoto[]): { photoId: string; filename: string; download?: OwnedPhoto; print?: OwnedPhoto }[] {
+  const map = new Map<string, { photoId: string; filename: string; download?: OwnedPhoto; print?: OwnedPhoto }>();
+  for (const item of owned) {
+    if (!item.photoId) continue;
+    const row = map.get(item.photoId) ?? { photoId: item.photoId, filename: item.filename };
+    if (item.type === 'download') row.download = item;
+    if (item.type === 'print') row.print = item;
+    if (item.filename) row.filename = item.filename;
+    map.set(item.photoId, row);
+  }
+  return [...map.values()];
+}
+
+export function rememberPurchase(
+  session: GuideSession,
+  invoiceId: string,
+  items: { photoId: string; type: 'download' | 'print'; filename: string }[],
+): GuideSession {
+  const paidInvoices = [...new Set([...(session.paidInvoices ?? []), invoiceId].filter(Boolean))];
+  const owned = [...(session.owned ?? [])];
+  for (const item of items) {
+    if (!item.photoId) continue;
+    const dup = owned.some(o => o.photoId === item.photoId && o.invoiceId === invoiceId && o.type === item.type);
+    if (!dup) owned.push({ photoId: item.photoId, invoiceId, type: item.type, filename: item.filename });
+  }
+  return {
+    ...session,
+    paidInvoices,
+    owned,
+    known: true,
+    step: 'welcome',
+    selected: [],
+    choices: [],
+    messages: [],
+    invoice: null,
+    folderId: null,
+  };
+}
+
+function readIdList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((x): x is string => typeof x === 'string' && x.length > 0))];
+}
+
+function readOwned(raw: unknown): OwnedPhoto[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OwnedPhoto[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Partial<OwnedPhoto>;
+    if (typeof o.photoId !== 'string' || typeof o.invoiceId !== 'string') continue;
+    if (o.type !== 'download' && o.type !== 'print') continue;
+    out.push({
+      photoId: o.photoId,
+      invoiceId: o.invoiceId,
+      type: o.type,
+      filename: typeof o.filename === 'string' ? o.filename : '',
+      expiresAt: typeof o.expiresAt === 'string' ? o.expiresAt : null,
+    });
+  }
+  return out;
 }
 
 export function guidePaySummary(name: string, photoCount: number, downloads: number, prints: number, totalLabel: string): string {
@@ -217,6 +322,35 @@ export async function syncGuideLead(albumId: string, session: GuideSession) {
       p_choices: session.choices,
     });
   } catch { /* migration хараахан хэрэглээгүй */ }
+}
+
+/** Зөвхөн энэ lead_token-д бүртгэлтэй нэхэмжлэхийн төлсөн зураг. Утасаар хайхгүй. RPC байхгүй бол null. */
+export async function fetchLeadPurchases(albumId: string, token: string): Promise<OwnedPhoto[] | null> {
+  if (!albumId || !token) return null;
+  try {
+    const { publicDb } = await import('./supabase');
+    const { data, error } = await publicDb.rpc('guide_lead_purchases', { p_album_id: albumId, p_token: token });
+    if (error || !Array.isArray(data)) return null;
+    return readOwned(data.map((row: Record<string, unknown>) => ({
+      photoId: row.photo_id,
+      invoiceId: row.qpay_invoice_id,
+      type: row.type,
+      filename: row.filename,
+      expiresAt: row.download_expires_at,
+    })));
+  } catch {
+    return null;
+  }
+}
+
+export function mergeOwned(local: OwnedPhoto[], remote: OwnedPhoto[]): OwnedPhoto[] {
+  const out = [...local];
+  for (const item of remote) {
+    const i = out.findIndex(o => o.photoId === item.photoId && o.invoiceId === item.invoiceId && o.type === item.type);
+    if (i < 0) out.push(item);
+    else if (item.expiresAt) out[i] = { ...out[i], expiresAt: item.expiresAt, filename: item.filename || out[i].filename };
+  }
+  return out;
 }
 
 export async function markGuidePaid(albumId: string, token: string, invoiceId: string) {
