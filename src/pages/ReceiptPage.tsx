@@ -644,6 +644,7 @@ export default function ReceiptPage() {
                     </div>
 
                     {canDownload ? (
+                      <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0">
                       <button
                         onClick={() => handleDownload(p)}
                         disabled={isLoading}
@@ -658,6 +659,13 @@ export default function ReceiptPage() {
                           : got ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
                         {isLoading ? t('Татаж байна…') : got ? t('Татсан ✓') : t('Татах')}
                       </button>
+                      {got && !isLoading && (
+                        <button onClick={() => handleDownload(p)}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-stone-950 bg-amber-500 hover:bg-amber-400 px-3 py-2 rounded-lg">
+                          <Download className="w-3.5 h-3.5" /> {t('Дахин татах')}
+                        </button>
+                      )}
+                      </div>
                     ) : (
                       <span className="text-xs text-stone-500 flex-shrink-0">
                         {urlItem?.expired ? t('Хугацаа дууссан') : isPaid ? t('Бэлдэж байна…') : t('Хүлээгдэж байна')}
