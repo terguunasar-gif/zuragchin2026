@@ -88,10 +88,13 @@ export default function AlbumPurchaseGuide({
   const [undl, setUndl] = useState<{ invoice: string; count: number }[]>([]);
   useEffect(() => {
     if (session.step === 'done' || session.step === 'pay') return;
+    // Төлсөн нэхэмжлэхүүдийг бүх эх сурвалжаас: хөтчийн төлөв, эзэмшсэн зургууд, энэ цомгийн худалдан авалтын түүх
     const invoices = [...new Set([
       ...(session.paidInvoices ?? []),
-      ...listPurchaseHistory().filter(h => h.albumId === album.id && h.downloads > 0).map(h => h.invoiceId),
-    ])].slice(-6);
+      ...(session.owned ?? []).filter(o => o.type === 'download').map(o => o.invoiceId),
+      ...listPurchaseHistory().filter(h => h.albumId === album.id).map(h => h.invoiceId),
+      ...(paidInvoice ? [paidInvoice] : []),
+    ].filter(Boolean))].slice(-8);
     if (!invoices.length) { setUndl([]); return; }
     let cancel = false;
     Promise.all(invoices.map(async inv => {
@@ -110,7 +113,10 @@ export default function AlbumPurchaseGuide({
       } catch { return { invoice: inv, count: 0 }; }
     })).then(r => { if (!cancel) setUndl(r.filter(x => x.count > 0)); });
     return () => { cancel = true; };
-  }, [session.step, album.id, session.paidInvoices?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session.step, album.id, session.paidInvoices?.length, session.owned?.length, paidInvoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  const undlTotal = undl.reduce((n, u) => n + u.count, 0);
+  // Нэг захиалга бол шууд баримт руу, олон бол «Төлсөн» жагсаалт руу
+  const undlHref = undl.length === 1 ? `/receipt/${undl[0].invoice}` : '/my-purchases';
   useEffect(() => {
     supabase.from('albums').select('allow_buyer_edit').eq('id', album.id).maybeSingle()
       .then(({ data, error }) => { if (!error && data && (data as { allow_buyer_edit?: boolean }).allow_buyer_edit === false) setAllowEdit(false); });
@@ -602,19 +608,6 @@ export default function AlbumPurchaseGuide({
         </div>
       </header>
 
-      {undl.length > 0 && session.step !== 'done' && session.step !== 'pay' && (
-        <div className="shrink-0 px-3 pt-2 space-y-1.5">
-          {undl.map(u => (
-            <a key={u.invoice} href={`/receipt/${u.invoice}`}
-              className="flex items-center justify-between gap-3 bg-emerald-500/15 border border-emerald-400/50 rounded-xl px-3 py-2.5">
-              <span className="text-sm">
-                <b className="text-emerald-300">Татаагүй {u.count} зураг</b> <span className="text-stone-300">байна</span>
-              </span>
-              <span className="shrink-0 bg-emerald-500 text-stone-950 font-bold text-sm rounded-lg px-3 py-1.5">Татах →</span>
-            </a>
-          ))}
-        </div>
-      )}
 
       {session.step === 'browse' && (
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
@@ -988,7 +981,20 @@ export default function AlbumPurchaseGuide({
 
       {session.step === 'browse' && (
         <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-3 bg-stone-950">
-          <p className="text-sm flex-1">{session.selected.length} зураг · {money(running)}</p>
+          {undlTotal > 0 && session.selected.length === 0 ? (
+            <a href={undlHref}
+              className="flex-1 min-w-0 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/60 rounded-xl px-3 py-2.5">
+              <span className="truncate text-sm"><b className="text-emerald-300">Татаагүй {undlTotal} зураг</b></span>
+              <span className="shrink-0 ml-auto bg-emerald-500 text-stone-950 font-bold text-xs rounded-lg px-2.5 py-1">Татах →</span>
+            </a>
+          ) : (
+            <p className="text-sm flex-1">
+              {session.selected.length} зураг · {money(running)}
+              {undlTotal > 0 && (
+                <a href={undlHref} className="block text-emerald-300 text-xs underline">Татаагүй {undlTotal} зураг →</a>
+              )}
+            </p>
+          )}
           <button type="button" onClick={finishSelect} disabled={!session.selected.length}
             className="bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl px-4 py-3 text-sm">
             Сонгож дууслаа
