@@ -10,7 +10,6 @@ export interface EditorSource {
   save: (a: Edit) => Promise<void>;
 }
 
-const ASPECTS: [string, number][] = [['Эх', 0], ['2:3', 667], ['3:2', 1500], ['4:5', 800], ['1:1', 1000], ['16:9', 1778], ['9:16', 563]];
 import { loadPrintSource, savePrintAdjust } from '../lib/printPhoto';
 import { drawBrandOverlay } from '../lib/watermark';
 
@@ -20,7 +19,9 @@ const PREVIEW_MAX = 1400;
  * Угаалгах захиалгын зургийг хэвлэхээс өмнө гэрэл, сүүдэр, өнгийг тохируулах цонх.
  * Засвар хадгалагдаж, дараагийн «Принт» бүрт эх зурагт хэрэгжинэ (эх файл өөрчлөгдөхгүй).
  */
-export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note, brand: brandProp }: {
+export default function PrintEditor({ purchaseId, title, onClose, onPrint, source, actionLabel, heading, note, brand: brandProp, formats }: {
+  /** Татах горимд санал болгох хэвлэх хэмжээнүүд (зурагчны цомогт тохируулсан) */
+  formats?: string[];
   /** Цомгийн брэнд давхарга (watermark_value) — эцсийн байрлалд нь тогтмол харуулна */
   brand?: string;
   purchaseId: string;
@@ -155,7 +156,7 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
     setAdjust(a => ({ ...a, cropZoom: Math.round(z) }));
   }
   const cropSet = (patch: PrintCrop) => setAdjust(a => ({ ...a, ...patch }));
-  const sizeLabel = (() => { const v = PRINT_SIZE_CM[size]; return v ? `${v[0]}×${v[1]} см` : (ASPECTS.find(a => a[1] === (Number(adjust.cropAspect) || 0))?.[0] ?? ''); })();
+  const sizeLabel = (() => { const v = PRINT_SIZE_CM[size]; return v ? `${v[0]}×${v[1]} см` : ''; })();
 
   const dirty = JSON.stringify(clean(adjust)) !== JSON.stringify(clean(savedAdjust));
 
@@ -178,6 +179,19 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
     if (dirty) (source ? source.save(a) : savePrintAdjust(purchaseId, a)).then(() => setSavedAdjust(a)).catch(() => null);
   }
   const isPrint = !!PRINT_SIZE_CM[size];
+  // Татах горим: зурагчны тохируулсан хэмжээ + босоо/хэвтээ → cropAspect
+  const fmtList = (formats?.length ? formats : DEFAULT_FORMATS).filter(f => PRINT_SIZE_CM[f]);
+  const asp = Number(adjust.cropAspect) || 0;
+  const [fmtState, setFmt] = useState<string | null>(null);
+  const fmt = fmtState ?? (asp ? (fmtList.find(f => { const [a, b] = PRINT_SIZE_CM[f]; return Math.round(a / b * 1000) === asp || Math.round(b / a * 1000) === asp; }) ?? '') : '');
+  const imgLand = (workRef.current?.width ?? 1) > (workRef.current?.height ?? 1);
+  const fmtLand = asp ? asp > 1000 : imgLand;
+  function pickFmt(f: string, land: boolean) {
+    const [a, b] = PRINT_SIZE_CM[f];
+    setFmt(f);
+    cropSet({ cropAspect: Math.round((land ? b / a : a / b) * 1000), cropX: 0, cropY: 0 });
+  }
+  const effOrient = (() => { const o = Number(adjust.cropOrient) || 0; if (o) return o; return imgLand ? 2 : 1; })();
   const [tab, setTab] = useState<'crop' | 'look' | 'fine'>('crop');
   const [field, setField] = useState<keyof PhotoAdjust>('exposure');
   const lookOf = (a: Edit) => { const o: PhotoAdjust = {}; for (const f of ADJUST_FIELDS) { const v = Number(a[f.key]) || 0; if (v) o[f.key] = v; } return o; };
@@ -234,18 +248,30 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
               <div className="space-y-2.5">
                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3">
                   {isPrint ? <>
-                    {([['Зургийнхаар', 0], ['Босоо', 1], ['Хэвтээ', 2]] as const).map(([l, v]) => (
+                    {([['Босоо', 1], ['Хэвтээ', 2]] as const).map(([l, v]) => (
                       <button key={l} type="button" disabled={disabled} onClick={() => cropSet({ cropOrient: v, cropX: 0, cropY: 0 })}
-                        className={chip((Number(adjust.cropOrient) || 0) === v)}>{l}</button>
+                        className={chip(effOrient === v)}>{l}</button>
                     ))}
                     <span className="w-px bg-white/10 shrink-0 mx-0.5" />
                     <button type="button" disabled={disabled} onClick={() => cropSet({ cropFit: 0 })} className={chip(fillMode)}>Дүүргэх</button>
                     <button type="button" disabled={disabled} onClick={() => cropSet({ cropFit: 1 })} className={chip(!fillMode)}>Бүтэн</button>
-                  </> : ASPECTS.map(([l, v]) => (
-                    <button key={v} type="button" disabled={disabled} onClick={() => cropSet({ cropAspect: v, cropX: 0, cropY: 0 })}
-                      className={chip((Number(adjust.cropAspect) || 0) === v)}>{l}</button>
-                  ))}
+                  </> : <>
+                    <button type="button" disabled={disabled} onClick={() => { setFmt(''); cropSet({ cropAspect: 0, cropX: 0, cropY: 0 }); }}
+                      className={chip(!fmt)}>Эх</button>
+                    {fmtList.map(f => (
+                      <button key={f} type="button" disabled={disabled} onClick={() => pickFmt(f, fmtLand)}
+                        className={chip(fmt === f)}>{fmtLabel(f)}</button>
+                    ))}
+                  </>}
                 </div>
+                {!isPrint && fmt && (
+                  <div className="flex gap-1.5">
+                    {([['Босоо', false], ['Хэвтээ', true]] as const).map(([l, land]) => (
+                      <button key={l} type="button" disabled={disabled} onClick={() => pickFmt(fmt, land)}
+                        className={`flex-1 ${chip(fmtLand === land)}`}>{l}</button>
+                    ))}
+                  </div>
+                )}
                 {fillMode ? (
                   <div className="flex items-center gap-3">
                     <span className="text-stone-400 text-xs shrink-0 w-14">Томруулах</span>
@@ -257,7 +283,7 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
                 ) : (
                   <p className="text-stone-500 text-[11px]">Зураг бүтнээрээ, хажуудаа цагаан хүрээтэй хэвлэгдэнэ.</p>
                 )}
-                <p className="text-stone-500 text-[11px]">{isPrint ? `Цаас ${sizeLabel}` : 'Зургийн харьцаа'}</p>
+                {(isPrint || !fmt) && <p className="text-stone-500 text-[11px]">{isPrint ? `Цаас ${sizeLabel}` : 'Хэмжээ сонговол босоо зургийг хэвтээгээр (эсвэл эсрэгээр) тайрч болно'}</p>}
               </div>
             )}
 
@@ -331,6 +357,9 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
     </div>
   );
 }
+
+const DEFAULT_FORMATS = ['10x15', '13x18', '20x30', 'A4'];
+const fmtLabel = (f: string) => (f === 'A4' ? 'A4' : f.replace('x', '×'));
 
 const SHORT: Partial<Record<keyof PhotoAdjust, string>> = {
   exposure: 'Гэрэл', contrast: 'Тодрол', highlights: 'Гэрэлтэй хэсэг', shadows: 'Сүүдэр', saturation: 'Өнгө', temperature: 'Дулаан',
