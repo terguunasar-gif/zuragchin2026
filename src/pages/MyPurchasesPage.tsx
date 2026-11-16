@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Download, Loader2, Printer, Receipt } from 'lucide-react';
-import { listPurchaseHistory, listPendingInvoices, setPendingInvoice, type PurchaseHistoryEntry } from '../lib/purchaseHistory';
+import { listPurchaseHistory, listPendingInvoices, setPendingInvoice, syncPurchaseHistoryFromGuides, type PurchaseHistoryEntry } from '../lib/purchaseHistory';
+import { cachedUndownloaded, undownloadedByInvoice } from '../lib/receiptDownloads';
 import RecoverPurchases from '../components/RecoverPurchases';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -14,7 +15,17 @@ import BrandMark from '../components/BrandMark';
 export default function MyPurchasesPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
-  const [items, setItems] = useState<PurchaseHistoryEntry[]>(() => listPurchaseHistory());
+  const [items, setItems] = useState<PurchaseHistoryEntry[]>(() => { syncPurchaseHistoryFromGuides(); return listPurchaseHistory(); });
+  // Захиалга бүрийн татаагүй зургийн тоо (кэшээс шууд, серверээс шинэчилнэ)
+  const [undl, setUndl] = useState<Record<string, number>>(() =>
+    Object.fromEntries(cachedUndownloaded(items.map(i => i.invoiceId)).map(r => [r.invoice, r.count])));
+  useEffect(() => {
+    if (!items.length) return;
+    undownloadedByInvoice(items.map(i => i.invoiceId))
+      .then(r => setUndl(Object.fromEntries(r.map(x => [x.invoice, x.count])))).catch(() => {});
+  }, [items]);
+  // Татаагүй зурагтайг жагсаалтын дээр
+  const sorted = useMemo(() => [...items].sort((a, b) => (undl[b.invoiceId] ? 1 : 0) - (undl[a.invoiceId] ? 1 : 0)), [items, undl]);
   // Банкны апп руу шилжиж төлөөд буцаж ирэхэд төлбөрийг шалгах хуудас хаагдсан байж болно —
   // энэ хөтөчид үлдсэн нэхэмжлэхүүдийг шалгаж, төлөгдсөнийг баримт руу нь холбоно.
   const [checking, setChecking] = useState(false);
@@ -82,7 +93,7 @@ export default function MyPurchasesPage() {
             <p className="text-stone-600 text-xs mt-3 max-w-sm mx-auto">{t('Messenger, Facebook зэрэг өөр апп доторх хөтчөөр төлсөн бол тэр хөтчөөрөө (жишээ нь Messenger дахь цомгийн холбоосоор) орж харна уу.')}</p>
           </div>
         ) : (
-          items.map(it => (
+          sorted.map(it => (
             <button
               key={it.invoiceId}
               onClick={() => navigate(`/receipt/${it.invoiceId}`)}
@@ -100,6 +111,9 @@ export default function MyPurchasesPage() {
                 <div className="flex items-center gap-3 mt-1.5 text-xs text-stone-400">
                   {it.downloads > 0 && (
                     <span className="flex items-center gap-1"><Download className="w-3.5 h-3.5" /> {t('Татах {n}', { n: it.downloads })}</span>
+                  )}
+                  {undl[it.invoiceId] > 0 && (
+                    <span className="flex items-center gap-1 text-emerald-300 font-semibold">{t('Татаагүй {n}', { n: undl[it.invoiceId] })} →</span>
                   )}
                   {it.prints > 0 && (
                     <span className="flex items-center gap-1 text-amber-300"><Printer className="w-3.5 h-3.5" /> {t('Угаалгах {n}', { n: it.prints })}</span>

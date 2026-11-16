@@ -5,8 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
-import { listPurchaseHistory } from '../../lib/purchaseHistory';
-import { cachedUndownloaded, countUndownloaded } from '../../lib/receiptDownloads';
+import { listPurchaseHistory, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
+import { cachedUndownloaded, undownloadedByInvoice } from '../../lib/receiptDownloads';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -171,13 +171,15 @@ export default function HomeHeader() {
 /** Нүүрний дээд мөр: QR уншигч + Төлсөн захиалга (татаагүй зургийн тоотой) */
 function MyAlbumsBar() {
   const navigate = useNavigate();
-  const history = listPurchaseHistory();
+  // Цомгийн хөтчөөр төлсөн ч түүхэнд ороогүй захиалгуудыг нэгтгэнэ
+  const [history] = useState(() => { syncPurchaseHistoryFromGuides(); return listPurchaseHistory(); });
   // Кэшээс шууд, дараа нь серверээс шинэчилнэ (алдаа гарвал кэш хэвээр)
-  const [undl, setUndl] = useState(() => cachedUndownloaded(history.map(h => h.invoiceId)).reduce((n, r) => n + r.count, 0));
+  const [undlList, setUndlList] = useState(() => cachedUndownloaded(history.map(h => h.invoiceId)));
+  const undl = undlList.reduce((n, r) => n + r.count, 0);
   useEffect(() => {
     if (!history.length) return;
     let cancel = false;
-    countUndownloaded(history.map(h => h.invoiceId)).then(n => { if (!cancel) setUndl(n); }).catch(() => {});
+    undownloadedByInvoice(history.map(h => h.invoiceId)).then(r => { if (!cancel) setUndlList(r); }).catch(() => {});
     return () => { cancel = true; };
   }, [history.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
@@ -195,7 +197,8 @@ function MyAlbumsBar() {
         )}
         {undl > 0 && (
           <button
-            onClick={() => navigate('/my-purchases')}
+            // Нэг захиалга бол шууд баримт (татах хэсэг), олон бол төлсөн жагсаалт
+            onClick={() => navigate(undlList.length === 1 ? `/receipt/${undlList[0].invoice}` : '/my-purchases')}
             className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
           >
             Татаагүй {undl} зураг →
