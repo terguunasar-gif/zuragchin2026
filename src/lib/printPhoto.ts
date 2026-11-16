@@ -87,7 +87,7 @@ async function withBrand(url: string, raw: string, filename: string, size: strin
     let blob = await (await fetch(url)).blob();
     // 1) гэрэл/өнгө → 2) цаасны харьцаанд тайрах (лого тайрагдахгүйн тулд ЭХЛЭЭД тайрна) → 3) цомгийн лого
     blob = await preparePrintBlob(blob, size, adjust);
-    const out = layers ? await applyBrandToPurchase(blob, raw, filename) : blob;
+    const out = layers ? await applyBrandToPurchase(blob, raw, filename, false) : blob;
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result));
