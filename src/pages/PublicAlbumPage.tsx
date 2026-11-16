@@ -35,6 +35,7 @@ import GuestPhotosSection from '../components/GuestPhotosSection';
 import { GuestInfo, guestPhotoInfo } from '../lib/guestPhotos';
 import { albumVideoApi, AlbumVideo, fetchAlbumVideos, fetchOwnerVideos, OwnerVideo } from '../lib/albumVideo';
 import { usePageMeta } from '../seo/head';
+import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 
 export interface AlbumData {
   id: string;
@@ -55,6 +56,8 @@ export interface AlbumData {
   free_activated?: boolean;
   /** Зурагчин үнийн санал хүлээн авах эсэх (update-40) */
   accept_offers?: boolean;
+  /** NULL = угаалгах хязгааргүй */
+  print_deadline?: string | null;
 }
 
 export interface PhotoData {
@@ -143,6 +146,7 @@ export default function PublicAlbumPage() {
   const { t, lang, locale } = useI18n();
   // Гадаад хэлээр үзэж буй зочид зөвхөн татаж авна (угаалгах захиалга монгол хэрэглэгчдэд)
   const allowPrint = lang === 'mn';
+  const printOpen = !album || printOrdersOpen(album.print_deadline);
 
   const [album, setAlbum] = useState<AlbumData | null>(null);
   const [photos, setPhotos] = useState<PhotoData[]>([]);
@@ -370,7 +374,8 @@ export default function PublicAlbumPage() {
       if (activeOnly) q = q.eq('status', 'active');
       return q.maybeSingle();
     });
-    let withExpiry = await read(FULL_COLS);
+    let withExpiry = await read(FULL_COLS + ', print_deadline');
+    if (withExpiry.error && isMissingColumnError(withExpiry.error)) withExpiry = await read(FULL_COLS);
     if (withExpiry.error && isMissingColumnError(withExpiry.error)) {
       withExpiry = await read(BASE_COLS + ', expires_at, files_purged_at');
     }
@@ -617,7 +622,7 @@ export default function PublicAlbumPage() {
     const opts: { type: 'download' | 'print'; size?: string; price: number }[] = [];
     const dl = photoDownloadPrice(ph, album, aiPrice);
     if (dl > 0) opts.push({ type: 'download', price: dl });
-    if (allowPrint) for (const [size, price] of Object.entries(ph.print_prices || {})) {
+    if (allowPrint && printOpen) for (const [size, price] of Object.entries(ph.print_prices || {})) {
       if (Number(price) > 0) opts.push({ type: 'print', size, price: Number(price) });
     }
     return opts;
@@ -886,6 +891,9 @@ export default function PublicAlbumPage() {
           </span>
         </div>
         <AlbumCodeChip id={album.id} name={album.name} />
+        {album.print_deadline && (printOpen
+          ? <p className="mt-3 text-sm text-amber-200">{t('Угаалгах захиалга {date} хүртэл', { date: formatPrintDay(album.print_deadline, locale) })}</p>
+          : <p className="mt-3 text-sm text-stone-400">{t('Угаалгах хугацаа дууссан')}. {t('Татах')}</p>)}
         {album.expires_at && (() => {
           const left = Math.ceil((new Date(album.expires_at).getTime() - Date.now()) / 86400000);
           return left <= 7 ? (
@@ -1086,7 +1094,7 @@ export default function PublicAlbumPage() {
                 onFreeDownload={() => freeDownload(photo.id)}
                 printPicked={printPicks.some(p => p.photoId === photo.id)}
                 onTogglePrintPick={() => togglePrintPick(photo.id, photo.watermarked_url)}
-                allowPrint={allowPrint}
+                allowPrint={allowPrint && printOpen}
                 aiPrice={aiPrice}
                 inCart={cart.filter(c => c.photoId === photo.id)}
                 printSelectorOpen={printSelectorPhoto === photo.id}
@@ -1155,7 +1163,7 @@ export default function PublicAlbumPage() {
 
       {freeViewer && <SaveImageViewer {...freeViewer} onClose={() => setFreeViewer(null)} />}
 
-      {freeActive && printPicks.length > 0 && !printReqOpen && (
+      {freeActive && printOpen && printPicks.length > 0 && !printReqOpen && (
         <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 z-40">
           <button onClick={() => setPrintReqOpen(true)}
             className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-5 py-3 rounded-2xl shadow-2xl">
@@ -1420,7 +1428,7 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
             <HandCoins className="w-3.5 h-3.5" /> {t('Үнийн санал илгээх')}
           </button>
         )}
-        {freeDownload && onTogglePrintPick && (
+        {freeDownload && onTogglePrintPick && printOrdersOpen(album.print_deadline) && (
           <button onClick={onTogglePrintPick}
             className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
               printPicked ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}>
@@ -1428,6 +1436,9 @@ function PhotoCard({ photo, album, focused, wmLayers, allowPrint, aiPrice, inCar
           </button>
         )}
 
+        {!printOrdersOpen(album.print_deadline) && hasPrintPrices && (
+          <p className="text-xs text-stone-500 px-1">{t('Угаалгах хугацаа дууссан')}</p>
+        )}
         {allowPrint && hasPrintPrices && (
           <div>
             <button onClick={onTogglePrintSelector}

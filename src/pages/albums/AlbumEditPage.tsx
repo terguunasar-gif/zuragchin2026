@@ -7,6 +7,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
 import { supabase } from '../../lib/supabase';
 import BrandMark from '../../components/BrandMark';
+import PrintDeadlineField from '../../components/PrintDeadlineField';
+import { dateInputToDeadlineIso, deadlineDateInput } from '../../lib/printDeadline';
+import { isMissingColumnError } from '../../lib/albumLink';
 
 interface AlbumPhotographer {
   photographer_id: string;
@@ -203,6 +206,7 @@ export default function AlbumEditPage() {
 
   const [albumName, setAlbumName]     = useState('');
   const [eventDate, setEventDate]     = useState('');
+  const [printDeadline, setPrintDeadline] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus]           = useState('draft');
   const [isFree, setIsFree]           = useState(false);
@@ -230,6 +234,7 @@ export default function AlbumEditPage() {
 
     setAlbumName(data.title || data.name || '');
     setEventDate(data.event_date?.slice(0, 10) || '');
+    setPrintDeadline(deadlineDateInput((data as { print_deadline?: string | null }).print_deadline));
     setDescription(data.description || '');
     setStatus(data.status || 'draft');
     setIsFree(data.is_free ?? false);
@@ -373,12 +378,13 @@ export default function AlbumEditPage() {
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
     const watermarkValue = layersToWatermarkValue(usable);
-    const { data: savedRows, error: err } = await supabase.from('albums').update({
+    const patch = {
       title: albumName.trim(), name: albumName.trim(),
       event_date: eventDate || null, description: description.trim(),
       status, is_free: isFree,
       download_price: isFree ? 0 : parseFloat(digitalPrice?.price || '0') || 0,
       size_prices: isFree ? null : activeSizes.map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
+      print_deadline: dateInputToDeadlineIso(printDeadline),
       contact_info: {
         phone: contact.phone.trim(), email: contact.email.trim(), facebook: contact.facebook.trim(),
         instagram: contact.instagram.trim(), other: contact.other.trim(),
@@ -388,7 +394,13 @@ export default function AlbumEditPage() {
       watermark_position: first?.position || 'bottom-right',
       watermark_opacity: (first?.opacity ?? 70) / 100,
       watermark_logo_url: first?.type === 'logo' ? (first?.logoUrl || null) : null,
-    }).eq('id', albumId).select('id');
+    };
+    let { data: savedRows, error: err } = await supabase.from('albums').update(patch).eq('id', albumId).select('id');
+    if (err && isMissingColumnError(err)) {
+      const without = { ...patch };
+      delete without.print_deadline;
+      ({ data: savedRows, error: err } = await supabase.from('albums').update(without).eq('id', albumId).select('id'));
+    }
     setSaving(false);
     if (err) { setError('Хадгалагдсангүй: ' + err.message); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (!savedRows || savedRows.length === 0) { setError('Хадгалагдсангүй — энэ цомгийг засах эрх алга (зөвхөн цомгийн эзэн засна).'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
@@ -487,6 +499,7 @@ export default function AlbumEditPage() {
               </h2>
               <div><label className="text-stone-400 text-xs mb-1.5 block">Цомгийн нэр *</label><input value={albumName} onChange={e => setAlbumName(e.target.value)} placeholder="Арга хэмжээний нэр" className={inputCls} /></div>
               <div><label className="text-stone-400 text-xs mb-1.5 block">Арга хэмжээний огноо</label><input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className={inputCls + ' [color-scheme:dark]'} /></div>
+              <PrintDeadlineField value={printDeadline} onChange={setPrintDeadline} />
               <div><label className="text-stone-400 text-xs mb-1.5 block">Тайлбар</label><textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Арга хэмжээний тухай…" className={inputCls + ' resize-none'} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-stone-400 text-xs mb-1.5 block">Төлөв</label>

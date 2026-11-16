@@ -4,7 +4,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Grid2x2, Grid3x3, LayoutGrid, Loader2, Maximize, Minimize, ScanLine, Square, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { albumLockState } from '../lib/albumLock';
-import { albumOrFilter, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
+import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
+import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import AlbumPinGate from '../components/AlbumPinGate';
 import BrandMark from '../components/BrandMark';
 import { KIOSK_LAYOUT_KEY, movePage, pageStartIndex, parseKioskLayout, type KioskLayout } from '../lib/kioskLayout';
@@ -35,7 +36,7 @@ export default function AlbumKioskPage() {
   const [params, setParams] = useSearchParams();
   const folder = params.get('f') || 'all';
 
-  const [album, setAlbum] = useState<{ id: string; name: string } | null>(null);
+  const [album, setAlbum] = useState<{ id: string; name: string; print_deadline?: string | null } | null>(null);
   const [state, setState] = useState<'loading' | 'notfound' | 'offline' | 'locked' | 'ready'>('loading');
   const [photos, setPhotos] = useState<KPhoto[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -56,12 +57,17 @@ export default function AlbumKioskPage() {
   const load = useCallback(async () => {
     setState('loading');
     if (!shareLink) { setState('notfound'); return; }
-    const { data, error } = await readAlbumQuery(() =>
-      supabase.from('albums').select('id, name, title, status').or(albumOrFilter(shareLink)).maybeSingle());
+    let loaded = await readAlbumQuery(() =>
+      supabase.from('albums').select('id, name, title, status, print_deadline').or(albumOrFilter(shareLink)).maybeSingle());
+    if (loaded.error && isMissingColumnError(loaded.error)) {
+      loaded = await readAlbumQuery(() =>
+        supabase.from('albums').select('id, name, title, status').or(albumOrFilter(shareLink)).maybeSingle());
+    }
+    const { data, error } = loaded;
     if (error) { setState('offline'); return; }
-    const album = data as { id: string; name: string; title: string | null; status: string } | null;
+    const album = data as { id: string; name: string; title: string | null; status: string; print_deadline?: string | null } | null;
     if (!album || album.status !== 'active') { setState('notfound'); return; }
-    setAlbum({ id: album.id, name: album.title || album.name });
+    setAlbum({ id: album.id, name: album.title || album.name, print_deadline: album.print_deadline ?? null });
     const lock = await albumLockState(album.id);
     if (lock.state === 'locked') { setState('locked'); return; }
     tokenRef.current = lock.state === 'ok' ? lock.token : '';
@@ -215,6 +221,13 @@ export default function AlbumKioskPage() {
         <button onClick={() => navigate(-1)} title="Буцах" className="p-2 rounded-lg hover:bg-white/10"><ArrowLeft className="w-4 h-4" /></button>
         <BrandMark className="w-7 h-7" />
         <p className="font-bold truncate max-w-[28vw] sm:max-w-[40vw]">{album?.name}</p>
+        {album?.print_deadline && (
+          <span className={`text-xs truncate ${printOrdersOpen(album.print_deadline) ? 'text-amber-200' : 'text-stone-400'}`}>
+            {printOrdersOpen(album.print_deadline)
+              ? `Угаалгах ${formatPrintDay(album.print_deadline)} хүртэл`
+              : 'Угаалгах хугацаа дууссан'}
+          </span>
+        )}
         <div className="flex-1" />
         {multi && count > 0 && (
           <span className="tabular-nums font-bold whitespace-nowrap text-white">

@@ -9,6 +9,7 @@ import {
   type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep, type OwnedPhoto,
 } from '../lib/albumGuide';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, writeDownloadedIds } from '../lib/receiptDownloads';
+import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -310,6 +311,7 @@ export default function AlbumPurchaseGuide({
     setViewerId(session.choices[(i + dir + session.choices.length) % session.choices.length].photoId);
   }
 
+  const printsOpen = printOrdersOpen(album.print_deadline);
   const lines: GuideCartLine[] = [];
   for (const c of session.choices) {
     const p = photos.find(x => x.id === c.photoId);
@@ -321,7 +323,7 @@ export default function AlbumPurchaseGuide({
         filename: p.title || p.id, type: 'download', price,
       });
     }
-    if (c.print && c.printSize) {
+    if (printsOpen && c.print && c.printSize) {
       const price = Number(p.print_prices?.[c.printSize] ?? 0);
       if (price > 0) lines.push({
         photoId: p.id, photographerId: p.photographer_id, previewUrl: p.watermarked_url,
@@ -330,7 +332,7 @@ export default function AlbumPurchaseGuide({
     }
   }
   const total = lines.reduce((s, l) => s + l.price, 0);
-  const ready = session.choices.length > 0 && session.choices.every(c => c.download || c.print);
+  const ready = session.choices.length > 0 && session.choices.every(c => c.download || (printsOpen && c.print));
 
   async function redownload(item: OwnedPhoto) {
     setPastNote('');
@@ -617,8 +619,10 @@ export default function AlbumPurchaseGuide({
                         ? <p className="text-sm text-red-300">Татах хугацаа дууссан.</p>
                         : <button type="button" disabled={dlBusy} onClick={() => redownload(row.download!)}
                             className="rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm">Дахин татах</button>)}
-                      <button type="button" onClick={() => reprint(row.photoId)}
-                        className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
+                      {printsOpen
+                        ? <button type="button" onClick={() => reprint(row.photoId)}
+                            className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
+                        : <p className="text-sm text-stone-400">Угаалгах хугацаа дууссан</p>}
                     </div>
                   );
                 })()}
@@ -672,6 +676,11 @@ export default function AlbumPurchaseGuide({
 
         {session.step === 'choices' && (
           <div className="space-y-3 max-w-lg mx-auto">
+            {album.print_deadline && (
+              <p className={`text-sm ${printsOpen ? 'text-amber-200' : 'text-stone-400'}`}>
+                {printsOpen ? `Угаалгах захиалга ${formatPrintDay(album.print_deadline)} хүртэл` : 'Угаалгах хугацаа дууссан'}
+              </p>
+            )}
             {session.choices.map(c => {
               const p = photos.find(x => x.id === c.photoId);
               if (!p) return null;
@@ -698,7 +707,8 @@ export default function AlbumPurchaseGuide({
                         className={`text-xs rounded-full px-3 py-1.5 border ${c.download ? 'bg-amber-500 text-stone-950 border-amber-500' : 'border-white/15'}`}>
                         Татах · {money(dlp)}
                       </button>
-                      {prints.length > 0 && (
+                      {!printsOpen && prints.length > 0 && <p className="text-xs text-stone-500 mt-2">Угаалгах хугацаа дууссан</p>}
+                      {printsOpen && prints.length > 0 && (
                         <button type="button" onClick={() => setChoice(c.photoId, { print: !c.print, printSize: c.printSize || prints[0][0] })}
                           className={`text-xs rounded-full px-3 py-1.5 border ${c.print ? 'bg-amber-500 text-stone-950 border-amber-500' : 'border-white/15'}`}>
                           Угаалгах · {money(Number(p.print_prices[c.printSize || prints[0][0]] || prints[0][1]))}

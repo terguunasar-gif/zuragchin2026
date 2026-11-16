@@ -10,6 +10,7 @@ import { useI18n } from '../../lib/i18n';
 import { loadBuyerInfo, saveBuyerInfo } from '../../lib/buyerInfo';
 import { normalizeEmail } from '../../lib/buyerEmail';
 import LicenseConsent from '../../components/LicenseConsent';
+import { printOrdersOpen } from '../../lib/printDeadline';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -104,6 +105,10 @@ export default function CheckoutModal({
 
   async function createInvoice() {
     if (!validate()) return;
+    if (cart.some(i => i.type === 'print') && !printOrdersOpen(album.print_deadline)) {
+      setError(t('Угаалгах хугацаа дууссан'));
+      return;
+    }
     const email = normalizeEmail(buyerEmail) ?? '';
     saveBuyerInfo(buyerName, buyerPhone, email);
     setLoading(true);
