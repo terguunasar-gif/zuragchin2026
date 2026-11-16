@@ -11,6 +11,7 @@ import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '
 import { applyBrandToPurchase } from '../lib/watermark';
 import { hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
 import PrintEditor from '../components/PrintEditor';
+import EditedThumb from '../components/EditedThumb';
 import { flushPendingEdits } from '../lib/pendingEdits';
 import { everyDownloaded, idsWithServerDownloads, readDownloadedIds, withoutDownloaded, writeDownloadedIds } from '../lib/receiptDownloads';
 
@@ -607,11 +608,10 @@ export default function ReceiptPage() {
                     {/* Preview thumbnail (усан тэмдэгтэй) */}
                     <div className="relative flex-shrink-0">
                       {p.photo_uploads?.preview_url && (
-                        <img
-                          src={p.photo_uploads.preview_url}
-                          alt={p.photo_uploads.filename}
-                          className="w-14 h-14 object-cover rounded-lg"
-                        />
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-stone-800 flex items-center justify-center">
+                          <EditedThumb url={p.photo_uploads.preview_url} size="original" edit={urlItem?.adjust}
+                            className={hasEdit(urlItem?.adjust) ? 'max-w-full max-h-full object-contain' : 'w-full h-full object-cover'} />
+                        </div>
                       )}
                       {isPaid && (
                         <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
@@ -627,7 +627,7 @@ export default function ReceiptPage() {
                         <p className="text-green-400 text-xs mt-0.5">{t('✓ Усан тэмдэггүй')}</p>
                       )}
                       {canDownload && (urlItem?.canEdit || hasEdit(urlItem?.adjust)) && (
-                        <p className="flex items-center gap-2 mt-1 text-xs">
+                        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs whitespace-nowrap">
                           {urlItem?.canEdit && (
                             <button onClick={() => setEditing(p)} className="text-amber-300 hover:text-amber-200 font-semibold">✂ {t('Засах')}</button>
                           )}
@@ -701,11 +701,12 @@ export default function ReceiptPage() {
                   <div key={p.id} className="px-5 py-4 space-y-3">
                     <div className="flex items-center gap-4">
                       {p.photo_uploads?.preview_url && (
-                        <img
-                          src={p.photo_uploads.preview_url}
-                          alt={p.photo_uploads.filename}
-                          className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
-                        />
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-800 flex items-center justify-center flex-shrink-0">
+                          {(() => { const ad = signedUrls.find(x => x.purchaseId === p.id)?.adjust; return (
+                            <EditedThumb url={p.photo_uploads.preview_url} size={p.print_size} edit={ad}
+                              className={hasEdit(ad) ? 'max-w-full max-h-full object-contain' : 'w-full h-full object-cover'} />
+                          ); })()}
+                        </div>
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-sm truncate">{p.photo_uploads?.filename ?? 'Photo'}</p>
