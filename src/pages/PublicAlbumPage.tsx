@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
@@ -586,7 +586,7 @@ export default function PublicAlbumPage() {
   // Томоор харуулах дэлгэцийн QR-ийг утасны камераар уншуулж орсон: ?add=<зураг> → сагсанд нэмнэ
   const addParam = searchParams.get('add');
   const guideVisible = guideOn && !addParam;
-  useEffect(() => {
+  useLayoutEffect(() => {
     setAlbumGuideActive(guideVisible);
     return () => setAlbumGuideActive(false);
   }, [guideVisible]);
