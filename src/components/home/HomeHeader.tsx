@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Images, KeyRound, LogOut, Menu, Settings, Smartphone, X } from 'lucide-react';
+import { ChevronDown, Images, KeyRound, LogOut, Receipt, Menu, Settings, Smartphone, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { clearVisitedAlbums, listVisitedAlbums, VisitedAlbum } from '../../lib/visitedAlbums';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
+import { listPurchaseHistory } from '../../lib/purchaseHistory';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -173,6 +174,17 @@ function MyAlbumsBar() {
   const [albums, setAlbums] = useState<VisitedAlbum[]>(() => listVisitedAlbums());
   const [open, setOpen] = useState(false);
   const last = albums[0];
+  // Төлсөн захиалга (энэ хөтөчид) — баримт руу шууд орж татна
+  const paidCount = listPurchaseHistory().length;
+  const paidBtn = paidCount > 0 ? (
+    <button
+      onClick={() => navigate('/my-purchases')}
+      title="Төлсөн захиалга — зургаа татах"
+      className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-emerald-400/40 text-emerald-300 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
+    >
+      <Receipt className="w-4 h-4" /> Төлсөн
+    </button>
+  ) : null;
   // Өөр хөтчөөс орсон зочин цомгоо кодоор олно
   const codeBtn = (
     <button
@@ -180,13 +192,13 @@ function MyAlbumsBar() {
       title="Цомгийн кодоор орох"
       className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-200 font-semibold text-sm px-3 py-1.5 rounded-xl flex-shrink-0"
     >
-      <KeyRound className="w-4 h-4 text-amber-400" /> Цомгийн код
+      <KeyRound className="w-4 h-4 text-amber-400" /> <span className="hidden sm:inline">Цомгийн код</span>
     </button>
   );
   if (albums.length === 0) {
     return (
       <div className="border-t border-white/5 bg-stone-950/95">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2"><HomeQrButton />{codeBtn}</div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2"><HomeQrButton />{paidBtn}{codeBtn}</div>
       </div>
     );
   }
@@ -194,6 +206,7 @@ function MyAlbumsBar() {
     <div className="border-t border-white/5 bg-stone-950/95">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-end gap-2 relative">
         <HomeQrButton />
+        {paidBtn}
         {codeBtn}
         <button
           onClick={() => navigate(`/album/${last.link}`)}
