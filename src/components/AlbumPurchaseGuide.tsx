@@ -79,6 +79,7 @@ export default function AlbumPurchaseGuide({
   onInvoiceRef.current = onInvoiceCreated;
   type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number; brand?: string; adjust?: PhotoAdjust & PrintCrop };
   const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
+  const [dlSel, setDlSel] = useState<Set<string> | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
   // Төлөхөөс өмнөх засвар: аль зургийн аль төрлийг засаж байгаа
@@ -887,38 +888,63 @@ export default function AlbumPurchaseGuide({
               const label = allGot ? (live.length === 1 ? 'Татсан ✓' : 'Бүгдийг татсан ✓') : 'Галерей руу хадгалах';
               return (
                 <>
-                  {dlFiles.length > 0 && (
-                    <div className="space-y-2">
-                      {live.map(f => {
-                        const got = dlGot.has(f.purchaseId);
-                        return (
-                          <div key={f.purchaseId} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-2">
-                            <p className="min-w-0 flex-1 truncate text-sm">{f.filename}</p>
-                            <button type="button" disabled={dlBusy} onClick={() => downloadPaid([f])}
-                              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
-                                got ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300' : 'bg-amber-500 text-stone-950'
-                              }`}>
-                              {got ? 'Татсан ✓' : 'Татах'}
-                            </button>
-                            {got && (
-                              <button type="button" disabled={dlBusy} onClick={() => downloadPaid([f])}
-                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-500 text-stone-950 disabled:opacity-50">
-                                Дахин татах
+                  {live.length > 0 && (() => {
+                    // Анхдагч сонголт: татаагүй бүх зураг (бүгд татсан бол бүгд — дахин татахад)
+                    const notGot = live.filter(f => !dlGot.has(f.purchaseId)).map(f => f.purchaseId);
+                    const sel = dlSel ?? new Set(notGot.length ? notGot : live.map(f => f.purchaseId));
+                    const chosen = live.filter(f => sel.has(f.purchaseId));
+                    const toggle = (id: string) => { const n = new Set(sel); if (n.has(id)) n.delete(id); else n.add(id); setDlSel(n); };
+                    const allOn = live.every(f => sel.has(f.purchaseId));
+                    return (
+                      <>
+                        {live.length > 1 && (
+                          <button type="button" onClick={() => setDlSel(allOn ? new Set() : new Set(live.map(f => f.purchaseId)))}
+                            className="flex items-center gap-2 text-sm text-stone-300">
+                            <span className={`flex h-5 w-5 items-center justify-center rounded border-2 ${allOn ? 'border-amber-400 bg-amber-500 text-stone-950' : 'border-white/60'}`}>
+                              {allOn && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                            </span>
+                            {allOn ? 'Бүгдийг болиулах' : 'Бүгдийг сонгох'}
+                          </button>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {live.map(f => {
+                            const on = sel.has(f.purchaseId);
+                            const got = dlGot.has(f.purchaseId);
+                            const ph = photos.find(p => p.id === f.photoId);
+                            return (
+                              <button key={f.purchaseId} type="button" onClick={() => toggle(f.purchaseId)}
+                                className={`relative aspect-[3/4] rounded-xl overflow-hidden bg-stone-900 text-left ${on ? 'ring-2 ring-amber-400' : 'opacity-70'}`}>
+                                {ph?.watermarked_url && <img src={ph.watermarked_url} alt="" className="absolute inset-0 h-full w-full object-cover pointer-events-none" />}
+                                <span className={`absolute top-2 left-2 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80'}`}>
+                                  {on && <Check className="w-4 h-4" strokeWidth={3} />}
+                                </span>
+                                {got && <span className="absolute top-2 right-2 rounded-md bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-stone-950">Татсан ✓</span>}
+                                <span className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-[11px] truncate">{f.filename}</span>
                               </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                            );
+                          })}
+                        </div>
+                        <button type="button" onClick={() => downloadPaid(chosen)} disabled={dlBusy || chosen.length === 0}
+                          className={`w-full font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 ${
+                            allGot && chosen.every(f => dlGot.has(f.purchaseId))
+                              ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300 py-3.5'
+                              : 'bg-amber-500 text-stone-950 text-base py-4'
+                          }`}>
+                          {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          {chosen.length === 0 ? 'Татах зургаа сонгоно уу'
+                            : chosen.every(f => dlGot.has(f.purchaseId)) ? `Дахин татах · ${chosen.length} зураг`
+                            : `${chosen.length} зураг галерей руу татах`}
+                        </button>
+                        {allGot && <p className="text-center text-emerald-300 text-sm">{label}</p>}
+                      </>
+                    );
+                  })()}
+                  {live.length === 0 && (
+                    <button type="button" onClick={() => downloadPaid()} disabled={dlBusy}
+                      className="w-full font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 bg-amber-500 text-stone-950 text-base py-4">
+                      {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Галерей руу хадгалах
+                    </button>
                   )}
-                  <button type="button" onClick={() => downloadPaid()} disabled={dlBusy}
-                    className={`w-full font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 ${
-                      allGot
-                        ? 'border border-emerald-400/60 bg-emerald-500/10 text-emerald-300 py-3.5'
-                        : 'bg-amber-500 text-stone-950 text-base py-4'
-                    }`}>
-                    {dlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {label}
-                  </button>
                 </>
               );
             })()}
