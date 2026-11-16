@@ -18,9 +18,14 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <!-- Supabase (Сидней) руу холболтыг JS ачаалж байх хооронд урьдчилан нээнэ — цомгийн эхний хүсэлтийг хурдасгана -->
+    <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
+    <link rel="dns-prefetch" href="%VITE_SUPABASE_URL%" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&display=swap" rel="stylesheet" />
+    <!-- Фонт хуудсыг зурахыг хориглохгүй (render-blocking биш) -->
+    <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&display=swap" rel="stylesheet" /></noscript>
 
     <!-- Facebook / Messenger-т линк хуваалцахад гарах зураг, тайлбар -->
     <meta property="og:type" content="website" />
