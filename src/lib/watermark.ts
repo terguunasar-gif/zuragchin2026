@@ -573,16 +573,71 @@ function jpegMetaSegments(bytes: Uint8Array): Uint8Array[] {
  * Засварлах цонхонд: цомгийн лого/текстийг (тайрсан хүрээн дээр) эцсийн байрлалд нь зурна.
  * Давтагдах тамга, сайтын тэмдэг зурахгүй — зөвхөн худалдан авагчийн файлд орох брэнд.
  */
-export async function drawBrandOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, raw: string): Promise<void> {
+export async function drawBrandOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, raw: string, opts: { siteBadge?: boolean } = {}): Promise<void> {
   const keep = raw ? brandLayers(raw) : null;
-  if (!keep) return;
-  const layers: WatermarkLayer[] = JSON.parse(keep);
-  for (const layer of layers) {
-    if (layer.type === 'text' && layer.text) {
-      applyTextWatermarkPositioned(ctx, w, h, layer.text, layer.opacity, layer.fontSize, layer.color, layer.position, layer.offsetX, layer.offsetY);
-    } else if (layer.type === 'image' && layer.imagePreview) {
-      await applyImageWatermarkPositioned(ctx, w, h, layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position, layer.offsetX, layer.offsetY);
+  const occupied: Rect[] = [];
+  if (keep) {
+    const layers: WatermarkLayer[] = JSON.parse(keep);
+    for (const layer of layers) {
+      if (layer.type === 'text' && layer.text) {
+        occupied.push(applyTextWatermarkPositioned(ctx, w, h, layer.text, layer.opacity, layer.fontSize, layer.color, layer.position, layer.offsetX, layer.offsetY));
+      } else if (layer.type === 'image' && layer.imagePreview) {
+        const r = await applyImageWatermarkPositioned(ctx, w, h, layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position, layer.offsetX, layer.offsetY);
+        if (r) occupied.push(r);
+      }
     }
+  }
+  // Сайтын тэмдэг — цомгийн лого/текстгүй буланд
+  if (opts.siteBadge) applySiteBadge(ctx, w, h, occupied);
+}
+
+/**
+ * Урьдчилан харах (preview_p2_) зурагт аль хэдийн шингэсэн булангийн лого, текст, сайтын тэмдгийн байрлал.
+ * Засах цонхонд тайрах/томруулахад давхардахгүйн тулд эдгээрийг бүдгэрүүлнэ.
+ */
+export async function bakedMarkRects(w: number, h: number, raw: string): Promise<Rect[]> {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d')!;
+  const occupied: Rect[] = [];
+  try {
+    const layers: WatermarkLayer[] = JSON.parse(raw || '[]');
+    for (const layer of Array.isArray(layers) ? layers : []) {
+      if (layer.type === 'text' && layer.text) {
+        occupied.push(applyTextWatermarkPositioned(ctx, w, h, layer.text, layer.opacity, layer.fontSize, layer.color, layer.position, layer.offsetX, layer.offsetY));
+      } else if (layer.type === 'image' && layer.imagePreview) {
+        const r = await applyImageWatermarkPositioned(ctx, w, h, layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position, layer.offsetX, layer.offsetY).catch(() => null);
+        if (r) occupied.push(r);
+      }
+    }
+  } catch { /* давхаргагүй */ }
+  const measure = (font: number) => { ctx.font = `600 ${font}px Arial, sans-serif`; return ctx.measureText('Zuragchin.mn').width; };
+  const badge = siteBadgeRect(w, h, occupied, measure);
+  // Хуучин preview-д тэмдэг баруун доод буланд байж болзошгүй тул тэр байрлалыг ч нэмнэ
+  const legacy = siteBadgeRect(w, h, [], measure);
+  return [...occupied, badge, ...(legacy.x !== badge.x || legacy.y !== badge.y ? [legacy] : [])];
+}
+
+/** Тэгш өнцөгтүүдийг бүдгэрүүлнэ (canvas дээр шууд) */
+export function blurRects(ctx: CanvasRenderingContext2D, rects: Rect[]) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  for (const r of rects) {
+    const pad = Math.round(Math.max(r.w, r.h) * 0.12);
+    const x = Math.max(0, Math.floor(r.x - pad)), y = Math.max(0, Math.floor(r.y - pad));
+    const w = Math.min(cw - x, Math.ceil(r.w + pad * 2)), h = Math.min(ch - y, Math.ceil(r.h + pad * 2));
+    if (w < 2 || h < 2) continue;
+    // Жижигрүүлээд буцааж томруулах — filter дэмжихгүй хөтөчид ч ажиллана
+    const k = Math.max(4, Math.round(Math.min(w, h) / 6));
+    const t = document.createElement('canvas');
+    t.width = Math.max(1, Math.round(w / k)); t.height = Math.max(1, Math.round(h / k));
+    const tc = t.getContext('2d')!;
+    tc.imageSmoothingQuality = 'high';
+    tc.drawImage(ctx.canvas, x, y, w, h, 0, 0, t.width, t.height);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(t, 0, 0, t.width, t.height, x, y, w, h);
+    ctx.restore();
   }
 }
 

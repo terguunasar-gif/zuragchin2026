@@ -11,7 +11,7 @@ export interface EditorSource {
 }
 
 import { loadPrintSource, savePrintAdjust } from '../lib/printPhoto';
-import { drawBrandOverlay } from '../lib/watermark';
+import { bakedMarkRects, blurRects, drawBrandOverlay } from '../lib/watermark';
 
 const PREVIEW_MAX = 1400;
 
@@ -67,6 +67,14 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
         c.height = Math.round(im.naturalHeight * scale);
         const ctx = c.getContext('2d', { willReadFrequently: true })!;
         ctx.drawImage(im, 0, 0, c.width, c.height);
+        // Худалдан авагчийн горим: preview-д шингэсэн лого/тэмдгийг бүдгэрүүлнэ (доор тогтмол байрлалд дахин зурна)
+        if (source) {
+          const raw = brandProp || '';
+          const k = Math.max(im.naturalWidth, im.naturalHeight) / Math.max(c.width, c.height);
+          const rects = await bakedMarkRects(im.naturalWidth, im.naturalHeight, raw).catch(() => []);
+          if (!alive) return;
+          blurRects(ctx, rects.map(r => ({ x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k })));
+        }
         baseRef.current = ctx.getImageData(0, 0, c.width, c.height);
         workRef.current = c;
         setSize(src.size || '10x15');
@@ -96,11 +104,11 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
       const cctx = c.getContext('2d')!;
       cctx.drawImage(paper, 0, 0);
       // Цомгийн лого — хүрээн дээр тогтмол (эцсийн файлд яг энд гарна)
-      if (brand && !compare) {
+      if ((brand || source) && !compare) {
         const token = ++brandTok.current;
         const tmp = document.createElement('canvas');
         tmp.width = c.width; tmp.height = c.height;
-        drawBrandOverlay(tmp.getContext('2d')!, tmp.width, tmp.height, brand)
+        drawBrandOverlay(tmp.getContext('2d')!, tmp.width, tmp.height, brand, { siteBadge: !!source })
           .then(() => { if (token === brandTok.current) cctx.drawImage(tmp, 0, 0); })
           .catch(() => null);
       }
