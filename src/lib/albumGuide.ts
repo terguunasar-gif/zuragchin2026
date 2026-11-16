@@ -104,6 +104,23 @@ export function clearGuide(albumId: string) {
   try { localStorage.removeItem(keyOf(albumId)); } catch { /* */ }
 }
 
+/** Сагснаас нэг зургийг хасна. Сонголтоос ч гарна. Хоосон болвол зургийн тор руу буцна. */
+export function dropGuideCartPhoto(session: GuideSession, photoId: string): GuideSession {
+  if (!session.choices.some(c => c.photoId === photoId) && !session.selected.includes(photoId)) return session;
+  const choices = session.choices.filter(c => c.photoId !== photoId);
+  const selected = session.selected.filter(id => id !== photoId);
+  if (session.step === 'choices' && choices.length === 0) {
+    return {
+      ...session,
+      choices,
+      selected,
+      step: 'browse',
+      messages: [...session.messages, { role: 'bot', text: 'Сагс хоосон боллоо. Зургаа дахин сонгоно уу.' }],
+    };
+  }
+  return { ...session, choices, selected };
+}
+
 export type GuideAction = 'yes' | 'no' | 'folder' | null;
 
 /** Дүрэмт хариу. Танихгүй бол null — тэгвэл help-bot руу өгнө. */
