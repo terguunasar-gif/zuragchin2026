@@ -1005,7 +1005,8 @@ Deno.serve(async (req: Request) => {
         } else if (p.type === "print") {
           const e = editByAlbum[p.album_id] ?? { allow: true, printOpen: true };
           signedUrls.push({
-            purchaseId: p.id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false,
+            purchaseId: p.id, photoId: p.photo_id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false,
+            brand: brandByAlbum[p.album_id] ?? "",
             adjust: adjustById[p.id],
             canEdit: e.allow && e.printOpen && (!p.print_status || p.print_status === "pending"),
           });

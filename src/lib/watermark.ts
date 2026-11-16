@@ -432,7 +432,18 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
+const imgCache = new Map<string, Promise<HTMLImageElement>>();
 async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
+  // Нэг логог олон удаа (засварлах цонхны кадр бүрт) татахгүйн тулд кэшлэнэ
+  let p = imgCache.get(url);
+  if (!p) {
+    p = loadImageFromUrlRaw(url);
+    imgCache.set(url, p);
+    p.catch(() => imgCache.delete(url));
+  }
+  return p;
+}
+async function loadImageFromUrlRaw(url: string): Promise<HTMLImageElement> {
   if (url.startsWith('data:')) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -558,6 +569,23 @@ function jpegMetaSegments(bytes: Uint8Array): Uint8Array[] {
  * (сайтын «Zuragchin.mn» тэмдэг, давтагдах тамгагүй). Захиалгын XMP/COM мэдээллийг хадгална.
  * Брэнд давхарга байхгүй эсвэл алдаа гарвал эх файлыг өөрчлөхгүй буцаана.
  */
+/**
+ * Засварлах цонхонд: цомгийн лого/текстийг (тайрсан хүрээн дээр) эцсийн байрлалд нь зурна.
+ * Давтагдах тамга, сайтын тэмдэг зурахгүй — зөвхөн худалдан авагчийн файлд орох брэнд.
+ */
+export async function drawBrandOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, raw: string): Promise<void> {
+  const keep = raw ? brandLayers(raw) : null;
+  if (!keep) return;
+  const layers: WatermarkLayer[] = JSON.parse(keep);
+  for (const layer of layers) {
+    if (layer.type === 'text' && layer.text) {
+      applyTextWatermarkPositioned(ctx, w, h, layer.text, layer.opacity, layer.fontSize, layer.color, layer.position, layer.offsetX, layer.offsetY);
+    } else if (layer.type === 'image' && layer.imagePreview) {
+      await applyImageWatermarkPositioned(ctx, w, h, layer.imagePreview, layer.opacity, layer.imageSize ?? 20, layer.position, layer.offsetX, layer.offsetY);
+    }
+  }
+}
+
 export async function applyBrandToPurchase(blob: Blob, raw: string, filename: string): Promise<Blob> {
   const layers = raw ? brandLayers(raw) : null;
   if (!layers) return blob;

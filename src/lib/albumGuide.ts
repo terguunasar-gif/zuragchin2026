@@ -1,3 +1,4 @@
+import type { PhotoAdjust, PrintCrop } from './photoAdjust';
 import { useEffect, useState } from 'react';
 
 /** Цомгийн худалдан авалтын чат нээлттэй үед сайтын «Туслах» товчийг нууна. */
@@ -43,6 +44,9 @@ export interface GuideChoice {
   download: boolean;
   print: boolean;
   printSize?: string;
+  /** Төлөхөөс өмнө хийсэн засвар (тайралт, гэрэл/өнгө) — татах ба угаалгах тус тусдаа */
+  editDl?: PhotoAdjust & PrintCrop;
+  editPr?: PhotoAdjust & PrintCrop;
 }
 
 export interface GuideCartLine {
