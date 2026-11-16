@@ -12,6 +12,9 @@ import { downloadLabeledQr } from '../../lib/labeledQr';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import BrandMark from '../../components/BrandMark';
+import PrintDeadlineField from '../../components/PrintDeadlineField';
+import { dateInputToDeadlineIso, deadlineDateInput, defaultPrintDeadlineIso } from '../../lib/printDeadline';
+import { isMissingColumnError } from '../../lib/albumLink';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type WatermarkType = 'text' | 'image' | 'tiled-text';
@@ -96,6 +99,12 @@ export default function CreateAlbumPage() {
 
   const [albumName, setAlbumName] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [printDeadline, setPrintDeadline] = useState('');
+  const [deadlineTouched, setDeadlineTouched] = useState(false);
+  useEffect(() => {
+    if (deadlineTouched || !eventDate) return;
+    setPrintDeadline(deadlineDateInput(defaultPrintDeadlineIso(eventDate)));
+  }, [eventDate, deadlineTouched]);
   const [description, setDescription] = useState('');
   // ✅ ЗАСВАР: 'draft' → 'active' (цомог үүссэний дараа шууд нийтэд харагдана)
   const [status, setStatus] = useState<'draft' | 'active' | 'closed'>('active');
@@ -252,14 +261,21 @@ export default function CreateAlbumPage() {
       const contactInfo = { phone: contactPhone, email: contactEmail, facebook: contactFacebook, instagram: contactInstagram, other: contactOther };
       const ownerCommission = revenueModel === 'owned' ? OWNER_COMMISSION_OWNED : organizerPercent / 100;
       const photographerPercent = revenueModel === 'owned' ? 0 : (photographerPoolFraction * 100);
-      const { error } = await supabase.from('albums').insert({
+      const row = {
         id: albumId, owner_id: user!.id, title: albumName.trim(), name: albumName.trim(), event_date: eventDate, description: description.trim(), status,
         watermark_type: 'layers', watermark_value: watermarkValue, watermark_position: activeLayer.position,
         download_price: isFree ? 0 : parseFloat(sizePrices.find(s => s.enabled && s.price)?.price ?? '0'),
         size_prices: isFree ? null : sizePrices.filter(s => s.enabled).map(s => ({ size: s.size, label: s.label, price: parseFloat(s.price) || 0 })),
+        print_deadline: dateInputToDeadlineIso(printDeadline),
         is_free: isFree, owner_commission: ownerCommission, organizer_percent: ownerCommission * 100, photographer_percent: photographerPercent,
         revenue_model: revenueModel, share_link: shareLink, qr_code_url: shareUrl, contact_info: contactInfo,
-      });
+      };
+      let { error } = await supabase.from('albums').insert(row);
+      if (error && isMissingColumnError(error)) {
+        const without = { ...row };
+        delete without.print_deadline;
+        ({ error } = await supabase.from('albums').insert(without));
+      }
       if (error) throw error;
       if (photographers.length > 0) await supabase.from('album_photographers').insert(photographers.map(p => ({ album_id: albumId, photographer_id: p.user_id, status: 'approved' })));
       setSuccessData({ albumId, shareLink: shareUrl });
@@ -350,6 +366,7 @@ export default function CreateAlbumPage() {
                     </select>
                   </Field>
                 </div>
+                <PrintDeadlineField value={printDeadline} onChange={v => { setDeadlineTouched(true); setPrintDeadline(v); }} />
                 <Field label="Тайлбар">
                   <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Зурагчидад энэ арга хэмжээний талаар хэлэх..." rows={3} className={inputClass(false) + ' resize-none'} />
                 </Field>

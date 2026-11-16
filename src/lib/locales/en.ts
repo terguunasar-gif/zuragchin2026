@@ -114,6 +114,8 @@ const EN: Record<string, string> = {
   'Татах': 'Download',
   'Үнэгүй': 'Free',
   'Угаалгах': 'Print',
+  'Угаалгах хугацаа дууссан': 'Print ordering has ended',
+  'Угаалгах захиалга {date} хүртэл': 'Print orders open until {date}',
   'Сагс хоосон байна': 'Your cart is empty',
   'Нийт дүн': 'Total',
   'Төлөх': 'Pay',

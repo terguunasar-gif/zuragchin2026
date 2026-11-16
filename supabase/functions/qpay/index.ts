@@ -361,11 +361,19 @@ Deno.serve(async (req: Request) => {
 
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-      const { data: album, error: albumErr } = await db
+      let albumQuery = await db
         .from("albums")
-        .select("id, owner_id, owner_commission, is_free, download_price, size_prices, status, expires_at")
+        .select("id, owner_id, owner_commission, is_free, download_price, size_prices, status, expires_at, print_deadline")
         .eq("id", albumId)
         .maybeSingle();
+      if (albumQuery.error && /print_deadline/i.test(albumQuery.error.message || "")) {
+        albumQuery = await db
+          .from("albums")
+          .select("id, owner_id, owner_commission, is_free, download_price, size_prices, status, expires_at")
+          .eq("id", albumId)
+          .maybeSingle();
+      }
+      const { data: album, error: albumErr } = albumQuery;
 
       if (albumErr) {
         console.log("ALBUM FETCH ERROR:", albumErr.message);
@@ -449,6 +457,9 @@ Deno.serve(async (req: Request) => {
       const ownerCommission: number = album.owner_commission ?? OWNER_COMMISSION_RATE;
       const grossTotal = pricedItems.reduce((s, i) => s + i.price, 0);
       if (!(grossTotal > 0)) return json({ error: "Төлөх дүн 0 байна — үнэгүй зургийг шууд татна уу." }, 400);
+      if (pricedItems.some(i => i.type === "print") && album.print_deadline && new Date(album.print_deadline).getTime() < Date.now()) {
+        return json({ error: "Угаалгах хугацаа дууссан" }, 400);
+      }
       if (pricedItems.some(i => i.type === "download") && licenseAccepted !== true) {
         return json({ error: "Хувийн хэрэглээний нөхцөлийг зөвшөөрнө үү" }, 400);
       }
