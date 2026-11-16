@@ -11,6 +11,7 @@ import {
 import { cachedUndownloaded, everyDownloaded, idsWithServerDownloads, readDownloadedIds, undownloadedByInvoice, writeDownloadedIds } from '../lib/receiptDownloads';
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import PrintEditor from './PrintEditor';
+import EditedThumb from './EditedThumb';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
@@ -84,6 +85,7 @@ export default function AlbumPurchaseGuide({
   const [viewerId, setViewerId] = useState<string | null>(null);
   // Төлөхөөс өмнөх засвар: аль зургийн аль төрлийг засаж байгаа
   const [editTarget, setEditTarget] = useState<{ photoId: string; kind: 'dl' | 'pr' } | null>(null);
+  const [editToast, setEditToast] = useState(false);
   const [allowEdit, setAllowEdit] = useState(true);
   // Төлсөн ч татаж амжаагүй зургууд — «Татах» хэсэгт буцааж хүргэх сануулга
   const [undl, setUndl] = useState<{ invoice: string; count: number }[]>([]);
@@ -774,9 +776,11 @@ export default function AlbumPurchaseGuide({
               return (
                 <div key={c.photoId} className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2">
                   <button type="button" onClick={() => setViewerId(c.photoId)} aria-label="Томоор харах"
-                    className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-stone-900">
-                    <img src={p.watermarked_url} alt="" draggable={false} onContextMenu={e => e.preventDefault()}
-                      className="h-full w-full object-cover" />
+                    className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-stone-900 flex items-center justify-center">
+                    <EditedThumb url={p.watermarked_url}
+                      size={c.download ? 'original' : (c.printSize || prints[0]?.[0] || '10x15')}
+                      edit={c.download ? c.editDl : c.editPr}
+                      className={hasEdit(c.download ? c.editDl : c.editPr) ? 'max-h-full max-w-full object-contain' : 'h-full w-full object-cover'} />
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
@@ -1041,6 +1045,11 @@ export default function AlbumPurchaseGuide({
           </button>
         </div>
       )}
+      {editToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-emerald-500 text-stone-950 text-sm font-semibold px-4 py-2 rounded-full shadow-lg pointer-events-none">
+          Засвар хадгалагдлаа ✓
+        </div>
+      )}
       {editTarget && (() => {
         const c = session.choices.find(x => x.photoId === editTarget.photoId);
         const p = photos.find(x => x.id === editTarget.photoId);
@@ -1064,7 +1073,7 @@ export default function AlbumPurchaseGuide({
                 save: async a => { setChoice(c.photoId, isPr ? { editPr: a } : { editDl: a }); },
               }}
               onClose={() => setEditTarget(null)}
-              onSaved={() => { setEditTarget(null); setTimeout(() => document.getElementById('zm-guide-pay')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80); }}
+              onSaved={() => { setEditTarget(null); setEditToast(true); setTimeout(() => setEditToast(false), 2200); setTimeout(() => document.getElementById('zm-guide-pay')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80); }}
             />
           </div>
         );
