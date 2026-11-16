@@ -163,7 +163,7 @@ export default function PublicAlbumPage() {
     try {
       const raw = JSON.parse(localStorage.getItem(`zm_album_guide_${album.id}`) || 'null');
       const known = typeof raw?.name === 'string' && raw.name.trim().length >= 2;
-      setGuideOn(known || !raw?.declined);
+      setGuideOn(known || !raw?.declined || new URLSearchParams(window.location.search).get('later') === '1');
     } catch { setGuideOn(true); }
   }, [album?.id]);
   const [guidePaid, setGuidePaid] = useState<string | null>(null);

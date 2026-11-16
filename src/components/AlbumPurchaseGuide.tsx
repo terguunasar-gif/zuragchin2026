@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
@@ -12,6 +12,8 @@ import { cachedUndownloaded, everyDownloaded, idsWithServerDownloads, readDownlo
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import PrintEditor from './PrintEditor';
 import EditedThumb from './EditedThumb';
+import { readLater, writeLater } from '../lib/savedLater';
+import { listVisitedAlbums } from '../lib/visitedAlbums';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
@@ -31,17 +33,6 @@ function dlPrice(photo: PhotoData, album: AlbumData, aiPrice: number): number {
 
 function printOptions(photo: PhotoData): [string, number][] {
   return Object.entries(photo.print_prices || {}).filter(([, p]) => Number(p) > 0) as [string, number][];
-}
-
-/** Төлөхдөө сонгоогүй үлдээсэн («Түр хадгалах») зургууд — цомог бүрт */
-const laterKey = (albumId: string) => `zm_saved_later_${albumId}`;
-function readLater(albumId: string): string[] {
-  try { const v = JSON.parse(localStorage.getItem(laterKey(albumId)) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; }
-}
-function writeLater(albumId: string, ids: string[]): string[] {
-  const uniq = [...new Set(ids)];
-  try { if (uniq.length) localStorage.setItem(laterKey(albumId), JSON.stringify(uniq)); else localStorage.removeItem(laterKey(albumId)); } catch { /* */ }
-  return uniq;
 }
 
 function money(n: number) {
@@ -364,6 +355,34 @@ export default function AlbumPurchaseGuide({
     go('choices', { choices }, 'Сонгосон зураг бүрээ татах уу, угаалгах уу, эсвэл хоёуланг нь уу?');
   }
 
+  /** Түр хадгалсан зургуудыг сонголт руу (татах сонгогдсон) — QPay төлөхөд бэлэн */
+  function openLater() {
+    const ids = readLater(album.id).filter(id => photos.some(p => p.id === id));
+    if (!ids.length) return;
+    const all = [...new Set([...session.selected, ...ids])];
+    const choices: GuideChoice[] = all.map(id => {
+      const prev = session.choices.find(c => c.photoId === id);
+      const photo = photos.find(p => p.id === id);
+      const opts = photo ? printOptions(photo) : [];
+      if (ids.includes(id)) return { ...(prev ?? { photoId: id, print: false, printSize: opts[0]?.[0] }), photoId: id, download: true };
+      return prev ?? { photoId: id, download: !printOrdersOpen(album.print_deadline) || !opts.length, print: false, printSize: opts[0]?.[0] };
+    });
+    go('choices', { selected: all, choices }, 'Таны түр хадгалсан зургууд. Татах сонголтоо шалгаад QPay-ээр төлнө үү.');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+  }
+
+  // Нүүр хуудсаас «Түр хадгалсан» дарж ирсэн бол (?later=1) шууд төлбөрийн хэсэг рүү
+  const laterOnce = useRef(false);
+  useEffect(() => {
+    if (laterOnce.current || !photos.length) return;
+    const u = new URL(window.location.href);
+    if (u.searchParams.get('later') !== '1') return;
+    laterOnce.current = true;
+    u.searchParams.delete('later');
+    window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash);
+    openLater();
+  }, [photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Төлөхөөс өмнө цомог руу буцаж нэмж/дахин сонгох — өмнөх сонголт, тохиргоо хадгалагдана */
   function backToAlbum() {
     go('browse', { folderId: session.folderId ?? null },
@@ -625,10 +644,7 @@ export default function AlbumPurchaseGuide({
   return (
     <div className={`fixed inset-x-0 bottom-0 z-[45] bg-stone-950 text-white flex flex-col ${inApp ? 'top-24' : 'top-0'}`}>
       <header className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-bold truncate">Zuragchin.mn-д тавтай морил</p>
-          <p className="text-stone-400 text-xs truncate">{album.name}</p>
-        </div>
+        <AlbumSwitcher albumId={album.id} albumName={album.name} />
         <div className="flex items-center gap-2 shrink-0">
           {session.messages.length > 1 && (
             <button type="button" onClick={() => setChatOpen(o => !o)} aria-pressed={chatOpen} aria-label="Чат"
@@ -1054,34 +1070,24 @@ export default function AlbumPurchaseGuide({
 
       {DEBUG && dbg && <p className="shrink-0 px-3 py-1 text-[10px] text-amber-300 break-all">{dbg}</p>}
       {session.step === 'browse' && (
-        <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-3 bg-stone-950">
+        <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-2 bg-stone-950">
           {(() => {
-            const laterIds = later.filter(id => photos.some(p => p.id === id) && !session.selected.includes(id));
-            const laterBtn = laterIds.length > 0 && (
-              <button type="button"
-                onClick={() => {
-                  commit({ ...session, selected: [...session.selected, ...laterIds] });
-                }}
-                className="shrink-0 flex flex-col items-center justify-center bg-sky-500/15 border border-sky-400/60 rounded-xl px-2.5 py-1.5 leading-tight">
-                <span className="flex items-center gap-1 text-sky-200 text-xs font-bold"><Bookmark className="w-3.5 h-3.5" /> {laterIds.length}</span>
-                <span className="text-[10px] text-sky-200/80">Түр хадгалсан</span>
-              </button>
-            );
-            return undlTotal > 0 && session.selected.length === 0 ? (<>
-              <a href={undlHref}
-                className="flex-1 min-w-0 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/60 rounded-xl px-3 py-2.5">
-                <span className="truncate text-sm"><b className="text-emerald-300">Татаагүй {undlTotal} зураг</b></span>
-                <span className="shrink-0 ml-auto bg-emerald-500 text-stone-950 font-bold text-xs rounded-lg px-2.5 py-1">Татах →</span>
-              </a>
-              {laterBtn}
-            </>) : (<>
-              <p className="text-sm flex-1 min-w-0">
-                {session.selected.length} зураг · {money(running)}
-                {undlTotal > 0 && (
-                  <a href={undlHref} className="block text-emerald-300 text-xs underline">Татаагүй {undlTotal} зураг →</a>
-                )}
+            const laterIds = later.filter(id => photos.some(p => p.id === id));
+            const pill = 'shrink-0 flex flex-col items-center justify-center rounded-xl px-2.5 py-1.5 leading-tight text-[11px] font-semibold border';
+            return (<>
+              {undlTotal > 0 && (
+                <a href={undlHref} className={`${pill} border-emerald-400/70 text-emerald-300 bg-emerald-500/10`}>
+                  <span>Татаагүй</span><span>зураг {undlTotal}</span>
+                </a>
+              )}
+              {laterIds.length > 0 && (
+                <button type="button" onClick={openLater} className={`${pill} border-sky-400/70 text-sky-200 bg-sky-500/10`}>
+                  <span>Түр хадгалсан</span><span>зураг {laterIds.length}</span>
+                </button>
+              )}
+              <p className="text-xs text-stone-400 flex-1 min-w-0 text-right leading-tight">
+                {session.selected.length > 0 ? <>{session.selected.length} зураг<br />{money(running)}</> : null}
               </p>
-              {laterBtn}
             </>);
           })()}
           <button type="button" onClick={finishSelect} disabled={!session.selected.length}
@@ -1123,6 +1129,44 @@ export default function AlbumPurchaseGuide({
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+/** Хөтчийн толгой: одоогийн цомгийн нэр — дарахад энэ төхөөрөмжөөс үзсэн бусад цомгууд доош нээгдэнэ */
+function AlbumSwitcher({ albumId, albumName }: { albumId: string; albumName: string }) {
+  const [open, setOpen] = useState(false);
+  const others = listVisitedAlbums().filter(a => a.id !== albumId);
+  return (
+    <div className="relative min-w-0 flex-1">
+      <button type="button" onClick={() => others.length && setOpen(o => !o)}
+        className={`w-full min-w-0 flex items-center gap-2 text-left rounded-xl px-2.5 py-1.5 -ml-1 ${others.length ? 'bg-emerald-500/10 border border-emerald-400/40' : ''}`}>
+        <span className="min-w-0 flex-1">
+          <span className="block text-emerald-300 text-[10px] font-semibold leading-tight">{others.length ? 'Таны үзсэн цомог' : 'Zuragchin.mn-д тавтай морил'}</span>
+          <span className="block font-bold text-sm truncate">{albumName}</span>
+        </span>
+        {others.length > 0 && (
+          <span className="shrink-0 flex items-center gap-0.5 text-xs text-emerald-200">
+            +{others.length} <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <button type="button" aria-label="Хаах" className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-stone-900 border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5 shadow-2xl max-h-[60vh] overflow-y-auto">
+            {others.map(a => (
+              <a key={a.id} href={`/album/${a.link}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5">
+                {a.cover
+                  ? <img src={a.cover} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                  : <span className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0"><Images className="w-4 h-4 text-stone-400" /></span>}
+                <span className="text-stone-200 text-sm truncate flex-1">{a.name}</span>
+                <ChevronRight className="w-4 h-4 text-stone-500" />
+              </a>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
