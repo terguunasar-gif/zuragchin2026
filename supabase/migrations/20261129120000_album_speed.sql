@@ -1,5 +1,6 @@
--- Цомгийн хурд: зураг бүрийн жижиг (~640px) хувилбар.
--- Цомгийн сүлжээнд 1000–1600px preview-ийн оронд thumb_url-ыг ашиглана.
+-- Цомгийн хурд (update: album speed)
+-- 1) Зураг бүрийн жижиг (~640px) хувилбар — сүлжээнд 1000–1600px preview-ийн оронд thumb_url.
+-- 2) base64 логог цомгийн тохиргооноос гаргах админ функц.
 -- Дахин ажиллуулахад эвдрэхгүй.
 
 ALTER TABLE public.photo_uploads ADD COLUMN IF NOT EXISTS thumb_url text;
@@ -64,5 +65,46 @@ GRANT EXECUTE ON FUNCTION public.locked_album_photos(uuid, text) TO anon, authen
 
 -- Цомгийн зургийг эрэмбээр хурдан уншина
 CREATE INDEX IF NOT EXISTS photo_uploads_album_created_idx ON public.photo_uploads (album_id, created_at);
+
+-- base64 (data URL) логог байршуулсан холбоосоор солих — цомгийн эзэн эсвэл админ.
+-- Шинэ утга нь заавал base64 зураггүй байна (дахин том болохоос сэргийлнэ).
+CREATE OR REPLACE FUNCTION public.set_album_watermark_value(p_album_id uuid, p_value text)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Нэвтэрнэ үү'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.albums a WHERE a.id = p_album_id AND (a.owner_id = auth.uid() OR public.ai_is_admin())) THEN
+    RAISE EXCEPTION 'Зөвхөн цомгийн эзэн эсвэл админ';
+  END IF;
+  IF coalesce(p_value, '') LIKE '%data:image%' THEN RAISE EXCEPTION 'base64 зураг хадгалахгүй'; END IF;
+  UPDATE public.albums SET watermark_value = p_value WHERE id = p_album_id;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.set_album_watermark_value(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_album_watermark_value(uuid, text) TO authenticated;
+
+-- Админд: base64 логотой цомгуудын жагсаалт (өөрөө том утгыг татахгүйгээр)
+CREATE OR REPLACE FUNCTION public.albums_with_inline_logos()
+RETURNS TABLE (id uuid, title text, owner_id uuid, value_bytes integer)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT public.ai_is_admin() THEN RAISE EXCEPTION 'Зөвхөн админ'; END IF;
+  RETURN QUERY
+  SELECT a.id, coalesce(a.title, a.name)::text, a.owner_id, octet_length(a.watermark_value)
+    FROM public.albums a
+   WHERE a.watermark_value LIKE '%data:image%'
+   ORDER BY octet_length(a.watermark_value) DESC;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.albums_with_inline_logos() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.albums_with_inline_logos() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.admin_album_watermark_value(p_album_id uuid)
+RETURNS text
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT public.ai_is_admin() THEN RAISE EXCEPTION 'Зөвхөн админ'; END IF;
+  RETURN (SELECT a.watermark_value FROM public.albums a WHERE a.id = p_album_id);
+END $$;
+REVOKE EXECUTE ON FUNCTION public.admin_album_watermark_value(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_album_watermark_value(uuid) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

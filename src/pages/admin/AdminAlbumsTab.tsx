@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay, Images } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import AlbumLogoFixPanel from './AlbumLogoFixPanel';
 
 interface AdminAlbum {
   id: string;
@@ -125,6 +126,7 @@ export default function AdminAlbumsTab() {
 
   return (
     <div className="space-y-4">
+      <AlbumLogoFixPanel />
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">

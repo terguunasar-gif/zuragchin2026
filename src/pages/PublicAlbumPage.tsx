@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useLayoutEffect, useRef, Fragment, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useLayoutEffect, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
@@ -144,6 +144,62 @@ const POS_STYLE: Record<string, React.CSSProperties> = {
 
 function getPosStyle(pos: string): React.CSSProperties {
   return POS_STYLE[pos] ?? POS_STYLE['bottom-right'];
+}
+
+/**
+ * Цомгийн тамганы давхаргууд. watermark_value нь (хуучин цомогт) хэдэн MB байж болох тул
+ * компонент дахин зурагдах бүрт биш, цомог өөрчлөгдөхөд л parse хийнэ (useMemo).
+ */
+function parseWmLayers(album: AlbumData | null): WatermarkLayer[] {
+  if (!album) return [];
+  let wmLayers: WatermarkLayer[] = [];
+  if (album.watermark_type === 'layers' && album.watermark_value) {
+    try {
+      const parsed = JSON.parse(album.watermark_value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        wmLayers = parsed.map((l: any) => ({
+          id: l.id || crypto.randomUUID(),
+          type: l.type === 'image' ? 'logo' : l.type,
+          text: l.text || '',
+          fontSize: l.fontSize || 20,
+          color: l.color || '#ffffff',
+          logoUrl: l.imagePreview || '',
+          logoSize: l.imageSize || 20,
+          position: l.position || 'bottom-right',
+          opacity: typeof l.opacity === 'number' ? (l.opacity <= 1 ? l.opacity : l.opacity / 100) : 0.7,
+          offsetX: clampOffset(l.offsetX),
+          offsetY: clampOffset(l.offsetY),
+        }));
+      }
+    } catch { wmLayers = []; }
+  }
+
+  // watermark_layers column (хуучин формат)
+  if (wmLayers.length === 0) {
+    let parsedLayers = album.watermark_layers;
+    if (typeof parsedLayers === 'string') {
+      try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
+    }
+    if (parsedLayers && Array.isArray(parsedLayers) && parsedLayers.length > 0) {
+      wmLayers = parsedLayers;
+    }
+  }
+
+  // Хамгийн хуучин нэг layer формат
+  if (wmLayers.length === 0 && (album.watermark_type || album.watermark_value)) {
+    wmLayers = [{
+      id: 'legacy',
+      type: album.watermark_type === 'image' ? 'logo' : 'text',
+      text: album.watermark_value || '',
+      fontSize: 20,
+      color: '#ffffff',
+      logoUrl: album.watermark_logo_url || '',
+      logoSize: 20,
+      position: album.watermark_position || 'bottom-right',
+      opacity: album.watermark_opacity ?? 0.7,
+    }];
+  }
+  return wmLayers;
 }
 
 export default function PublicAlbumPage() {
@@ -659,6 +715,7 @@ export default function PublicAlbumPage() {
     : folderFilter === 'other' ? !isAi(p) && !inFolder(p)
     : !isAi(p) && p.folder_id === folderFilter);
 
+  const wmLayers = useMemo(() => parseWmLayers(album), [album]);
   // Зургийг хэсэгчлэн (60-аар) зурна — 1000 зурагтай цомогт бүх картыг нэг дор үүсгэдэг байсан.
   const orderedPhotos = folderFilter === 'mine' && faceIds
     ? [...visiblePhotos].sort((a, b) => faceIds.indexOf(a.id) - faceIds.indexOf(b.id))
@@ -785,55 +842,6 @@ export default function PublicAlbumPage() {
     );
   }
   const freeActive = freeMode && !!album.free_activated;
-
-  // watermark_value-с layers parse хийх (шинэ формат)
-  let wmLayers: WatermarkLayer[] = [];
-  if (album.watermark_type === 'layers' && album.watermark_value) {
-    try {
-      const parsed = JSON.parse(album.watermark_value);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        wmLayers = parsed.map((l: any) => ({
-          id: l.id || crypto.randomUUID(),
-          type: l.type === 'image' ? 'logo' : l.type,
-          text: l.text || '',
-          fontSize: l.fontSize || 20,
-          color: l.color || '#ffffff',
-          logoUrl: l.imagePreview || '',
-          logoSize: l.imageSize || 20,
-          position: l.position || 'bottom-right',
-          opacity: typeof l.opacity === 'number' ? (l.opacity <= 1 ? l.opacity : l.opacity / 100) : 0.7,
-          offsetX: clampOffset(l.offsetX),
-          offsetY: clampOffset(l.offsetY),
-        }));
-      }
-    } catch { wmLayers = []; }
-  }
-
-  // watermark_layers column (хуучин формат)
-  if (wmLayers.length === 0) {
-    let parsedLayers = album.watermark_layers;
-    if (typeof parsedLayers === 'string') {
-      try { parsedLayers = JSON.parse(parsedLayers); } catch { parsedLayers = []; }
-    }
-    if (parsedLayers && Array.isArray(parsedLayers) && parsedLayers.length > 0) {
-      wmLayers = parsedLayers;
-    }
-  }
-
-  // Хамгийн хуучин нэг layer формат
-  if (wmLayers.length === 0 && (album.watermark_type || album.watermark_value)) {
-    wmLayers = [{
-      id: 'legacy',
-      type: album.watermark_type === 'image' ? 'logo' : 'text',
-      text: album.watermark_value || '',
-      fontSize: 20,
-      color: '#ffffff',
-      logoUrl: album.watermark_logo_url || '',
-      logoSize: 20,
-      position: album.watermark_position || 'bottom-right',
-      opacity: album.watermark_opacity ?? 0.7,
-    }];
-  }
 
   return (
     <div className="min-h-screen bg-stone-950">
