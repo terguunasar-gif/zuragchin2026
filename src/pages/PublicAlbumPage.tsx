@@ -490,7 +490,7 @@ export default function PublicAlbumPage() {
     // Үлдсэн бүх хүсэлтийг ЗЭРЭГ явуулна — өмнө нь 8 хүсэлт нэг нэгээрээ хүлээлгэдэг байсан.
     const FIRST_PAGE = 60;
     const lockP = albumLockState(albumId);
-    const ownerP = supabase.from('profiles').select('full_name, name, display_name').eq('id', albumData.owner_id).maybeSingle();
+    const ownerP = supabase.from('profiles').select('name').eq('id', albumData.owner_id).maybeSingle();
     const firstP = photoQuery(0, FIRST_PAGE - 1);
     const allP = photoQuery();
     const foldersP = supabase.from('album_folders').select('id, name').eq('album_id', albumId)
@@ -518,7 +518,7 @@ export default function PublicAlbumPage() {
     const albumObj: AlbumData = {
       ...albumData,
       name: albumData.title || albumData.name,
-      organizer_name: owner?.full_name ?? owner?.name ?? owner?.display_name ?? '',
+      organizer_name: owner?.name ?? '',
       accept_offers: !legacy && albumData.accept_offers === true,
     };
     setAlbum(albumObj);
