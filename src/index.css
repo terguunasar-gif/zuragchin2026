@@ -89,3 +89,6 @@ select option, select optgroup { background-color: #1c1917; color: #ffffff; }
   box-shadow: 0 0 0 6px rgba(251, 191, 36, 0.28);
   cursor: pointer;
 }
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
