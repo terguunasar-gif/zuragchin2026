@@ -1053,6 +1053,7 @@ export default function AlbumPurchaseGuide({
               title={p.name || p.title}
               heading={isPr ? 'Угаах хэлбэрийг засах' : 'Зургаа засах'}
               brand={album.watermark_value || ''}
+              formats={printOptions(p).map(([k]) => k)}
               note="Тамга зурагтайгаа хөдөлнө — төлсний дараах файлд тамга байхгүй. Цомгийн лого хүрээн дээр тогтмол харагдаж буй байрлалдаа гарна."
               source={{
                 load: async () => ({
