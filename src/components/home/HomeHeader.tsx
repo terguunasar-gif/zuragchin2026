@@ -5,7 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
-import { listPurchaseHistory, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
+import { listPurchaseHistory, loadCart, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
+import { guideSelectedUnpaid } from '../../lib/albumGuide';
 import { cachedUndownloaded, undownloadedByInvoice } from '../../lib/receiptDownloads';
 import { listAllLater } from '../../lib/savedLater';
 import { listVisitedAlbums } from '../../lib/visitedAlbums';
@@ -178,16 +179,25 @@ function MyAlbumsBar() {
   // Кэшээс шууд, дараа нь серверээс шинэчилнэ (алдаа гарвал кэш хэвээр)
   const [undlList, setUndlList] = useState(() => cachedUndownloaded(history.map(h => h.invoiceId)));
   const undl = undlList.reduce((n, r) => n + r.count, 0);
-  // Түр хадгалсан зургууд — хамгийн сүүлд үзсэн цомгоос нь эхэлнэ
-  const [laterInfo] = useState(() => {
-    const all = listAllLater();
+  // Нэг л товч: түр хадгалсан зураг байвал «Түр хадгалсан зураг N»,
+  // үгүй бол сонгоод төлөөгүй зураг байвал «Таны сонгосон зураг N», аль нь ч үгүй бол харагдахгүй.
+  const [pending] = useState(() => {
     const visited = listVisitedAlbums();
-    const withLink = visited.filter(v => all.some(a => a.albumId === v.id));
-    const total = all.filter(a => visited.some(v => v.id === a.albumId)).reduce((n, a) => n + a.ids.length, 0);
-    return { target: withLink[0] ?? null, total };
+    const later = listAllLater().filter(a => visited.some(v => v.id === a.albumId));
+    const laterTotal = later.reduce((n, a) => n + a.ids.length, 0);
+    if (laterTotal > 0) {
+      const target = visited.find(v => later.some(a => a.albumId === v.id))!;
+      return { kind: 'later' as const, link: `/album/${target.link}?later=1`, total: laterTotal };
+    }
+    let target: (typeof visited)[number] | null = null;
+    let total = 0;
+    for (const v of visited) {
+      const cartIds = loadCart<{ photoId?: string }>(v.id).map(c => c.photoId).filter((x): x is string => !!x);
+      const n = new Set([...guideSelectedUnpaid(v.id), ...cartIds]).size;
+      if (n > 0) { total += n; target = target ?? v; }
+    }
+    return target ? { kind: 'selected' as const, link: `/album/${target.link}`, total } : null;
   });
-  const laterTarget = laterInfo.target;
-  const laterTotal = laterInfo.total;
   useEffect(() => {
     if (!history.length) return;
     let cancel = false;
@@ -216,13 +226,13 @@ function MyAlbumsBar() {
             <span>Татаагүй</span><span>зураг {undl}</span>
           </button>
         )}
-        {laterTarget && (
+        {pending && (
           <button
-            // Түр хадгалсан цомог руу → QPay төлөхөд бэлэн хэсэг
-            onClick={() => navigate(`/album/${laterTarget.link}?later=1`)}
+            // Түр хадгалсан → QPay төлөхөд бэлэн хэсэг; сонгосон → цомог руу (сонголт хэвээр)
+            onClick={() => navigate(pending.link)}
             className="flex flex-col items-center justify-center leading-tight border border-sky-400/70 bg-sky-500/10 text-sky-200 font-semibold text-[11px] px-2.5 py-1 rounded-xl flex-shrink-0"
           >
-            <span>Түр хадгалсан</span><span>зураг {laterTotal}</span>
+            <span>{pending.kind === 'later' ? 'Түр хадгалсан' : 'Таны сонгосон'}</span><span>зураг {pending.total}</span>
           </button>
         )}
       </div>

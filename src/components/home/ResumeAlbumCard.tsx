@@ -12,13 +12,16 @@ const MAX_AGE = 30 * 86400000;
  */
 export default function ResumeAlbumCard() {
   const navigate = useNavigate();
-  const [hidden, setHidden] = useState(() => {
-    try { return sessionStorage.getItem(HIDE_KEY) === '1'; } catch { return false; }
-  });
-  const [open, setOpen] = useState(false);
   const all = listVisitedAlbums();
   const last = all[0];
   const others = all.slice(1);
+  // X дарахад зөвхөн ЭНЭ удаагийн үзэлтийг нууна. Дараа нь цомог руу дахин орвол карт буцаж гарна.
+  // (Өмнө нь sessionStorage-д «1» хадгалдаг байсан тул утасны хөтчид таб хаагдах хүртэл — хэдэн долоо хоног — алга болдог байв.)
+  const stamp = last ? `${last.id}:${last.at}` : '';
+  const [hidden, setHidden] = useState(() => {
+    try { return !!stamp && localStorage.getItem(HIDE_KEY) === stamp; } catch { return false; }
+  });
+  const [open, setOpen] = useState(false);
   if (hidden || !last || Date.now() - last.at > MAX_AGE) return null;
 
   return (
@@ -40,7 +43,7 @@ export default function ResumeAlbumCard() {
           </span>
         </button>
         <button
-          onClick={() => { try { sessionStorage.setItem(HIDE_KEY, '1'); } catch { /* */ } setHidden(true); }}
+          onClick={() => { try { localStorage.setItem(HIDE_KEY, stamp); sessionStorage.removeItem(HIDE_KEY); } catch { /* */ } setHidden(true); }}
           aria-label="Хаах"
           className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-white hover:bg-white/10"
         >
