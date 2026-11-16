@@ -89,8 +89,25 @@ export interface PrintCrop {
   cropY?: number;
   cropOrient?: number;
   cropFit?: number;
+  /** Татах зургийн харьцаа ×1000 (667 = 2:3, 1778 = 16:9). 0 = эх харьцаа */
+  cropAspect?: number;
 }
-export const CROP_KEYS = ['cropZoom', 'cropX', 'cropY', 'cropOrient', 'cropFit'] as const;
+export const CROP_KEYS = ['cropZoom', 'cropX', 'cropY', 'cropOrient', 'cropFit', 'cropAspect'] as const;
+
+/** Засварт тайралт эсвэл гэрэл/өнгөний өөрчлөлт байгаа эсэх */
+export function hasEdit(a?: (PhotoAdjust & PrintCrop) | null): boolean {
+  if (!a) return false;
+  if (!isNeutral(a)) return true;
+  return (Number(a.cropZoom) || 100) !== 100 || !!Number(a.cropX) || !!Number(a.cropY)
+    || !!Number(a.cropOrient) || !!Number(a.cropFit) || !!Number(a.cropAspect);
+}
+
+/** Зорилтот харьцаа: хэвлэх хэмжээ бол цаасных, үгүй бол сонгосон харьцаа эсвэл эх зургийнх */
+export function targetRatio(size: string, W: number, H: number, c: PrintCrop): number {
+  if (PRINT_SIZE_CM[size]) return paperRatio(size, W, H, Number(c.cropOrient) || 0);
+  const asp = Number(c.cropAspect) || 0;
+  return asp > 0 ? asp / 1000 : W / H;
+}
 
 /** Хэвлэх хэмжээ (см) — богино тал × урт тал */
 export const PRINT_SIZE_CM: Record<string, [number, number]> = {
@@ -118,10 +135,10 @@ export function cropRect(W: number, H: number, R: number, c: PrintCrop) {
 
 /** Canvas/зургийг цаасны харьцаанд оруулж шинэ canvas буцаана */
 export function renderPaper(src: CanvasImageSource, W: number, H: number, size: string, c: PrintCrop, maxOut = 0): HTMLCanvasElement {
-  const R = paperRatio(size, W, H, Number(c.cropOrient) || 0);
+  const R = targetRatio(size, W, H, c);
   const out = document.createElement('canvas');
   const ctx = out.getContext('2d')!;
-  if (Number(c.cropFit) === 1) {
+  if (Number(c.cropFit) === 1 && PRINT_SIZE_CM[size]) {
     // Тайрахгүй: бүтэн зураг + цагаан хүрээ
     let ow: number, oh: number;
     if (W / H > R) { ow = W; oh = W / R; } else { oh = H; ow = H * R; }
