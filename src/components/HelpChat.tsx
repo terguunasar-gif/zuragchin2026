@@ -4,6 +4,7 @@ import { MessageCircle, X, Send, RotateCcw, ThumbsUp, ThumbsDown, Loader2, Spark
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../lib/i18n';
 import { hasRole } from '../lib/supabase';
+import { useAlbumGuideActive } from '../lib/albumGuide';
 
 /**
  * Сайтын ухаалаг туслах (update-92).
@@ -52,12 +53,14 @@ export default function HelpChat() {
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const guideActive = useAlbumGuideActive();
 
   useEffect(() => { saveMsgs(msgs); }, [msgs]);
   useEffect(() => {
     if (open) listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [msgs, busy, open]);
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 50); }, [open]);
+  useEffect(() => { if (guideActive) setOpen(false); }, [guideActive]);
   // Утсан дээр бүтэн дэлгэцээр нээгдэхэд арын хуудас гүйлгэгдэхгүй
   useEffect(() => {
     if (!open || window.innerWidth >= 640) return;
@@ -87,7 +90,7 @@ export default function HelpChat() {
     ];
   }, [profile]);
 
-  if (hiddenOn(pathname)) return null;
+  if (hiddenOn(pathname) || guideActive) return null;
   const onAlbum = pathname.startsWith('/album/');
 
   async function ask(text: string) {

@@ -7,6 +7,7 @@ import QrScanModal from '../components/QrScanModal';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
+import { setAlbumGuideActive } from '../lib/albumGuide';
 import CheckoutModal from './checkout/CheckoutModal';
 import AlbumPurchaseGuide from '../components/AlbumPurchaseGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -584,6 +585,11 @@ export default function PublicAlbumPage() {
 
   // Томоор харуулах дэлгэцийн QR-ийг утасны камераар уншуулж орсон: ?add=<зураг> → сагсанд нэмнэ
   const addParam = searchParams.get('add');
+  const guideVisible = guideOn && !addParam;
+  useEffect(() => {
+    setAlbumGuideActive(guideVisible);
+    return () => setAlbumGuideActive(false);
+  }, [guideVisible]);
   useEffect(() => {
     if (!addParam || !cartReady || photos.length === 0) return;
     const r = addPhotoById(addParam);

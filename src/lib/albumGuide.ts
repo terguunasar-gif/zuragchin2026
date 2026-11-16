@@ -1,3 +1,25 @@
+import { useEffect, useState } from 'react';
+
+/** Цомгийн худалдан авалтын чат нээлттэй үед сайтын «Туслах» товчийг нууна. */
+let guideActive = false;
+const guideListeners = new Set<(active: boolean) => void>();
+
+export function setAlbumGuideActive(active: boolean) {
+  if (guideActive === active) return;
+  guideActive = active;
+  guideListeners.forEach(fn => fn(active));
+}
+
+export function useAlbumGuideActive() {
+  const [active, setActive] = useState(guideActive);
+  useEffect(() => {
+    setActive(guideActive);
+    guideListeners.add(setActive);
+    return () => { guideListeners.delete(setActive); };
+  }, []);
+  return active;
+}
+
 /** Монгол гар утас: 8 орон, эсвэл 976-аар эхэлсэн. */
 export function normalizeMnPhone(raw: string): string | null {
   const d = raw.replace(/\D/g, '');
