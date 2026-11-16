@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/WatermarkOffset';
+import { externalizeWatermarkValue, isInlineImage, prepareLogo } from '../../lib/albumLogo';
 import { supabase } from '../../lib/supabase';
 import BrandMark from '../../components/BrandMark';
 import PrintDeadlineField from '../../components/PrintDeadlineField';
@@ -346,17 +347,9 @@ export default function AlbumEditPage() {
     setLogoUploading(true); setError('');
     try {
       // Логог 600px хүртэл жижигрүүлж PNG болгоно (тунгалаг дэвсгэр хадгалагдана)
-      const { blob, dataUrl } = await shrinkLogo(file, 600);
-      updateLayer(id, { logoPreview: dataUrl, logoUrl: dataUrl });
-      const path = `watermarks/${profile!.id}/${albumId}/${crypto.randomUUID()}.png`;
-      const { error: uploadErr } = await supabase.storage.from('covers').upload(path, blob, { upsert: true, contentType: 'image/png' });
-      if (!uploadErr) {
-        const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(path);
-        updateLayer(id, { logoUrl: publicUrl, logoPreview: publicUrl });
-      } else {
-        // Хадгалалтад байршуулж чадаагүй ч лого цомгийн тохиргоонд (data URL) хадгалагдана
-        console.warn('logo upload failed, using inline image:', uploadErr.message);
-      }
+      // 600px болгож байршуулна. Чадаагүй бол жижигрүүлсэн data URL (хадгалахдаа дахин оролдоно)
+      const { url } = await prepareLogo(file, profile!.id, albumId!);
+      updateLayer(id, { logoUrl: url, logoPreview: url });
     } catch (e) {
       setError('Лого уншиж чадсангүй: ' + (e instanceof Error ? e.message : String(e)));
       updateLayer(id, { logoPreview: '', logoUrl: '' });
@@ -379,7 +372,8 @@ export default function AlbumEditPage() {
     const first = usable[0];
     const activeSizes = sizePrices.filter(s => s.enabled);
     const digitalPrice = sizePrices.find(s => s.size === 'digital' && s.enabled);
-    const watermarkValue = layersToWatermarkValue(usable);
+    // Хуучин (base64) лого үлдсэн бол байршуулж холбоосоор солино — цомог хурдан ачаалагдана
+    const { value: watermarkValue } = await externalizeWatermarkValue(layersToWatermarkValue(usable), profile!.id, albumId!);
     const patch = {
       title: albumName.trim(), name: albumName.trim(),
       event_date: eventDate || null, description: description.trim(),
@@ -395,7 +389,7 @@ export default function AlbumEditPage() {
       watermark_value: watermarkValue,
       watermark_position: first?.position || 'bottom-right',
       watermark_opacity: (first?.opacity ?? 70) / 100,
-      watermark_logo_url: first?.type === 'logo' ? (first?.logoUrl || null) : null,
+      watermark_logo_url: first?.type === 'logo' && !isInlineImage(first?.logoUrl) ? (first?.logoUrl || null) : null,
     };
     let { data: savedRows, error: err } = await supabase.from('albums').update(patch).eq('id', albumId).select('id');
     if (err && isMissingColumnError(err)) {
@@ -832,22 +826,3 @@ export default function AlbumEditPage() {
   );
 }
 
-/** Логог жижигрүүлж PNG blob + data URL болгоно */
-function shrinkLogo(file: File, max: number): Promise<{ blob: Blob; dataUrl: string }> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, Math.round((img.naturalWidth || max) * scale));
-      c.height = Math.max(1, Math.round((img.naturalHeight || max) * scale));
-      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-      const dataUrl = c.toDataURL('image/png');
-      c.toBlob(b => (b ? resolve({ blob: b, dataUrl }) : reject(new Error('PNG болгож чадсангүй'))), 'image/png');
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Зураг уншигдсангүй')); };
-    img.src = url;
-  });
-}

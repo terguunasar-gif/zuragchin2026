@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { makeSalePreview, WM_STRENGTHS, normalizeStrength, WmStrength } from '../../lib/watermark';
+import { backfillThumb, IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, previewPathFromUrl, uploadThumb } from '../../lib/thumbs';
 import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
 
@@ -15,6 +16,8 @@ interface Photo {
   id: string;
   filename: string;
   preview_url: string;
+  /** Жижиг хувилбар (update photo_thumbs). Хуучин зурагт null */
+  thumb_url?: string | null;
   original_url: string;
   print_prices: Record<string, number>;
   created_at: string;
@@ -47,6 +50,9 @@ export default function AlbumPhotosPage() {
   const [albumName, setAlbumName] = useState('');
   const [albumWm, setAlbumWm] = useState<AlbumWm | null>(null);
   const [protectProgress, setProtectProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
+  // Жижиг хувилбар (thumb) — SQL ажиллуулсан эсэх, үүсгэлтийн явц
+  const [thumbSupported, setThumbSupported] = useState(false);
+  const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -128,56 +134,21 @@ export default function AlbumPhotosPage() {
   }
 
   async function loadPhotos(isManager = canManage) {
-    let q = supabase
-      .from('photo_uploads')
-      .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price, title')
-      .eq('album_id', albumId!)
-      .order('created_at', { ascending: false });
-    if (!isManager) q = q.eq('photographer_id', profile!.id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let { data, error }: { data: any[] | null; error: unknown } = await q;
-    if (error) {
-      // Зургийн нэрийн багана байхгүй (update-50-ийн SQL ажиллаагүй)
-      let qNoTitle = supabase
-        .from('photo_uploads')
-        .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price')
+    const COLS = 'id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price, title';
+    const run = (cols: string) => {
+      let q = supabase.from('photo_uploads').select(cols)
         .eq('album_id', albumId!)
+        .is('hidden_at', null) // нуусан (худалдагдсан тул устгаагүй) зургийг харуулахгүй
         .order('created_at', { ascending: false });
-      if (!isManager) qNoTitle = qNoTitle.eq('photographer_id', profile!.id);
-      ({ data, error } = await qNoTitle);
-    }
-    if (error) {
-      // Зураг тус бүрийн үнийн багана байхгүй (update-40-ийн SQL ажиллаагүй)
-      let qOld = supabase
-        .from('photo_uploads')
-        .select('id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id')
-        .eq('album_id', albumId!)
-        .order('created_at', { ascending: false });
-      if (!isManager) qOld = qOld.eq('photographer_id', profile!.id);
-      ({ data, error } = await qOld);
-    }
-    if (error) {
-      // Хавтасны SQL ажиллаагүй үед
-      let q2 = supabase
-        .from('photo_uploads')
-        .select('id, filename, preview_url, original_url, print_prices, created_at, photographer_id')
-        .eq('album_id', albumId!)
-        .order('created_at', { ascending: false });
-      if (!isManager) q2 = q2.eq('photographer_id', profile!.id);
-      const { data: d2 } = await q2;
-      setPhotos(await withoutHidden((d2 ?? []) as Photo[]));
-      return;
-    }
-    setPhotos(await withoutHidden((data ?? []) as Photo[]));
-  }
-
-  /** Нуусан (худалдагдсан тул устгаагүй) зургийг жагсаалтаас хасна */
-  async function withoutHidden(list: Photo[]): Promise<Photo[]> {
-    const { data: hidden, error } = await supabase.from('photo_uploads').select('id')
-      .eq('album_id', albumId!).not('hidden_at', 'is', null);
-    if (error || !hidden?.length) return list;
-    const set = new Set(hidden.map(h => h.id));
-    return list.filter(p => !set.has(p.id));
+      if (!isManager) q = q.eq('photographer_id', profile!.id);
+      return q;
+    };
+    let { data, error } = await run(COLS + ', thumb_url');
+    setThumbSupported(!error);
+    // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) үед
+    if (error && isThumbSqlMissing(error)) ({ data, error } = await run(COLS));
+    if (error) { showToast('Зургийг уншиж чадсангүй: ' + error.message, 'error'); return; }
+    setPhotos((data ?? []) as unknown as Photo[]);
   }
 
   /** Миний оруулсан, хуучин (том, хамгаалалтгүй) preview-тэй зургууд */
@@ -215,7 +186,7 @@ export default function AlbumPhotosPage() {
         if (dlErr || !blob) throw dlErr ?? new Error('download');
         const preview = await makeSalePreview(new File([blob], ph.filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }), albumWm);
         const newPath = `${profile.id}/${albumId}/preview_p2_${crypto.randomUUID()}.jpg`;
-        const { error: upErr } = await supabase.storage.from('photos-preview').upload(newPath, preview, { contentType: 'image/jpeg' });
+        const { error: upErr } = await supabase.storage.from('photos-preview').upload(newPath, preview, { contentType: 'image/jpeg', cacheControl: IMMUTABLE_CACHE });
         if (upErr) throw upErr;
         const { data: { publicUrl } } = supabase.storage.from('photos-preview').getPublicUrl(newPath);
         const { error: dbErr } = await supabase.rpc('set_photo_preview', { p_photo_id: ph.id, p_url: publicUrl });
@@ -224,8 +195,18 @@ export default function AlbumPhotosPage() {
           throw dbErr;
         }
         const oldPath = ph.preview_url.includes('/photos-preview/') ? ph.preview_url.split('/photos-preview/')[1]?.split('?')[0] : null;
-        if (oldPath) await supabase.storage.from('photos-preview').remove([oldPath]);
-        setPhotos(prev => prev.map(x => (x.id === ph.id ? { ...x, preview_url: publicUrl } : x)));
+        const oldThumb = previewPathFromUrl(ph.thumb_url);
+        const stale = [oldPath, oldThumb].filter(Boolean) as string[];
+        if (stale.length) await supabase.storage.from('photos-preview').remove(stale);
+        // set_photo_preview нь thumb_url-ыг цэвэрлэнэ — шинэ тамгатай жижиг хувилбарыг дахин үүсгэнэ
+        let newThumb: string | null = null;
+        try {
+          const t = await uploadThumb(await makeThumb(preview), profile.id, albumId!);
+          const { error: tErr } = await supabase.rpc('set_photo_thumb', { p_photo_id: ph.id, p_url: t.url });
+          if (tErr) await supabase.storage.from('photos-preview').remove([t.path]);
+          else newThumb = t.url;
+        } catch { /* жижиг хувилбаргүй бол preview-ээр харагдана */ }
+        setPhotos(prev => prev.map(x => (x.id === ph.id ? { ...x, preview_url: publicUrl, thumb_url: newThumb } : x)));
       } catch (e) {
         console.warn('protect failed', ph.id, e);
         failed++;
@@ -234,6 +215,34 @@ export default function AlbumPhotosPage() {
     }
     showToast(failed ? `${todo.length - failed} зураг шинэчлэгдлээ, ${failed} алдаатай` : 'Бүх зургийн тамга шинэчлэгдлээ');
     setTimeout(() => setProtectProgress(null), 4000);
+  }
+
+  /** Жижиг хувилбаргүй (хуучин) зургууд — цомог хурдан ачаалагдахын тулд нэг удаа үүсгэнэ */
+  const noThumb = thumbSupported ? photos.filter(p => !p.thumb_url && !!p.preview_url) : [];
+
+  async function buildThumbs() {
+    if (!profile || !noThumb.length) return;
+    const todo = [...noThumb];
+    setThumbProgress({ done: 0, total: todo.length, failed: 0 });
+    let done = 0, failed = 0, next = 0;
+    // 3 зургийг зэрэг боловсруулна
+    const worker = async () => {
+      while (next < todo.length) {
+        const ph = todo[next++];
+        try {
+          const url = await backfillThumb(ph, profile.id, albumId!);
+          setPhotos(prev => prev.map(x => (x.id === ph.id ? { ...x, thumb_url: url } : x)));
+        } catch (e) {
+          console.warn('thumb backfill failed', ph.id, e);
+          failed++;
+        }
+        done++;
+        setThumbProgress({ done, total: todo.length, failed });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    showToast(failed ? `${done - failed} зурагт жижиг хувилбар үүслээ, ${failed} алдаатай` : 'Бүх зурагт жижиг хувилбар үүслээ — цомог хурдан ачаалагдана', failed ? 'error' : 'success');
+    setTimeout(() => setThumbProgress(null), 4000);
   }
 
   async function loadFolders() {
@@ -431,9 +440,11 @@ export default function AlbumPhotosPage() {
       const previewPath = photo.preview_url.includes('/photos-preview/')
         ? photo.preview_url.split('/photos-preview/')[1]?.split('?')[0]
         : null;
+      const thumbPath = previewPathFromUrl(photo.thumb_url);
       await Promise.all([
         supabase.storage.from('photos-original').remove([originalPath]).catch(() => null),
         previewPath ? supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null) : null,
+        thumbPath ? supabase.storage.from('photos-preview').remove([thumbPath]).catch(() => null) : null,
       ]);
     }
     return String(res);
@@ -497,9 +508,11 @@ export default function AlbumPhotosPage() {
       const previewPath = photo.preview_url.includes('/photos-preview/')
         ? photo.preview_url.split('/photos-preview/')[1]?.split('?')[0]
         : null;
+      const thumbPath = previewPathFromUrl(photo.thumb_url);
       await Promise.all([
         supabase.storage.from('photos-original').remove([originalPath]).catch(() => null),
         previewPath ? supabase.storage.from('photos-preview').remove([previewPath]).catch(() => null) : null,
+        thumbPath ? supabase.storage.from('photos-preview').remove([thumbPath]).catch(() => null) : null,
       ]);
     }
     setPhotos(prev => prev.filter(p => p.id !== photo.id));
@@ -757,6 +770,27 @@ export default function AlbumPhotosPage() {
           </div>
         )}
 
+        {/* ── Хуучин зурагт жижиг хувилбар үүсгэх (цомгийн хурд) ── */}
+        {(noThumb.length > 0 || thumbProgress) && (
+          <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-white font-semibold">⚡ Цомгийг хурдан ачаалагддаг болгох</p>
+              <p className="text-sky-100/70 text-sm mt-1 max-w-2xl">
+                {canManage ? 'Энэ цомгийн' : 'Таны оруулсан'} {noThumb.length} зурагт жижиг хувилбар алга — зочид цомог нээхэд том зураг татагдаж удаан ачаалагдана.
+                Нэг удаа дарж үүсгэнэ. Эх зураг, тамга өөрчлөгдөхгүй. Шинээр оруулах зурагт автоматаар үүснэ.
+              </p>
+              {thumbProgress && (
+                <p className="text-sky-300 text-xs mt-2">{thumbProgress.done} / {thumbProgress.total} боловсруулсан{thumbProgress.failed ? ` · ${thumbProgress.failed} алдаа` : ''} — хуудсаа хаалгүй хүлээнэ үү</p>
+              )}
+            </div>
+            <button onClick={buildThumbs} disabled={!!thumbProgress && thumbProgress.done < thumbProgress.total}
+              className="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-stone-950 font-semibold px-5 py-2.5 rounded-xl flex items-center gap-2">
+              {thumbProgress && thumbProgress.done < thumbProgress.total ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Жижиг хувилбар үүсгэх
+            </button>
+          </div>
+        )}
+
         {/* ── Хуучин preview-г хамгаалалттай болгох (худалдах цомог) ── */}
         {albumWm && !albumWm.is_free && (unprotected.length > 0 || protectProgress) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -976,8 +1010,10 @@ export default function AlbumPhotosPage() {
                       );
                     })()}
                     <img
-                      src={photo.preview_url}
+                      src={photo.thumb_url || photo.preview_url}
                       alt={photo.filename}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />

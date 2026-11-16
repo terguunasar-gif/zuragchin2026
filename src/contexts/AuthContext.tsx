@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, UserProfile } from '../lib/supabase';
 
@@ -19,7 +19,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function fetchProfile(userId: string) {
+  // getSession() болон onAuthStateChange(INITIAL_SESSION) хоёулаа профайл татдаг —
+  // зэрэг ирсэн ижил хүсэлтийг нэг болгоно (хуудас бүрт 2 удаа татдаг байсан).
+  const inflight = useRef<{ id: string; p: Promise<void> } | null>(null);
+  function fetchProfile(userId: string): Promise<void> {
+    if (inflight.current?.id === userId) return inflight.current.p;
+    const p = loadProfile(userId).finally(() => {
+      if (inflight.current?.p === p) inflight.current = null;
+    });
+    inflight.current = { id: userId, p };
+    return p;
+  }
+
+  async function loadProfile(userId: string) {
     const { data } = await supabase
       .from('profiles')
       .select('*')
@@ -61,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- нэг удаа бүртгэнэ; fetchProfile ref-ээр тогтвортой
   }, []);
 
   async function signOut() {

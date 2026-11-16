@@ -1,4 +1,20 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+/** Supabase руу холболтыг JS ачаалж байх хооронд урьдчилан нээнэ (VITE_SUPABASE_URL байхгүй бол алгасна) */
+function supabasePreconnect(): Plugin {
+  let url = '';
+  return {
+    name: 'supabase-preconnect',
+    configResolved(config) { url = String(config.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, ''); },
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (!/^https:\/\/[\w.-]+$/.test(url)) return html;
+        return html.replace('</title>', `</title>\n    <link rel="preconnect" href="${url}" crossorigin />\n    <link rel="dns-prefetch" href="${url}" />`);
+      },
+    },
+  };
+}
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { prerenderPlugin } from './scripts/prerenderPlugin.ts';
@@ -8,6 +24,7 @@ import { isSensitivePrecacheUrl } from './src/pwa/sensitivePaths.ts';
 export default defineConfig({
   plugins: [
     react(),
+    supabasePreconnect(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',

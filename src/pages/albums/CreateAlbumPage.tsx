@@ -11,6 +11,7 @@ import WatermarkOffset, { clampOffset, offsetWrapStyle } from '../../components/
 import { downloadLabeledQr } from '../../lib/labeledQr';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { externalizeWatermarkValue, prepareLogo } from '../../lib/albumLogo';
 import BrandMark from '../../components/BrandMark';
 import PrintDeadlineField from '../../components/PrintDeadlineField';
 import { dateInputToDeadlineIso, deadlineDateInput, defaultPrintDeadlineIso } from '../../lib/printDeadline';
@@ -209,12 +210,22 @@ export default function CreateAlbumPage() {
       return next;
     });
   }
-  function handleImageUpload(id: string, e: React.ChangeEvent<HTMLInputElement>) {
+  const [logoUploading, setLogoUploading] = useState(false);
+  async function handleImageUpload(id: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => updateLayer(id, { imagePreview: ev.target?.result as string });
-    reader.readAsDataURL(file);
+    if (!file || !user) return;
+    // Логог 600px болгож хадгалалтад байршуулна — цомгийн тохиргоонд зөвхөн холбоос нь үлдэнэ
+    // (өмнө нь эх файлыг base64 болгож хадгалдаг байсан тул цомог нээх бүрт хэдэн MB татагддаг байсан).
+    setLogoUploading(true);
+    try {
+      const { url } = await prepareLogo(file, user.id, 'new');
+      updateLayer(id, { imagePreview: url });
+    } catch (err) {
+      window.alert('Лого уншиж чадсангүй: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLogoUploading(false);
+      e.target.value = '';
+    }
   }
 
   async function addPhotographerByZurId() {
@@ -252,12 +263,16 @@ export default function CreateAlbumPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
+    if (logoUploading) { window.alert('Лого байршуулж дуусаагүй байна. Түр хүлээгээд дахин оролдоно уу.'); return; }
     setSaving(true);
     try {
       const albumId = crypto.randomUUID();
       const shareLink = `/album/${albumId}`;
       const shareUrl = `${window.location.origin}${shareLink}`;
-      const watermarkValue = JSON.stringify(wmLayers.map(l => ({ id: l.id, type: l.type, text: l.text, fontSize: l.fontSize, opacity: l.opacity / 100, color: l.color, imagePreview: l.imagePreview, position: l.position, imageSize: l.imageSize, offsetX: clampOffset(l.offsetX), offsetY: clampOffset(l.offsetY) })));
+      // Байршуулж чадаагүй (data URL) лого үлдсэн бол дахин оролдоно
+      const { value: watermarkValue } = await externalizeWatermarkValue(
+        JSON.stringify(wmLayers.map(l => ({ id: l.id, type: l.type, text: l.text, fontSize: l.fontSize, opacity: l.opacity / 100, color: l.color, imagePreview: l.imagePreview, position: l.position, imageSize: l.imageSize, offsetX: clampOffset(l.offsetX), offsetY: clampOffset(l.offsetY) }))),
+        user!.id, albumId);
       const contactInfo = { phone: contactPhone, email: contactEmail, facebook: contactFacebook, instagram: contactInstagram, other: contactOther };
       const ownerCommission = revenueModel === 'owned' ? OWNER_COMMISSION_OWNED : organizerPercent / 100;
       const photographerPercent = revenueModel === 'owned' ? 0 : (photographerPoolFraction * 100);
