@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
+import { Bookmark, Check, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
@@ -31,6 +31,17 @@ function dlPrice(photo: PhotoData, album: AlbumData, aiPrice: number): number {
 
 function printOptions(photo: PhotoData): [string, number][] {
   return Object.entries(photo.print_prices || {}).filter(([, p]) => Number(p) > 0) as [string, number][];
+}
+
+/** Төлөхдөө сонгоогүй үлдээсэн («Түр хадгалах») зургууд — цомог бүрт */
+const laterKey = (albumId: string) => `zm_saved_later_${albumId}`;
+function readLater(albumId: string): string[] {
+  try { const v = JSON.parse(localStorage.getItem(laterKey(albumId)) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; }
+}
+function writeLater(albumId: string, ids: string[]): string[] {
+  const uniq = [...new Set(ids)];
+  try { if (uniq.length) localStorage.setItem(laterKey(albumId), JSON.stringify(uniq)); else localStorage.removeItem(laterKey(albumId)); } catch { /* */ }
+  return uniq;
 }
 
 function money(n: number) {
@@ -86,6 +97,7 @@ export default function AlbumPurchaseGuide({
   // Төлөхөөс өмнөх засвар: аль зургийн аль төрлийг засаж байгаа
   const [editTarget, setEditTarget] = useState<{ photoId: string; kind: 'dl' | 'pr' } | null>(null);
   const [editToast, setEditToast] = useState(false);
+  const [later, setLater] = useState<string[]>(() => readLater(album.id));
   const [allowEdit, setAllowEdit] = useState(true);
   // Төлсөн ч татаж амжаагүй зургууд — «Татах» хэсэгт буцааж хүргэх сануулга
   const [undl, setUndl] = useState<{ invoice: string; count: number }[]>([]);
@@ -238,6 +250,9 @@ export default function AlbumPurchaseGuide({
     });
     const slim = rememberPurchase(session, paidInvoice, bought);
     saveGuide(album.id, slim);
+    const paidIds = new Set(bought.map(b => b.photoId));
+    const unpaid = session.choices.filter(c => !paidIds.has(c.photoId)).map(c => c.photoId);
+    setLater(writeLater(album.id, [...readLater(album.id).filter(id => !paidIds.has(id)), ...unpaid]));
     setSession(s => ({ ...s, step: 'done', messages, paidInvoices: slim.paidInvoices, owned: slim.owned }));
     markGuidePaid(album.id, session.token, paidInvoice);
     // «Төлсөн» түүхэнд шууд бичнэ — баримт нээгээгүй ч нүүр хуудас «Татаагүй N зураг»-ийг олно
@@ -343,7 +358,8 @@ export default function AlbumPurchaseGuide({
       const prev = session.choices.find(c => c.photoId === id);
       const photo = photos.find(p => p.id === id);
       const opts = photo ? printOptions(photo) : [];
-      return prev ?? { photoId: id, download: false, print: false, printSize: opts[0]?.[0] };
+      // Угаалгах боломжгүй бол татахыг автоматаар сонгоно
+      return prev ?? { photoId: id, download: !printOrdersOpen(album.print_deadline) || !opts.length, print: false, printSize: opts[0]?.[0] };
     });
     go('choices', { choices }, 'Сонгосон зураг бүрээ татах уу, угаалгах уу, эсвэл хоёуланг нь уу?');
   }
@@ -361,6 +377,7 @@ export default function AlbumPurchaseGuide({
   }
 
   function removeChoice(photoId: string) {
+    if (later.includes(photoId)) setLater(writeLater(album.id, later.filter(x => x !== photoId)));
     commit(dropGuideCartPhoto(session, photoId));
   }
 
@@ -391,7 +408,9 @@ export default function AlbumPurchaseGuide({
     }
   }
   const total = lines.reduce((s, l) => s + l.price, 0);
-  const ready = session.choices.length > 0 && session.choices.every(c => c.download || (printsOpen && c.print));
+  const paying = (c: GuideChoice) => c.download || (printsOpen && c.print);
+  const ready = session.choices.some(paying);
+  const laterCount = session.choices.filter(c => !paying(c)).length;
 
   async function redownload(item: OwnedPhoto) {
     setPastNote('');
@@ -441,8 +460,11 @@ export default function AlbumPurchaseGuide({
   function beginPay() {
     if (!ready || total <= 0) return;
     const downloads = session.choices.filter(c => c.download).length;
-    const prints = session.choices.filter(c => c.print).length;
-    go('pay', { invoice: null }, guidePaySummary(session.name, session.choices.length, downloads, prints, money(total)));
+    const prints = session.choices.filter(c => printsOpen && c.print).length;
+    // Сонгоогүй үлдсэнийг түр хадгална
+    const keep = session.choices.filter(c => !paying(c)).map(c => c.photoId);
+    if (keep.length) setLater(writeLater(album.id, [...later, ...keep]));
+    go('pay', { invoice: null }, guidePaySummary(session.name, session.choices.filter(paying).length, downloads, prints, money(total)));
   }
 
   async function startPay() {
@@ -793,8 +815,8 @@ export default function AlbumPurchaseGuide({
                     </div>
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <button type="button" onClick={() => setChoice(c.photoId, { download: !c.download })}
-                        className={`text-xs rounded-full px-3 py-1.5 border ${c.download ? 'bg-amber-500 text-stone-950 border-amber-500' : 'border-white/15'}`}>
-                        Татах · {money(dlp)}
+                        className={`text-xs rounded-full px-3 py-1.5 border ${c.download ? 'bg-amber-500 text-stone-950 border-amber-500' : paying(c) ? 'border-white/15' : 'border-sky-400/60 text-sky-200 bg-sky-500/10'}`}>
+                        {c.download || paying(c) ? <>Татах · {money(dlp)}</> : <span className="inline-flex items-center gap-1"><Bookmark className="w-3.5 h-3.5" /> Түр хадгалах</span>}
                       </button>
                       {!printsOpen && prints.length > 0 && <p className="text-xs text-stone-500 mt-2">Угаалгах хугацаа дууссан</p>}
                       {printsOpen && prints.length > 0 && (
@@ -839,9 +861,12 @@ export default function AlbumPurchaseGuide({
               <Images className="w-4 h-4 text-amber-400" /> Цомог руу буцаж зураг нэмэх
             </button>
             <p className="text-right font-bold">Нийт {money(total)}</p>
+            {laterCount > 0 && (
+              <p className="text-xs text-sky-200 flex items-center gap-1.5"><Bookmark className="w-3.5 h-3.5" /> {laterCount} зураг түр хадгалагдана — дараа нь цомгоос «Түр хадгалсан» дээр дарж авна.</p>
+            )}
             <button id="zm-guide-pay" type="button" disabled={!ready || total <= 0} onClick={beginPay}
               className="w-full bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl py-3.5">
-              {total > 0 ? `QPay-ээр төлөх · ${money(total)}` : 'Үнэ байхгүй'}
+              {total > 0 ? `QPay-ээр төлөх · ${money(total)}` : 'Татах зургаа сонгоно уу'}
             </button>
           </div>
         )}
@@ -1030,20 +1055,35 @@ export default function AlbumPurchaseGuide({
       {DEBUG && dbg && <p className="shrink-0 px-3 py-1 text-[10px] text-amber-300 break-all">{dbg}</p>}
       {session.step === 'browse' && (
         <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-3 bg-stone-950">
-          {undlTotal > 0 && session.selected.length === 0 ? (
-            <a href={undlHref}
-              className="flex-1 min-w-0 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/60 rounded-xl px-3 py-2.5">
-              <span className="truncate text-sm"><b className="text-emerald-300">Татаагүй {undlTotal} зураг</b></span>
-              <span className="shrink-0 ml-auto bg-emerald-500 text-stone-950 font-bold text-xs rounded-lg px-2.5 py-1">Татах →</span>
-            </a>
-          ) : (
-            <p className="text-sm flex-1">
-              {session.selected.length} зураг · {money(running)}
-              {undlTotal > 0 && (
-                <a href={undlHref} className="block text-emerald-300 text-xs underline">Татаагүй {undlTotal} зураг →</a>
-              )}
-            </p>
-          )}
+          {(() => {
+            const laterIds = later.filter(id => photos.some(p => p.id === id) && !session.selected.includes(id));
+            const laterBtn = laterIds.length > 0 && (
+              <button type="button"
+                onClick={() => {
+                  commit({ ...session, selected: [...session.selected, ...laterIds] });
+                }}
+                className="shrink-0 flex flex-col items-center justify-center bg-sky-500/15 border border-sky-400/60 rounded-xl px-2.5 py-1.5 leading-tight">
+                <span className="flex items-center gap-1 text-sky-200 text-xs font-bold"><Bookmark className="w-3.5 h-3.5" /> {laterIds.length}</span>
+                <span className="text-[10px] text-sky-200/80">Түр хадгалсан</span>
+              </button>
+            );
+            return undlTotal > 0 && session.selected.length === 0 ? (<>
+              <a href={undlHref}
+                className="flex-1 min-w-0 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/60 rounded-xl px-3 py-2.5">
+                <span className="truncate text-sm"><b className="text-emerald-300">Татаагүй {undlTotal} зураг</b></span>
+                <span className="shrink-0 ml-auto bg-emerald-500 text-stone-950 font-bold text-xs rounded-lg px-2.5 py-1">Татах →</span>
+              </a>
+              {laterBtn}
+            </>) : (<>
+              <p className="text-sm flex-1 min-w-0">
+                {session.selected.length} зураг · {money(running)}
+                {undlTotal > 0 && (
+                  <a href={undlHref} className="block text-emerald-300 text-xs underline">Татаагүй {undlTotal} зураг →</a>
+                )}
+              </p>
+              {laterBtn}
+            </>);
+          })()}
           <button type="button" onClick={finishSelect} disabled={!session.selected.length}
             className="bg-amber-500 disabled:opacity-40 text-stone-950 font-bold rounded-xl px-4 py-3 text-sm">
             Сонгож дууслаа
