@@ -6,7 +6,7 @@ import { usePwaInstall } from '../../lib/pwaInstall';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
 import { listPurchaseHistory } from '../../lib/purchaseHistory';
-import { countUndownloaded } from '../../lib/receiptDownloads';
+import { cachedUndownloaded, countUndownloaded } from '../../lib/receiptDownloads';
 
 const MENU_LINKS = [
   { label: 'Гэрэл зурагчид', to: '/photographers' },
@@ -172,11 +172,12 @@ export default function HomeHeader() {
 function MyAlbumsBar() {
   const navigate = useNavigate();
   const history = listPurchaseHistory();
-  const [undl, setUndl] = useState(0);
+  // Кэшээс шууд, дараа нь серверээс шинэчилнэ (алдаа гарвал кэш хэвээр)
+  const [undl, setUndl] = useState(() => cachedUndownloaded(history.map(h => h.invoiceId)).reduce((n, r) => n + r.count, 0));
   useEffect(() => {
     if (!history.length) return;
     let cancel = false;
-    countUndownloaded(history.map(h => h.invoiceId)).then(n => { if (!cancel) setUndl(n); });
+    countUndownloaded(history.map(h => h.invoiceId)).then(n => { if (!cancel) setUndl(n); }).catch(() => {});
     return () => { cancel = true; };
   }, [history.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
