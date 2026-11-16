@@ -260,6 +260,18 @@ export function siteBadgeRect(w: number, h: number, occupied: Rect[], textWidth:
     { x: w - bw - pad, y: pad,          w: bw, h: bh }, // баруун дээр
     { x: pad,          y: pad,          w: bw, h: bh }, // зүүн дээр
   ];
+  // Цомгийн лого/текст аль хэдийн байгаа БУЛАНД тавихгүй: булан бүрийн бүсэд (өргөний 40%, өндрийн 30%)
+  // ямар нэг давхарга орсон бол тэр булан эзэлсэн гэж үзнэ → чөлөөтэй буланг сонгоно.
+  const zoneW = w * 0.4, zoneH = h * 0.3;
+  const zones: Rect[] = [
+    { x: w - zoneW, y: h - zoneH, w: zoneW, h: zoneH },
+    { x: 0,         y: h - zoneH, w: zoneW, h: zoneH },
+    { x: w - zoneW, y: 0,         w: zoneW, h: zoneH },
+    { x: 0,         y: 0,         w: zoneW, h: zoneH },
+  ];
+  for (let i = 0; i < corners.length; i++) {
+    if (!occupied.some(r => overlapArea(zones[i], r) > 0)) return corners[i];
+  }
   // Зай авч шалгана — хүрэлцэх төдий ойр байхаас ч зайлсхийнэ
   const gap = pad;
   const grown = occupied.map(r => ({ x: r.x - gap, y: r.y - gap, w: r.w + gap * 2, h: r.h + gap * 2 }));

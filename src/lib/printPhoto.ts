@@ -1,14 +1,12 @@
 import { supabase } from './supabase';
 import { applyBrandToPurchase, brandLayers } from './watermark';
-import { applyAdjustToBlob, isNeutral, PhotoAdjust } from './photoAdjust';
+import { PhotoAdjust, PrintCrop, preparePrintBlob, PRINT_SIZE_CM } from './photoAdjust';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /** Хэвлэх хэмжээ (см) — богино тал × урт тал */
-const SIZE_CM: Record<string, [number, number]> = {
-  '10x15': [10, 15], '13x18': [13, 18], '15x21': [15, 21], '20x30': [20, 30], '21x30': [21, 30], A4: [21, 29.7],
-};
+const SIZE_CM = PRINT_SIZE_CM;
 
 export type SmsResult = 'sent' | 'already' | 'not_configured' | 'failed' | 'no_phone';
 export interface PrintJobResult { sms: SmsResult; smsText: string; buyerPhone: string }
@@ -19,7 +17,7 @@ export interface PrintJobResult { sms: SmsResult; smsText: string; buyerPhone: s
  * Цонхыг товч дарсан агшинд нээх ёстой (popup blocker), тиймээс энэ функцийг click дотроос шууд дуудна.
  */
 /** «Засах» цонхонд: эх зураг, хэмжээ, лого, хадгалсан засвар (төлөв өөрчлөхгүй, SMS явахгүй) */
-export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: string; filename: string; size: string; brand: string; adjust: PhotoAdjust }> {
+export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: string; filename: string; size: string; brand: string; adjust: PhotoAdjust & PrintCrop }> {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`${QPAY_FN_URL}/print-job`, {
     method: 'POST',
@@ -32,7 +30,7 @@ export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: 
 }
 
 /** Гэрэл/өнгөний засварыг хадгална — дараагийн «Принт» бүрт хэрэгжинэ */
-export async function savePrintAdjust(purchaseId: string, adjust: PhotoAdjust): Promise<void> {
+export async function savePrintAdjust(purchaseId: string, adjust: PhotoAdjust & PrintCrop): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`${QPAY_FN_URL}/print-adjust`, {
     method: 'POST',
@@ -44,7 +42,7 @@ export async function savePrintAdjust(purchaseId: string, adjust: PhotoAdjust): 
 }
 
 /** adjustOverride: «Засах» цонхноос шууд хэвлэх үед (хадгалагдахыг хүлээхгүй) */
-export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAdjust): Promise<PrintJobResult> {
+export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAdjust & PrintCrop): Promise<PrintJobResult> {
   const win = window.open('', '_blank');
   if (win) win.document.write('<p style="font-family:sans-serif;padding:24px">Зураг бэлтгэж байна…</p>');
   try {
@@ -58,10 +56,10 @@ export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAd
     if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
     const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
     // Цомгийн лого, мэндчилгээг (сайтын «Zuragchin.mn» тамгагүйгээр) хэвлэх зурагт шингээнэ
-    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, adjustOverride ?? data.adjust ?? {});
+    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {});
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
 <style id="pg">@page{size:${w}cm ${h}cm;margin:0}</style>
-<style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}cm;height:${h}cm;object-fit:cover}
+<style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}cm;height:${h}cm;object-fit:contain}
 @media screen{body{display:flex;justify-content:center;padding:16px;background:#444}img{box-shadow:0 4px 24px rgba(0,0,0,.5)}}</style>
 </head><body><img id="im" src="${imgSrc}">
 <script>
@@ -83,13 +81,12 @@ im.onload=function(){
   }
 }
 
-async function withBrand(url: string, raw: string, filename: string, adjust: PhotoAdjust = {}): Promise<string> {
+async function withBrand(url: string, raw: string, filename: string, size: string, adjust: PhotoAdjust & PrintCrop = {}): Promise<string> {
   const layers = raw ? brandLayers(raw) : null;
-  if (!layers && isNeutral(adjust)) return url;
   try {
     let blob = await (await fetch(url)).blob();
-    // 1) гэрэл/өнгөний засвар (зөвхөн зурагт) → 2) цомгийн лого/мэндчилгээ
-    blob = await applyAdjustToBlob(blob, adjust);
+    // 1) гэрэл/өнгө → 2) цаасны харьцаанд тайрах (лого тайрагдахгүйн тулд ЭХЛЭЭД тайрна) → 3) цомгийн лого
+    blob = await preparePrintBlob(blob, size, adjust);
     const out = layers ? await applyBrandToPurchase(blob, raw, filename) : blob;
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
