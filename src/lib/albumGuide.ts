@@ -137,15 +137,58 @@ export function returningWelcome(name: string, albumName: string): string {
 
 const MID_FLOW = new Set<GuideStep>(['topics', 'browse', 'choices', 'pay']);
 
-/** Цомгийн хөтчид сонгосон боловч төлөөгүй зургууд (захиалга дундуурх үед л) */
+/** Энэ хөтөч дээр төлөгдсөн гэж мэдэгдэх нэхэмжлэхүүд (хөтөч + «Төлсөн» түүх) */
+function knownPaidInvoices(g: GuideSession): Set<string> {
+  const out = new Set<string>([...(g.paidInvoices ?? []), ...(g.owned ?? []).map(o => o.invoiceId)]);
+  try {
+    const h = JSON.parse(localStorage.getItem('zuragchin_purchases') || '[]');
+    if (Array.isArray(h)) for (const e of h) if (e && typeof e.invoiceId === 'string') out.add(e.invoiceId);
+  } catch { /* */ }
+  return out;
+}
+
+/**
+ * Цомгийн хөтчид сонгосон боловч төлөөгүй зургууд (захиалга дундуурх үед л).
+ * QR үүсгэсэн нэхэмжлэх нь аль хэдийн төлөгдсөн бол (хөтөч 3 минутын дараа шалгахаа больдог) сонголт гэж тооцохгүй.
+ */
 export function guideSelectedUnpaid(albumId: string): string[] {
   try {
     if (!localStorage.getItem(keyOf(albumId))) return [];
   } catch { return []; }
   const g = loadGuide(albumId);
   if (!MID_FLOW.has(g.step)) return [];
+  if (g.invoice?.invoiceId && knownPaidInvoices(g).has(g.invoice.invoiceId)) return [];
   const owned = new Set((g.owned ?? []).map(o => o.photoId));
   return g.selected.filter(id => !owned.has(id));
+}
+
+/** Хөтөч төлбөрийн алхамд QR-тай зогссон бол тэр нэхэмжлэх */
+export function guideOpenInvoice(albumId: string): string | null {
+  try {
+    if (!localStorage.getItem(keyOf(albumId))) return null;
+  } catch { return null; }
+  const g = loadGuide(albumId);
+  return g.step === 'pay' && g.invoice?.invoiceId ? g.invoice.invoiceId : null;
+}
+
+/**
+ * Хөтчийн нэхэмжлэх (хөтөч нээлттэй биш үед) төлөгдсөн нь тогтоогдвол:
+ * сонголтыг цэвэрлэж, нэхэмжлэхийг төлсөнд тэмдэглэнэ («Төлсөн» түүхэнд орно).
+ */
+export function settleGuideInvoice(albumId: string, invoiceId: string) {
+  const g = loadGuide(albumId);
+  if (g.invoice?.invoiceId !== invoiceId) return;
+  saveGuide(albumId, {
+    ...g,
+    paidInvoices: [...new Set([...(g.paidInvoices ?? []), invoiceId])],
+    known: true,
+    step: 'welcome',
+    selected: [],
+    choices: [],
+    messages: [],
+    invoice: null,
+    folderId: null,
+  });
 }
 
 /** Нэр нь хадгалагдсан зочин дахин нээхэд мэндчилгээ. Захиалга дундуурх алхмыг хэвээр үлдээнэ. */
