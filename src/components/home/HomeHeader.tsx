@@ -196,7 +196,8 @@ function computePending(): { kind: 'later' | 'selected'; link: string; total: nu
     const n = new Set([...guideSelectedUnpaid(v.id), ...cartIds]).size;
     if (n > 0) { total += n; target = target ?? v; }
   }
-  return target ? { kind: 'selected', link: `/album/${target.link}`, total } : null;
+  // Сонгосон зургийн жагсаалт руу шууд (төлөхөд бэлэн)
+  return target ? { kind: 'selected', link: `/album/${target.link}?pay=1`, total } : null;
 }
 
 function MyAlbumsBar() {
