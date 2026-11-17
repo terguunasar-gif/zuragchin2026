@@ -5,8 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePwaInstall } from '../../lib/pwaInstall';
 import { BrandLogo } from '../BrandMark';
 import HomeQrButton from './HomeQrButton';
-import { listPurchaseHistory, loadCart, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
-import { guideSelectedUnpaid } from '../../lib/albumGuide';
+import { getPendingInvoice, listPurchaseHistory, loadCart, syncPurchaseHistoryFromGuides } from '../../lib/purchaseHistory';
+import { guideOpenInvoice, guideSelectedUnpaid, settleGuideInvoice } from '../../lib/albumGuide';
 import { cachedUndownloaded, undownloadedByInvoice } from '../../lib/receiptDownloads';
 import { listAllLater } from '../../lib/savedLater';
 import { listVisitedAlbums } from '../../lib/visitedAlbums';
@@ -172,6 +172,33 @@ export default function HomeHeader() {
 }
 
 /** Нүүрний дээд мөр: QR уншигч + Төлсөн захиалга (татаагүй зургийн тоотой) */
+
+const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
+const QPAY_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+/** Сүүлийн 30 хоногт үзсэн цомгууд — хуучирсан сонголтыг нүүрэнд санал болгохгүй */
+const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
+const recentVisited = () => listVisitedAlbums().filter(v => Date.now() - v.at < RECENT_MS);
+/** Нэхэмжлэх нь төлөгдсөн сагсууд (энэ хуудсанд) — сонголт гэж тооцохгүй */
+const paidCarts = new Set<string>();
+
+function computePending(): { kind: 'later' | 'selected'; link: string; total: number } | null {
+  const visited = recentVisited();
+  const later = listAllLater().filter(a => visited.some(v => v.id === a.albumId));
+  const laterTotal = later.reduce((n, a) => n + a.ids.length, 0);
+  if (laterTotal > 0) {
+    const target = visited.find(v => later.some(a => a.albumId === v.id))!;
+    return { kind: 'later', link: `/album/${target.link}?later=1`, total: laterTotal };
+  }
+  let target: (typeof visited)[number] | null = null;
+  let total = 0;
+  for (const v of visited) {
+    const cartIds = paidCarts.has(v.id) ? [] : loadCart<{ photoId?: string }>(v.id).map(c => c.photoId).filter((x): x is string => !!x);
+    const n = new Set([...guideSelectedUnpaid(v.id), ...cartIds]).size;
+    if (n > 0) { total += n; target = target ?? v; }
+  }
+  return target ? { kind: 'selected', link: `/album/${target.link}`, total } : null;
+}
+
 function MyAlbumsBar() {
   const navigate = useNavigate();
   // Цомгийн хөтчөөр төлсөн ч түүхэнд ороогүй захиалгуудыг нэгтгэнэ
@@ -181,23 +208,34 @@ function MyAlbumsBar() {
   const undl = undlList.reduce((n, r) => n + r.count, 0);
   // Нэг л товч: түр хадгалсан зураг байвал «Түр хадгалсан зураг N»,
   // үгүй бол сонгоод төлөөгүй зураг байвал «Таны сонгосон зураг N», аль нь ч үгүй бол харагдахгүй.
-  const [pending] = useState(() => {
-    const visited = listVisitedAlbums();
-    const later = listAllLater().filter(a => visited.some(v => v.id === a.albumId));
-    const laterTotal = later.reduce((n, a) => n + a.ids.length, 0);
-    if (laterTotal > 0) {
-      const target = visited.find(v => later.some(a => a.albumId === v.id))!;
-      return { kind: 'later' as const, link: `/album/${target.link}?later=1`, total: laterTotal };
+  const [pending, setPending] = useState(() => computePending());
+  // QR-аар төлбөр хүлээж байгаад орхисон захиалгууд — төлөгдсөн эсэхийг серверээс шалгаж, төлсөн бол товчноос хасна
+  useEffect(() => {
+    const checks: { albumId: string; invoiceId: string; kind: 'guide' | 'cart' }[] = [];
+    for (const v of recentVisited()) {
+      const g = guideOpenInvoice(v.id);
+      if (g) checks.push({ albumId: v.id, invoiceId: g, kind: 'guide' });
+      const p = getPendingInvoice(v.id);
+      if (p && p !== g && loadCart(v.id).length) checks.push({ albumId: v.id, invoiceId: p, kind: 'cart' });
     }
-    let target: (typeof visited)[number] | null = null;
-    let total = 0;
-    for (const v of visited) {
-      const cartIds = loadCart<{ photoId?: string }>(v.id).map(c => c.photoId).filter((x): x is string => !!x);
-      const n = new Set([...guideSelectedUnpaid(v.id), ...cartIds]).size;
-      if (n > 0) { total += n; target = target ?? v; }
-    }
-    return target ? { kind: 'selected' as const, link: `/album/${target.link}`, total } : null;
-  });
+    if (!checks.length) return;
+    let cancel = false;
+    (async () => {
+      let changed = false;
+      for (const c of checks) {
+        try {
+          const res = await fetch(`${QPAY_FN_URL}/check-payment/${c.invoiceId}`, { headers: { Authorization: `Bearer ${QPAY_ANON}`, apikey: QPAY_ANON } });
+          const data = await res.json().catch(() => ({}));
+          if (!data?.isPaid) continue;
+          if (c.kind === 'guide') settleGuideInvoice(c.albumId, c.invoiceId);
+          else paidCarts.add(c.albumId);
+          changed = true;
+        } catch { /* сүлжээ — дараагийн удаа */ }
+      }
+      if (changed && !cancel) { syncPurchaseHistoryFromGuides(); setPending(computePending()); }
+    })();
+    return () => { cancel = true; };
+  }, []);
   useEffect(() => {
     if (!history.length) return;
     let cancel = false;
