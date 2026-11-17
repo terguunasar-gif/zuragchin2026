@@ -227,7 +227,8 @@ export default function PublicAlbumPage() {
     try {
       const raw = JSON.parse(localStorage.getItem(`zm_album_guide_${album.id}`) || 'null');
       const known = typeof raw?.name === 'string' && raw.name.trim().length >= 2;
-      setGuideOn(known || !raw?.declined || new URLSearchParams(window.location.search).get('later') === '1');
+      const q = new URLSearchParams(window.location.search);
+      setGuideOn(known || !raw?.declined || q.get('later') === '1' || q.get('pay') === '1');
     } catch { setGuideOn(true); }
   }, [album?.id]);
   const [guidePaid, setGuidePaid] = useState<string | null>(null);
@@ -861,6 +862,7 @@ export default function PublicAlbumPage() {
             setGuidePaid(invoiceId);
           }}
           onClose={() => setGuideOn(false)}
+          onDropCartPhoto={photoId => setCart(c => c.filter(x => x.photoId !== photoId))}
         />
       )}</Suspense>
       <header className="border-b border-white/10 sticky top-0 z-30 bg-stone-950/95 backdrop-blur-sm">

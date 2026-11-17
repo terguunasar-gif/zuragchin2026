@@ -18,7 +18,7 @@ import { listVisitedAlbums } from '../lib/visitedAlbums';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
-import { addPurchaseHistory, listPurchaseHistory } from '../lib/purchaseHistory';
+import { addPurchaseHistory, listPurchaseHistory, loadCart } from '../lib/purchaseHistory';
 
 const PRINT_LABEL: Record<string, string> = {
   '10x15': '10×15 см', '13x18': '13×18 см', '15x21': '15×21 см',
@@ -50,7 +50,7 @@ function closeLightbox(setViewerId: (id: string | null) => void) {
 }
 
 export default function AlbumPurchaseGuide({
-  album, photos, folders, aiPrice, paidInvoice, onInvoiceCreated, onPaid, onClose,
+  album, photos, folders, aiPrice, paidInvoice, onInvoiceCreated, onPaid, onClose, onDropCartPhoto,
 }: {
   album: AlbumData;
   photos: PhotoData[];
@@ -60,6 +60,8 @@ export default function AlbumPurchaseGuide({
   onInvoiceCreated?: (invoiceId: string) => void;
   onPaid: (invoiceId: string) => void;
   onClose: () => void;
+  /** «Энгийн харагдац»-ын сагснаас зургийг хасах (хөтөчөөс «Хасах» дарахад) */
+  onDropCartPhoto?: (photoId: string) => void;
 }) {
   const [session, setSession] = useState<GuideSession>(() => prepareGuideEntry(loadGuide(album.id), album.name));
   const [draft, setDraft] = useState('');
@@ -288,11 +290,17 @@ export default function AlbumPurchaseGuide({
     if (nm.length < 2) { setFormErr('Нэрээ оруулна уу'); return; }
     if (!ph) { setFormErr('8 оронтой утасны дугаар оруулна уу'); return; }
     setFormErr('');
+    // Нүүрнээс «Таны сонгосон зураг» дарж ирсэн бол нэр оруулсны дараа шууд төлбөрийн жагсаалт руу
+    if (session.choices.length > 0) {
+      commit({ ...session, name: nm, phone: ph, step: 'choices', messages: [{ role: 'bot', text: `Сайн байна уу, ${nm}! ${SELECTED_MSG}` }] });
+      return;
+    }
     const greet = `Сайн байна уу, ${nm}! Та «${album.name}» цомогт нэвтэрлээ. Зураг үзэх үү?`;
     commit({ ...session, name: nm, phone: ph, step: 'greet', messages: [{ role: 'bot', text: greet }] });
   }
 
   // «Тийм» → сэдэв асуулгүй шууд бүх зураг (сэдвүүд зургийн дээд мөрөнд товчоор харагдана)
+  const SELECTED_MSG = 'Таны сонгосон зургууд. Татах/угаалгах сонголтоо шалгаад QPay-ээр төлнө үү.';
   const BROWSE_ALL_MSG = 'Бүх зургийг харууллаа. Дээрх сэдвээр шүүж болно. Хүссэн зургаа тэмдэглээд «Сонгож дууслаа» дарна уу.';
   function acceptYes() {
     go('browse', { folderId: null }, BROWSE_ALL_MSG);
@@ -386,6 +394,49 @@ export default function AlbumPurchaseGuide({
     openLater();
   }, [photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Нүүрнээс «Таны сонгосон зураг» дарж ирсэн бол (?pay=1): хөтчийн сонголт болон
+   * «Энгийн харагдац»-ын сагсыг нэгтгээд шууд төлбөрийн жагсаалт руу.
+   */
+  const payOnce = useRef(false);
+  useEffect(() => {
+    if (payOnce.current || !photos.length) return;
+    const u = new URL(window.location.href);
+    if (u.searchParams.get('pay') !== '1') return;
+    payOnce.current = true;
+    u.searchParams.delete('pay');
+    window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash);
+    openSelected();
+  }, [photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function openSelected() {
+    // QR үүссэн төлбөр хүлээж байгаа бол тэр хэвээр (шууд QR харагдана)
+    if (session.step === 'pay' && session.invoice) return;
+    const has = (id: string) => photos.some(p => p.id === id);
+    const cartItems = loadCart<{ photoId: string; type: 'download' | 'print'; printSize?: string }>(album.id).filter(c => c && has(c.photoId));
+    const ids = [...new Set([...session.selected, ...session.choices.map(c => c.photoId), ...cartItems.map(c => c.photoId)])].filter(has);
+    if (!ids.length) return;
+    const choices: GuideChoice[] = ids.map(id => {
+      const prev = session.choices.find(c => c.photoId === id);
+      if (prev) return prev;
+      const photo = photos.find(p => p.id === id);
+      const opts = photo ? printOptions(photo) : [];
+      const items = cartItems.filter(c => c.photoId === id);
+      if (items.length) {
+        const pr = items.find(i => i.type === 'print');
+        return { photoId: id, download: items.some(i => i.type === 'download') || !(pr && printsOpen), print: !!pr && printsOpen, printSize: pr?.printSize || opts[0]?.[0] };
+      }
+      return { photoId: id, download: !printsOpen || !opts.length, print: false, printSize: opts[0]?.[0] };
+    });
+    if (session.name.trim().length < 2) {
+      // Нэр, утас хэрэгтэй — оруулсны дараа шууд төлбөрийн жагсаалт (welcome())
+      commit({ ...session, selected: ids, choices, invoice: null, step: 'welcome', declined: false });
+      return;
+    }
+    go('choices', { selected: ids, choices, invoice: null, declined: false }, SELECTED_MSG);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+  }
+
   /** Төлөхөөс өмнө цомог руу буцаж нэмж/дахин сонгох — өмнөх сонголт, тохиргоо хадгалагдана */
   function backToAlbum() {
     go('browse', { folderId: session.folderId ?? null },
@@ -415,6 +466,7 @@ export default function AlbumPurchaseGuide({
 
   function removeChoice(photoId: string) {
     if (later.includes(photoId)) setLater(writeLater(album.id, later.filter(x => x !== photoId)));
+    onDropCartPhoto?.(photoId);
     commit(dropGuideCartPhoto(session, photoId));
   }
 
