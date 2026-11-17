@@ -11,6 +11,7 @@ import {
 import { cachedUndownloaded, everyDownloaded, idsWithServerDownloads, readDownloadedIds, undownloadedByInvoice, writeDownloadedIds } from '../lib/receiptDownloads';
 import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import PrintEditor from './PrintEditor';
+import BrandMark from './BrandMark';
 import EditedThumb from './EditedThumb';
 import { readLater, writeLater } from '../lib/savedLater';
 import { listVisitedAlbums } from '../lib/visitedAlbums';
@@ -666,22 +667,32 @@ export default function AlbumPurchaseGuide({
 
   return (
     <div className={`fixed inset-x-0 bottom-0 z-[45] bg-stone-950 text-white flex flex-col ${inApp ? 'top-24' : 'top-0'}`}>
-      <header className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-3">
-        <AlbumSwitcher albumId={album.id} albumName={album.name} />
-        <div className="flex items-center gap-2 shrink-0">
-          {session.messages.length > 1 && (
-            <button type="button" onClick={() => setChatOpen(o => !o)} aria-pressed={chatOpen} aria-label="Чат"
-              className={`p-2 rounded-lg ${chatOpen ? 'bg-white/15 text-white' : 'bg-white/10 text-white'}`}>
-              <MessageCircle className="w-4 h-4" />
-            </button>
-          )}
-          <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="text-stone-400 text-xs underline">Энгийн харагдац</button>
+      {/* Нэг мөр: лого (нүүр хуудас руу) · цомог сонгогч · харагдац. Чат баруун доод буланд. */}
+      <header className="px-3 py-2.5 border-b border-white/10 flex items-center gap-2.5 shrink-0">
+        <a href="/" aria-label="Zuragchin.mn нүүр хуудас" className="shrink-0">
+          <BrandMark className="w-9 h-9" />
+        </a>
+        <div className="min-w-0 flex-1">
+          <AlbumSwitcher albumId={album.id} albumName={album.name} />
         </div>
+        {session.step === 'browse' && (
+            <div className="shrink-0 flex bg-white/10 rounded-lg p-0.5" role="group" aria-label="Харагдац">
+              {([1, 2, 3] as const).map(n => (
+                <button key={n} type="button" onClick={() => setCols(n)} aria-label={`${n} багана`}
+                  className={`w-8 h-7 rounded-md flex items-center justify-center ${cols === n ? 'bg-amber-500 text-stone-950' : 'text-stone-300'}`}>
+                  <span className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${n}, minmax(0,1fr))` }}>
+                    {Array.from({ length: n === 1 ? 1 : n * 2 }).map((_, i) => (
+                        <span key={i} className={`block rounded-[1px] bg-current ${n === 1 ? 'w-3 h-3.5' : n === 2 ? 'w-1.5 h-1.5' : 'w-1 h-1'}`} />
+                    ))}
+                  </span>
+                </button>
+              ))}
+            </div>
+        )}
       </header>
 
-
-      {session.step === 'browse' && (
-        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
+      {session.step === 'browse' && named.length > 0 && (
+        <div className="flex items-center px-3 py-2 border-b border-white/10 shrink-0">
         <div className="flex gap-1.5 overflow-x-auto flex-1 min-w-0 [scrollbar-width:none]">
           {named.length > 0 && <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === null ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
@@ -694,18 +705,6 @@ export default function AlbumPurchaseGuide({
             </button>
           ))}
         </div>
-          <div className="shrink-0 flex bg-white/10 rounded-lg p-0.5" role="group" aria-label="Харагдац">
-            {([1, 2, 3] as const).map(n => (
-              <button key={n} type="button" onClick={() => setCols(n)} aria-label={`${n} багана`}
-                className={`w-8 h-7 rounded-md flex items-center justify-center ${cols === n ? 'bg-amber-500 text-stone-950' : 'text-stone-300'}`}>
-                <span className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${n}, minmax(0,1fr))` }}>
-                  {Array.from({ length: n === 1 ? 1 : n * 2 }).map((_, i) => (
-                    <span key={i} className={`block rounded-[1px] bg-current ${n === 1 ? 'w-3 h-3.5' : n === 2 ? 'w-1.5 h-1.5' : 'w-1 h-1'}`} />
-                  ))}
-                </span>
-              </button>
-            ))}
-          </div>
         </div>
       )}
 
@@ -717,6 +716,10 @@ export default function AlbumPurchaseGuide({
             }`}>{m.text}</div>
           ))}
           {busy && <div className="text-stone-500 text-xs flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> ...</div>}
+          {chatOpen && (
+            <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }}
+              className="text-stone-400 text-xs underline">Энгийн харагдац руу шилжих</button>
+          )}
         </div>
       )}
 
@@ -730,6 +733,8 @@ export default function AlbumPurchaseGuide({
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-amber-500" />
             {formErr && <p className="text-red-300 text-sm">{formErr}</p>}
             <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl py-3.5">Зураг үзэх</button>
+            <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }}
+              className="w-full text-stone-400 text-sm underline py-1">Нэр оруулахгүйгээр энгийн харагдацаар үзэх</button>
           </form>
         )}
 
@@ -1111,6 +1116,13 @@ export default function AlbumPurchaseGuide({
       )}
 
       {DEBUG && dbg && <p className="shrink-0 px-3 py-1 text-[10px] text-amber-300 break-all">{dbg}</p>}
+      {/* Чат — баруун доод буланд (бүх яриа, «Энгийн харагдац» руу шилжих) */}
+      {session.messages.length > 0 && session.step !== 'welcome' && <button type="button" onClick={() => setChatOpen(o => !o)} aria-pressed={chatOpen} aria-label="Чат"
+        className={`absolute right-4 z-10 w-12 h-12 rounded-full flex items-center justify-center shadow-[0_8px_30px_rgba(245,158,11,.35)] ${
+          session.step === 'browse' ? 'bottom-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1.25rem+env(safe-area-inset-bottom))]'
+        } ${chatOpen ? 'bg-white text-stone-950' : 'bg-amber-500 text-stone-950'}`}>
+        {chatOpen ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
+      </button>}
       {session.step === 'browse' && (
         <div className="shrink-0 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/10 flex items-center gap-2 bg-stone-950">
           {(() => {
