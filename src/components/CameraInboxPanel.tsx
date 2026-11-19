@@ -24,26 +24,17 @@ export interface CameraInboxPanelProps {
   process: (file: File, onProgress: (p: number) => void) => Promise<string | null>;
 }
 
-async function listAll(prefix: string, depth = 0): Promise<InboxFile[]> {
-  const out: InboxFile[] = [];
-  for (let offset = 0; offset < 5000; offset += 100) {
-    const { data, error } = await supabase.storage.from(BUCKET)
-      .list(prefix, { limit: 100, offset, sortBy: { column: 'created_at', order: 'asc' } });
-    if (error) throw new Error(error.message);
-    for (const o of data ?? []) {
-      const path = `${prefix}/${o.name}`;
-      if (!o.id) {
-        // Хавтас (камер «Same as in Camera» горимд A/DCIM/100MSDCF/... гэж үүсгэж болно)
-        if (depth < 4) out.push(...await listAll(path, depth + 1));
-        continue;
-      }
-      if (o.name.startsWith('.')) continue; // .emptyFolderPlaceholder г.м.
-      const meta = (o.metadata ?? {}) as { size?: number };
-      out.push({ id: o.id, path, name: o.name, size: Number(meta.size ?? 0), created: o.created_at ?? '' });
-    }
-    if (!data || data.length < 100) break;
-  }
-  return out;
+async function listAll(albumId: string): Promise<InboxFile[]> {
+  // Storage list API нь S3-ээр орсон файлыг заримдаа харуулдаггүй тул DB-ээс шууд авна
+  const { data, error } = await supabase.rpc('camera_inbox_list', { p_album_id: albumId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { id: string; name: string; size: number; created_at: string }[]).map(o => ({
+    id: o.id,
+    path: o.name,
+    name: o.name.split('/').pop() ?? o.name,
+    size: Number(o.size ?? 0),
+    created: o.created_at ?? '',
+  }));
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
