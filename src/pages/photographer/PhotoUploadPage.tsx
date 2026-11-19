@@ -11,6 +11,7 @@ import { IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, uploadThumb } from '../.
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
 import CameraInboxPanel from '../../components/CameraInboxPanel';
+import LocalFolderPanel from '../../components/LocalFolderPanel';
 
 interface AlbumInfo {
   id: string;
@@ -522,7 +523,11 @@ export default function PhotoUploadPage() {
         </div>
 
         {album && (
-          <div className="mb-6">
+          <div className="mb-6 space-y-4">
+            <LocalFolderPanel
+              albumId={album.id}
+              process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
+            />
             <CameraInboxPanel
               albumId={album.id}
               process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
