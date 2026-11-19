@@ -10,6 +10,7 @@ import { applyWatermark, makeSalePreview, WatermarkPosition } from '../../lib/wa
 import { IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, uploadThumb } from '../../lib/thumbs';
 import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
+import CameraInboxPanel from '../../components/CameraInboxPanel';
 
 interface AlbumInfo {
   id: string;
@@ -57,6 +58,8 @@ const ORIGINAL_MAX_EDGE = 3600;
 const ORIGINAL_QUALITY = 0.85;
 
 interface PhotoQuota { applies: boolean; used: number; free_quota: number; extra: number; quota: number }
+
+class QuotaExceededError extends Error {}
 
 function fmtSize(bytes: number): string {
   return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
@@ -266,6 +269,122 @@ export default function PhotoUploadPage() {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
   }
 
+  /**
+   * Нэг зургийг ердийн дарааллаар боловсруулна: шахалт/тамга → photos-original + photos-preview + thumb →
+   * photo_uploads мөр → (асаалттай бол) царайны хээ. Гараар болон «Камераас шууд» горимд хоёуланд ашиглана.
+   */
+  async function processAndUpload(
+    file: File,
+    printPrices: PrintPrices,
+    onProgress: (progress: number, status?: UploadStatus) => void,
+  ): Promise<string | null> {
+    if (!album || !profile) throw new Error('Цомог ачаалагдаагүй байна');
+    // «Үнэгүй хуваалцах» цомогт усан тэмдэг тавихгүй (зочид эх зургийг үнэгүй татна)
+    // Үнэгүй цомог: зохион байгуулагчийн лого / мэндчилгээг (булангийн давхарга) эх зурагт ч, preview-д ч суулгана
+    const brand = album.is_free && hasBrandLayers(album);
+    let originalBlob: Blob = file;
+    let compressed = false;
+    if (brand) {
+      originalBlob = await applyWatermark(file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
+      compressed = true;
+    } else {
+      // Эх файлыг A4-д хангалттай 3600 px / 85% болгож шахна (шахсан нь том болбол эхээр нь үлдээнэ)
+      try {
+        // Худалдах цомгийн эх файл = худалдан авагчийн төлсөн зураг → сайтын тэмдэггүй.
+        // Үнэгүй цомгийн эх файлыг зочид чөлөөтэй татаж хуваалцдаг → жижиг Zuragchin.mn тэмдэгтэй (сурталчилгаа).
+        const c = await applyWatermark(file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE, siteBadge: !!album.is_free });
+        // Үнэгүй цомогт тэмдэгтэй хувилбарыг заавал ашиглана; бусад үед шахсан нь жижиг бол үргэлж шахсаныг ашиглана
+        if (album.is_free || c.size < file.size) { originalBlob = c; compressed = true; }
+      } catch { /* шахаж чадаагүй бол эх файлаар нь */ }
+    }
+    const previewBlob = album.is_free
+      ? await applyWatermark(file, brand
+          ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, maxSize: 1600 }
+          : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
+      : await makeSalePreview(file, album);
+
+    onProgress(20);
+
+    const ext = compressed ? 'jpg' : (file.name.split('.').pop() ?? 'jpg');
+    const baseName = `${crypto.randomUUID()}.${ext}`;
+    const originalPath = `${profile.id}/${album.id}/${baseName}`;
+    const previewPath = `${profile.id}/${album.id}/${album.is_free ? 'preview_' : 'preview_p2_'}${baseName.replace(/\.\w+$/, '.jpg')}`;
+
+    onProgress(30, 'uploading');
+
+    const { error: origErr } = await supabase.storage
+      .from('photos-original')
+      .upload(originalPath, originalBlob, { contentType: compressed ? 'image/jpeg' : file.type, upsert: false });
+    if (origErr) throw new Error(origErr.message);
+
+    onProgress(60);
+
+    const { error: prevErr } = await supabase.storage
+      .from('photos-preview')
+      .upload(previewPath, previewBlob, { contentType: 'image/jpeg', upsert: false, cacheControl: IMMUTABLE_CACHE });
+    if (prevErr) throw new Error(prevErr.message);
+
+    // Цомгийн сүлжээнд харуулах жижиг (~640px) хувилбар — алдаа гарвал preview-ээр харагдана
+    let thumb: { path: string; url: string } | null = null;
+    try { thumb = await uploadThumb(await makeThumb(previewBlob), profile.id, album.id); }
+    catch (e) { console.warn('thumb failed', e); }
+
+    onProgress(85);
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('photos-preview')
+      .getPublicUrl(previewPath);
+
+    const originalStoragePath = `photos-original/${originalPath}`;
+
+    const printPricesJson: Record<string, number> = {};
+    for (const [size, cfg] of Object.entries(printPrices)) {
+      if (cfg.enabled && cfg.price) {
+        const n = parseFloat(cfg.price);
+        if (!isNaN(n) && n > 0) printPricesJson[size] = n;
+      }
+    }
+
+    const row = {
+      album_id: album.id,
+      photographer_id: profile.id,
+      original_url: originalStoragePath,
+      preview_url: publicUrl,
+      print_prices: printPricesJson,
+      filename: file.name,
+      ...(folderId ? { folder_id: folderId } : {}),
+    };
+    let { data: inserted, error: dbErr } = await supabase.from('photo_uploads')
+      .insert(thumb ? { ...row, thumb_url: thumb.url } : row).select('id').single();
+    if (dbErr && thumb && isThumbSqlMissing(dbErr)) {
+      // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) — жижиг хувилбаргүйгээр бүртгэнэ
+      await supabase.storage.from('photos-preview').remove([thumb.path]).catch(() => null);
+      thumb = null;
+      ({ data: inserted, error: dbErr } = await supabase.from('photo_uploads').insert(row).select('id').single());
+    }
+    if (dbErr) {
+      // Бүртгэл амжилтгүй бол байршуулсан файлуудыг устгана (зай эзлэхгүй)
+      await supabase.storage.from('photos-original').remove([originalPath]).catch(() => null);
+      await supabase.storage.from('photos-preview').remove(thumb ? [previewPath, thumb.path] : [previewPath]).catch(() => null);
+      if (/QUOTA_EXCEEDED/.test(dbErr.message)) {
+        throw new QuotaExceededError(dbErr.message.replace(/^.*QUOTA_EXCEEDED:\s*/, ''));
+      }
+      throw new Error(dbErr.message);
+    }
+
+    // Царайгаар хайх асаалттай бол царайны хээг тооцоолно (алдаа гарвал байршуулалтад нөлөөлөхгүй)
+    if (faceEnabled && inserted?.id) {
+      try {
+        onProgress(92);
+        await scanAndSavePhoto(inserted.id, await fileToImage(file));
+      } catch (e) {
+        console.warn('Face scan failed', e);
+      }
+    }
+
+    return inserted?.id ?? null;
+  }
+
   async function uploadAll() {
     if (!album || !profile || files.length === 0) return;
     setUploadStarted(true);
@@ -298,115 +417,14 @@ export default function PhotoUploadPage() {
       setFileStatus(entry.id, { status: 'processing', progress: 0 });
 
       try {
-        // «Үнэгүй хуваалцах» цомогт усан тэмдэг тавихгүй (зочид эх зургийг үнэгүй татна)
-        // Үнэгүй цомог: зохион байгуулагчийн лого / мэндчилгээг (булангийн давхарга) эх зурагт ч, preview-д ч суулгана
-        const brand = album.is_free && hasBrandLayers(album);
-        let originalBlob: Blob = entry.file;
-        let compressed = false;
-        if (brand) {
-          originalBlob = await applyWatermark(entry.file, { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE });
-          compressed = true;
-        } else {
-          // Эх файлыг A4-д хангалттай 3600 px / 85% болгож шахна (шахсан нь том болбол эхээр нь үлдээнэ)
-          try {
-            // Худалдах цомгийн эх файл = худалдан авагчийн төлсөн зураг → сайтын тэмдэггүй.
-            // Үнэгүй цомгийн эх файлыг зочид чөлөөтэй татаж хуваалцдаг → жижиг Zuragchin.mn тэмдэгтэй (сурталчилгаа).
-            const c = await applyWatermark(entry.file, { type: 'none', value: '', position: album.watermark_position, quality: ORIGINAL_QUALITY, maxSize: ORIGINAL_MAX_EDGE, siteBadge: !!album.is_free });
-            // Үнэгүй цомогт тэмдэгтэй хувилбарыг заавал ашиглана; бусад үед шахсан нь жижиг бол үргэлж шахсаныг ашиглана
-            if (album.is_free || c.size < entry.file.size) { originalBlob = c; compressed = true; }
-          } catch { /* шахаж чадаагүй бол эх файлаар нь */ }
-        }
-        const previewBlob = album.is_free
-          ? await applyWatermark(entry.file, brand
-              ? { type: 'layers', value: album.watermark_value, position: album.watermark_position, brandOnly: true, keepTiled: true, maxSize: 1600 }
-              : { type: 'none', value: '', position: album.watermark_position, maxSize: 1600 })
-          : await makeSalePreview(entry.file, album);
-
-        setFileStatus(entry.id, { progress: 20 });
-
-        const ext = compressed ? 'jpg' : (entry.file.name.split('.').pop() ?? 'jpg');
-        const baseName = `${crypto.randomUUID()}.${ext}`;
-        const originalPath = `${profile.id}/${album.id}/${baseName}`;
-        const previewPath = `${profile.id}/${album.id}/${album.is_free ? 'preview_' : 'preview_p2_'}${baseName.replace(/\.\w+$/, '.jpg')}`;
-
-        setFileStatus(entry.id, { status: 'uploading', progress: 30 });
-
-        const { error: origErr } = await supabase.storage
-          .from('photos-original')
-          .upload(originalPath, originalBlob, { contentType: compressed ? 'image/jpeg' : entry.file.type, upsert: false });
-        if (origErr) throw new Error(origErr.message);
-
-        setFileStatus(entry.id, { progress: 60 });
-
-        const { error: prevErr } = await supabase.storage
-          .from('photos-preview')
-          .upload(previewPath, previewBlob, { contentType: 'image/jpeg', upsert: false, cacheControl: IMMUTABLE_CACHE });
-        if (prevErr) throw new Error(prevErr.message);
-
-        // Цомгийн сүлжээнд харуулах жижиг (~640px) хувилбар — алдаа гарвал preview-ээр харагдана
-        let thumb: { path: string; url: string } | null = null;
-        try { thumb = await uploadThumb(await makeThumb(previewBlob), profile.id, album.id); }
-        catch (e) { console.warn('thumb failed', e); }
-
-        setFileStatus(entry.id, { progress: 85 });
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('photos-preview')
-          .getPublicUrl(previewPath);
-
-        const originalStoragePath = `photos-original/${originalPath}`;
-
-        const printPricesJson: Record<string, number> = {};
-        for (const [size, cfg] of Object.entries(entry.printPrices)) {
-          if (cfg.enabled && cfg.price) {
-            const n = parseFloat(cfg.price);
-            if (!isNaN(n) && n > 0) printPricesJson[size] = n;
-          }
-        }
-
-        const row = {
-          album_id: album.id,
-          photographer_id: profile.id,
-          original_url: originalStoragePath,
-          preview_url: publicUrl,
-          print_prices: printPricesJson,
-          filename: entry.file.name,
-          ...(folderId ? { folder_id: folderId } : {}),
-        };
-        let { data: inserted, error: dbErr } = await supabase.from('photo_uploads')
-          .insert(thumb ? { ...row, thumb_url: thumb.url } : row).select('id').single();
-        if (dbErr && thumb && isThumbSqlMissing(dbErr)) {
-          // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) — жижиг хувилбаргүйгээр бүртгэнэ
-          await supabase.storage.from('photos-preview').remove([thumb.path]).catch(() => null);
-          thumb = null;
-          ({ data: inserted, error: dbErr } = await supabase.from('photo_uploads').insert(row).select('id').single());
-        }
-        if (dbErr) {
-          // Бүртгэл амжилтгүй бол байршуулсан файлуудыг устгана (зай эзлэхгүй)
-          await supabase.storage.from('photos-original').remove([originalPath]).catch(() => null);
-          await supabase.storage.from('photos-preview').remove(thumb ? [previewPath, thumb.path] : [previewPath]).catch(() => null);
-          if (/QUOTA_EXCEEDED/.test(dbErr.message)) {
-            remaining = 0;
-            throw new Error(dbErr.message.replace(/^.*QUOTA_EXCEEDED:\s*/, ''));
-          }
-          throw new Error(dbErr.message);
-        }
-
-        // Царайгаар хайх асаалттай бол царайны хээг тооцоолно (алдаа гарвал байршуулалтад нөлөөлөхгүй)
-        if (faceEnabled && inserted?.id) {
-          try {
-            setFileStatus(entry.id, { progress: 92 });
-            await scanAndSavePhoto(inserted.id, await fileToImage(entry.file));
-          } catch (e) {
-            console.warn('Face scan failed', e);
-          }
-        }
-
+        await processAndUpload(entry.file, entry.printPrices, (progress, status) =>
+          setFileStatus(entry.id, status ? { status, progress } : { progress }));
         setFileStatus(entry.id, { status: 'done', progress: 100 });
         existingNamesRef.current.add(entry.file.name.toLowerCase());
         succeeded++;
         remaining--;
       } catch (err) {
+        if (err instanceof QuotaExceededError) remaining = 0;
         const msg = err instanceof Error ? err.message : 'Upload failed';
         setFileStatus(entry.id, { status: 'error', errorMsg: msg });
       }
@@ -502,6 +520,15 @@ export default function PhotoUploadPage() {
             })}
           </p>
         </div>
+
+        {album && (
+          <div className="mb-6">
+            <CameraInboxPanel
+              albumId={album.id}
+              process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
+            />
+          </div>
+        )}
 
         {allDone && successCount > 0 && (
           <div className="mb-6 bg-green-500/10 border border-green-500/20 rounded-2xl p-5 flex items-start gap-4">
