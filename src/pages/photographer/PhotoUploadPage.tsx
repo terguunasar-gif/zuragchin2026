@@ -12,6 +12,7 @@ import { albumFaceSearchEnabled, fileToImage, scanAndSavePhoto } from '../../lib
 import BrandMark from '../../components/BrandMark';
 import CameraInboxPanel from '../../components/CameraInboxPanel';
 import LocalFolderPanel from '../../components/LocalFolderPanel';
+import { useCameraUploadVisibility } from '../../lib/cameraUploadSettings';
 
 interface AlbumInfo {
   id: string;
@@ -436,6 +437,8 @@ export default function PhotoUploadPage() {
   }
 
   const allDone = files.length > 0 && files.every(f => f.status === 'done' || f.status === 'error');
+  const camVis = useCameraUploadVisibility();
+  const isSiteAdmin = !!profile?.role?.includes('admin');
   const anyUploading = files.some(f => f.status === 'uploading' || f.status === 'processing');
   // Явцын тоо: хэдэн зургаас хэд нь орсон + үлдсэн хугацааны тооцоо
   const totalCount = files.length;
@@ -542,16 +545,26 @@ export default function PhotoUploadPage() {
           </p>
         </div>
 
-        {album && (
+        {album && (isSiteAdmin || camVis.local || camVis.ftp) && camVis.loaded && (
           <div className="mb-6 space-y-4">
-            <LocalFolderPanel
-              albumId={album.id}
-              process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
-            />
-            <CameraInboxPanel
-              albumId={album.id}
-              process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
-            />
+            {(isSiteAdmin || camVis.local) && (
+              <div>
+                {isSiteAdmin && !camVis.local && <p className="text-[11px] text-stone-500 mb-1">👁‍🗨 Хэрэглэгчдэд нуугдсан (зөвхөн админд харагдаж байна)</p>}
+                <LocalFolderPanel
+                  albumId={album.id}
+                  process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
+                />
+              </div>
+            )}
+            {(isSiteAdmin || camVis.ftp) && (
+              <div>
+                {isSiteAdmin && !camVis.ftp && <p className="text-[11px] text-stone-500 mb-1">👁‍🗨 Хэрэглэгчдэд нуугдсан (зөвхөн админд харагдаж байна)</p>}
+                <CameraInboxPanel
+                  albumId={album.id}
+                  process={(file, onProgress) => processAndUpload(file, batchPrices, p => onProgress(p))}
+                />
+              </div>
+            )}
           </div>
         )}
 
