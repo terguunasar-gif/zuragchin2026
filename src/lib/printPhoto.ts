@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { applyBrandToPurchase, brandLayers } from './watermark';
-import { PhotoAdjust, PrintCrop, preparePrintBlob, PRINT_SIZE_CM } from './photoAdjust';
+import { PhotoAdjust, PrintCrop, preparePrintBlob, PRINT_SIZE_CM, CROP_KEYS } from './photoAdjust';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -83,21 +83,38 @@ im.onload=function(){
 
 async function withBrand(url: string, raw: string, filename: string, size: string, adjust: PhotoAdjust & PrintCrop = {}): Promise<string> {
   const layers = raw ? brandLayers(raw) : null;
-  try {
-    let blob = await (await fetch(url)).blob();
-    // 1) гэрэл/өнгө → 2) цаасны харьцаанд тайрах (лого тайрагдахгүйн тулд ЭХЛЭЭД тайрна) → 3) цомгийн лого
-    blob = await preparePrintBlob(blob, size, adjust);
-    const out = layers ? await applyBrandToPurchase(blob, raw, filename, false) : blob;
-    return await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = reject;
-      r.readAsDataURL(out);
-    });
-  } catch (e) {
-    console.warn('print prepare failed, printing original:', e);
-    return url;
+  // Цомгийн лого(нууд)-ыг урьдчилан шалгана — ачаалагдахгүй бол логогүй хэвлэхгүй, алдаа харуулна
+  if (layers) {
+    const logos = (JSON.parse(layers) as { type: string; imagePreview?: string }[])
+      .filter(l => l.type === 'image' && l.imagePreview && !l.imagePreview.startsWith('data:'))
+      .map(l => l.imagePreview as string);
+    for (const u of logos) {
+      const ok = await fetch(u, { cache: 'force-cache' }).then(r => r.ok).catch(() => false);
+      if (!ok) throw new Error('Цомгийн логог ачаалж чадсангүй. Интернэтээ шалгаад «Принт»-ийг дахин дарна уу.');
+    }
   }
+  let blob = await (await fetch(url)).blob();
+  // 1) гэрэл/өнгө → 2) цаасны харьцаанд тайрах (лого тайрагдахгүйн тулд ЭХЛЭЭД тайрна) → 3) цомгийн лого
+  try {
+    blob = await preparePrintBlob(blob, size, adjust);
+  } catch (e) {
+    // Засвар хийж чадаагүй (ж: санах ой) — засваргүйгээр цаасны харьцаанд дахин оролдоно
+    console.warn('print adjust failed, retrying without adjust:', e);
+    const crop = Object.fromEntries(CROP_KEYS.filter(k => adjust[k] != null).map(k => [k, adjust[k]])) as PhotoAdjust & PrintCrop;
+    blob = await preparePrintBlob(blob, size, crop);
+  }
+  if (layers) {
+    const branded = await applyBrandToPurchase(blob, raw, filename, false);
+    // applyBrandToPurchase алдаа гарвал эх blob-ийг буцаадаг — тэгвэл логогүй хэвлэхгүй
+    if (branded === blob) throw new Error('Зурагт лого нэмж чадсангүй. «Принт»-ийг дахин дарна уу.');
+    blob = branded;
+  }
+  return await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
 }
 
 function escapeHtml(s: string) {
