@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Send, X } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Search, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
@@ -14,6 +14,7 @@ import PrintEditor from './PrintEditor';
 import BrandMark from './BrandMark';
 import EditedThumb from './EditedThumb';
 import { readLater, writeLater } from '../lib/savedLater';
+import { photoNumberMap, parsePhotoNumber } from '../lib/photoNumbers';
 import { listVisitedAlbums } from '../lib/visitedAlbums';
 import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
@@ -351,6 +352,23 @@ export default function AlbumPurchaseGuide({
   const visible = session.folderId
     ? photos.filter(p => p.folder_id === session.folderId)
     : photos;
+  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (хавтас бүрт 1-ээс)
+  const numMap = useMemo(() => photoNumberMap(photos, session.folderId ?? 'all'), [photos, session.folderId]);
+  const [numQ, setNumQ] = useState('');
+  const [numErr, setNumErr] = useState('');
+  const [flashId, setFlashId] = useState<string | null>(null);
+  function findByNumber() {
+    const n = parsePhotoNumber(numQ);
+    if (!n) return;
+    let id: string | null = null;
+    for (const [k, v] of numMap) if (v === n) { id = k; break; }
+    if (!id) { setNumErr(`№${n} зураг энэ хэсэгт олдсонгүй`); return; }
+    setNumErr('');
+    setFlashId(id);
+    const target = id;
+    setTimeout(() => document.getElementById(`g-photo-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+    setTimeout(() => setFlashId(f => (f === target ? null : f)), 4000);
+  }
   const selectedPhotos = photos.filter(p => session.selected.includes(p.id));
   const running = selectedPhotos.reduce((s, p) => s + dlPrice(p, album, aiPrice), 0);
 
@@ -848,18 +866,33 @@ export default function AlbumPurchaseGuide({
 
         {session.step === 'browse' && (
           <>
+            <form onSubmit={e => { e.preventDefault(); findByNumber(); }} className="flex items-center gap-2 mb-3 max-w-md">
+              <div className="flex-1 flex items-center rounded-xl border border-white/10 bg-white/5 focus-within:border-amber-500/60">
+                <span className="pl-3 text-stone-400 text-sm font-semibold">№</span>
+                <input value={numQ} onChange={e => { setNumQ(e.target.value.replace(/\D/g, '').slice(0, 5)); setNumErr(''); }}
+                  inputMode="numeric" enterKeyHint="search" placeholder="Дэлгэц дээрх дугаараар хайх"
+                  className="flex-1 min-w-0 bg-transparent px-2 py-2.5 text-sm text-white placeholder-stone-500 outline-none" />
+              </div>
+              <button type="submit" className="shrink-0 flex items-center gap-1.5 bg-amber-500 text-stone-950 font-semibold rounded-xl px-3 py-2.5 text-sm">
+                <Search className="w-4 h-4" /> Хайх
+              </button>
+            </form>
+            {numErr && <p className="text-red-300 text-xs -mt-1 mb-3">{numErr}</p>}
             <div className={`grid ${cols === 1 ? 'grid-cols-1 gap-3 max-w-xl mx-auto' : cols === 3 ? 'grid-cols-3 gap-1.5' : 'grid-cols-2 sm:grid-cols-3 gap-2'}`}>
               {visible.map(p => {
                 const on = session.selected.includes(p.id);
                 return (
-                  <button key={p.id} type="button" onClick={() => togglePhoto(p.id)}
-                    className={`relative ${cols === 1 ? 'flex justify-center bg-black' : 'aspect-[3/4] bg-stone-900'} rounded-xl overflow-hidden text-left ${on ? 'ring-2 ring-amber-400' : ''}`}>
+                  <button key={p.id} id={`g-photo-${p.id}`} type="button" onClick={() => togglePhoto(p.id)}
+                    className={`relative ${cols === 1 ? 'flex justify-center bg-black' : 'aspect-[3/4] bg-stone-900'} rounded-xl overflow-hidden text-left ${flashId === p.id ? 'ring-4 ring-sky-400' : on ? 'ring-2 ring-amber-400' : ''}`}>
                     {cols === 1
                       ? <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none block mx-auto w-auto max-w-full h-auto max-h-[calc(100dvh-270px)] min-h-[200px] object-contain" />
                       : <img src={p.watermarked_url} alt="" loading="lazy" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover" />}
                     <span className={`pointer-events-none absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/80 text-white'}`}>
                       {on ? <Check className="w-4 h-4" strokeWidth={3} /> : <span className="block h-3.5 w-3.5 rounded-sm border border-white/80" />}
                     </span>
+                    {numMap.get(p.id) && (
+                      <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-10 bg-black/75 rounded px-1.5 text-[11px] font-bold">№{numMap.get(p.id)}</span>
+                    )}
                     <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded px-1.5 text-[11px]">{money(dlPrice(p, album, aiPrice))}</span>
                   </button>
                 );
