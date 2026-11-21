@@ -6,6 +6,7 @@ import {
   Camera, Image as ImageIcon, Clock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { QPAY_FN_URL } from '../../lib/offers';
 
 interface Stats {
   totalUsers: number;
@@ -42,6 +43,46 @@ export default function AdminOverviewTab() {
   const [phoneQ, setPhoneQ] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [moreBusy, setMoreBusy] = useState(false);
+  // Pending захиалгыг гараар батлах
+  const [confirmFor, setConfirmFor] = useState<RecentPurchase | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+
+  async function checkQpay(p: RecentPurchase) {
+    if (!p.qpay_invoice_id) return;
+    setConfirmBusy(true); setNote(null);
+    try {
+      const res = await fetch(`${QPAY_FN_URL}/check-payment/${p.qpay_invoice_id}`, { headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY } });
+      const d = await res.json().catch(() => ({}));
+      setNote(d.isPaid
+        ? { text: 'QPay-д төлөгдсөн байсан — «paid» боллоо, угаах/татах дараалалд орлоо.', ok: true }
+        : { text: 'QPay-д энэ нэхэмжлэх төлөгдөөгүй байна.', ok: false });
+      if (d.isPaid) { setConfirmFor(null); await reloadPurchases(); }
+    } catch (e) {
+      setNote({ text: 'Шалгаж чадсангүй: ' + (e as Error).message, ok: false });
+    } finally { setConfirmBusy(false); }
+  }
+
+  async function confirmManual(p: RecentPurchase, credit: boolean) {
+    if (!p.qpay_invoice_id) return;
+    setConfirmBusy(true); setNote(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${QPAY_FN_URL}/admin/confirm-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ invoiceId: p.qpay_invoice_id, credit }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+      const via = d.via === 'qpay' ? 'QPay-д төлөгдсөн байсан' : d.via === 'cash' ? 'Бэлнээр (хэтэвчинд нэмээгүй)' : d.via === 'already' ? 'Аль хэдийн төлөгдсөн' : 'Гараар (орлого хуваарилсан)';
+      setNote({ text: `Баталгаажлаа — ${via}. Угаах/татах дараалалд орлоо.`, ok: true });
+      setConfirmFor(null);
+      await reloadPurchases();
+    } catch (e) {
+      setNote({ text: 'Баталгаажуулж чадсангүй: ' + (e as Error).message + ' (qpay function-ийг шинэчилж deploy хийсэн эсэхийг шалгана уу)', ok: false });
+    } finally { setConfirmBusy(false); }
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -238,6 +279,10 @@ export default function AdminOverviewTab() {
                     <td className="px-4 py-3 text-right text-amber-400 text-xs">₮{Number(p.platform_fee_amount).toLocaleString()}</td>
                     <td className="px-6 py-3 text-right whitespace-nowrap">
                       <StatusBadge status={p.payment_status} />
+                      {p.qpay_invoice_id && p.payment_status === 'pending' && (
+                        <button onClick={() => { setNote(null); setConfirmFor(p); }}
+                          className="block ml-auto mt-1 text-xs text-amber-400 hover:underline">Батлах →</button>
+                      )}
                       {p.qpay_invoice_id && p.payment_status === 'paid' && (
                         <span className="block mt-1 text-xs">
                           <a href={`/receipt/${p.qpay_invoice_id}`} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline">Баримт</a>
@@ -261,6 +306,49 @@ export default function AdminOverviewTab() {
           </div>
         )}
       </div>
+
+      {note && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-lg text-sm px-4 py-3 rounded-xl shadow-xl ${note.ok ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}
+          onClick={() => setNote(null)}>
+          {note.text}
+        </div>
+      )}
+
+      {confirmFor && (() => {
+        const same = recentPurchases.filter(x => x.qpay_invoice_id === confirmFor.qpay_invoice_id);
+        const total = same.reduce((sum, x) => sum + Number(x.gross_amount), 0);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => !confirmBusy && setConfirmFor(null)}>
+            <div className="bg-stone-900 border border-white/10 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <p className="text-white font-semibold text-lg">Захиалга батлах</p>
+              <p className="text-stone-400 text-sm mt-1">
+                {confirmFor.buyer_name || '—'} {confirmFor.buyer_phone ? `· ${confirmFor.buyer_phone}` : ''}<br />
+                Нэг нэхэмжлэхэд {same.length} зураг · нийт ₮{total.toLocaleString()} (бүгд хамт батлагдана)
+              </p>
+              <div className="mt-5 space-y-2">
+                <button disabled={confirmBusy} onClick={() => checkQpay(confirmFor)}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 disabled:opacity-50">
+                  <span className="text-white text-sm font-semibold">1. QPay-аас шалгах</span>
+                  <span className="block text-stone-400 text-xs">Төлсөн бол ердийнхөөр баталгаажна. Эхлээд үүнийг дарна уу.</span>
+                </button>
+                <button disabled={confirmBusy} onClick={() => { if (confirm('Мөнгө платформын QPay/данс руу орсон гэдгийг шалгасан уу? Зурагчин, эзэнд орлого хуваарилагдана.')) void confirmManual(confirmFor, true); }}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 disabled:opacity-50">
+                  <span className="text-amber-300 text-sm font-semibold">2. Мөнгө орсон (QPay / данс) — батлах</span>
+                  <span className="block text-stone-400 text-xs">Төлөв «paid» болж, орлого зурагчин/эзэнд ердийнхөөр хуваарилагдана.</span>
+                </button>
+                <button disabled={confirmBusy} onClick={() => { if (confirm('Бэлнээр авсан гэж батлах уу? Хэтэвчинд мөнгө нэмэгдэхгүй.')) void confirmManual(confirmFor, false); }}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-50">
+                  <span className="text-white text-sm font-semibold">3. Бэлнээр авсан — батлах</span>
+                  <span className="block text-stone-400 text-xs">Зөвхөн «paid» болгоно, хэтэвчинд мөнгө нэмэхгүй (мөнгө гарт байгаа).</span>
+                </button>
+              </div>
+              <button disabled={confirmBusy} onClick={() => setConfirmFor(null)} className="mt-4 w-full text-sm text-stone-400 hover:text-white">
+                {confirmBusy ? 'Түр хүлээнэ үү…' : 'Болих'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
