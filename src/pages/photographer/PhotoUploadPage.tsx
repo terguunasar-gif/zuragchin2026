@@ -437,6 +437,25 @@ export default function PhotoUploadPage() {
 
   const allDone = files.length > 0 && files.every(f => f.status === 'done' || f.status === 'error');
   const anyUploading = files.some(f => f.status === 'uploading' || f.status === 'processing');
+  // Явцын тоо: хэдэн зургаас хэд нь орсон + үлдсэн хугацааны тооцоо
+  const totalCount = files.length;
+  const doneNow = files.filter(f => f.status === 'done').length;
+  const errNow = files.filter(f => f.status === 'error').length;
+  const finishedNow = doneNow + errNow;
+  const progressPct = totalCount ? Math.round((finishedNow / totalCount) * 100) : 0;
+  const rateRef = useRef<{ t0: number; f0: number } | null>(null);
+  if (anyUploading && !rateRef.current) rateRef.current = { t0: Date.now(), f0: finishedNow };
+  if (!anyUploading && rateRef.current) rateRef.current = null;
+  const etaText = (() => {
+    const r = rateRef.current;
+    if (!r) return '';
+    const n = finishedNow - r.f0;
+    const secs = (Date.now() - r.t0) / 1000;
+    if (n < 2 || secs < 5) return '';
+    const left = Math.round(((totalCount - finishedNow) * secs) / n);
+    if (left <= 0) return '';
+    return left >= 60 ? `≈ ${Math.ceil(left / 60)} мин үлдлээ` : `≈ ${left} сек үлдлээ`;
+  })();
   const pendingCount = files.filter(f => f.status === 'idle').length;
 
   if (checkingAccess) {
@@ -788,7 +807,7 @@ export default function PhotoUploadPage() {
               <button onClick={uploadAll} disabled={anyUploading || files.length === 0}
                 className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-stone-950 font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2.5 text-base">
                 {anyUploading ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" />Байршуулж байна…</>
+                  <><Loader2 className="w-5 h-5 animate-spin" />Байршуулж байна… {doneNow} / {totalCount}</>
                 ) : (
                   <><Upload className="w-5 h-5" />{pendingCount > 0 ? `${pendingCount} ` : ''}Зураг байршуулах</>
                 )}
@@ -797,6 +816,19 @@ export default function PhotoUploadPage() {
 
             {files.length > 0 && (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+                <div className="pb-2 mb-1 border-b border-white/10">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-white font-bold text-lg">{doneNow.toLocaleString()} / {totalCount.toLocaleString()}</span>
+                    <span className="text-stone-400 text-sm">{progressPct}%</span>
+                  </div>
+                  <p className="text-stone-400 text-xs">
+                    зураг цомогт орлоо{errNow > 0 ? ` · ${errNow} алдаа` : ''}{totalCount - finishedNow > 0 ? ` · ${(totalCount - finishedNow).toLocaleString()} үлдсэн` : ''}{etaText ? ` · ${etaText}` : ''}
+                  </p>
+                  <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden flex">
+                    <div className="h-full bg-green-500 transition-all" style={{ width: `${totalCount ? (doneNow / totalCount) * 100 : 0}%` }} />
+                    <div className="h-full bg-red-500 transition-all" style={{ width: `${totalCount ? (errNow / totalCount) * 100 : 0}%` }} />
+                  </div>
+                </div>
                 <StatusRow label="Дараалалд" value={files.filter(f => f.status === 'idle').length} color="text-stone-300" />
                 <StatusRow label="Боловсруулж байна" value={files.filter(f => f.status === 'processing').length} color="text-amber-400" />
                 <StatusRow label="Байршуулж байна" value={files.filter(f => f.status === 'uploading').length} color="text-blue-400" />
