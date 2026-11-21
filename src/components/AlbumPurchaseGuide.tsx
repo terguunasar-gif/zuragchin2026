@@ -360,8 +360,8 @@ export default function AlbumPurchaseGuide({
       const prev = session.choices.find(c => c.photoId === id);
       const photo = photos.find(p => p.id === id);
       const opts = photo ? printOptions(photo) : [];
-      // Угаалгах боломжгүй бол татахыг автоматаар сонгоно
-      return prev ?? { photoId: id, download: !printOrdersOpen(album.print_deadline) || !opts.length, print: false, printSize: opts[0]?.[0] };
+      // Анхдагч нь «Татах» — угаалгахыг хэрэглэгч өөрөө нэмнэ («Түр хадгалах» биш)
+      return prev ?? { photoId: id, download: true, print: false, printSize: opts[0]?.[0] };
     });
     go('choices', { choices }, 'Сонгосон зураг бүрээ татах уу, угаалгах уу, эсвэл хоёуланг нь уу?');
   }
@@ -376,7 +376,7 @@ export default function AlbumPurchaseGuide({
       const photo = photos.find(p => p.id === id);
       const opts = photo ? printOptions(photo) : [];
       if (ids.includes(id)) return { ...(prev ?? { photoId: id, print: false, printSize: opts[0]?.[0] }), photoId: id, download: true };
-      return prev ?? { photoId: id, download: !printOrdersOpen(album.print_deadline) || !opts.length, print: false, printSize: opts[0]?.[0] };
+      return prev ?? { photoId: id, download: true, print: false, printSize: opts[0]?.[0] };
     });
     go('choices', { selected: all, choices }, 'Таны түр хадгалсан зургууд. Татах сонголтоо шалгаад QPay-ээр төлнө үү.');
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
@@ -426,7 +426,7 @@ export default function AlbumPurchaseGuide({
         const pr = items.find(i => i.type === 'print');
         return { photoId: id, download: items.some(i => i.type === 'download') || !(pr && printsOpen), print: !!pr && printsOpen, printSize: pr?.printSize || opts[0]?.[0] };
       }
-      return { photoId: id, download: !printsOpen || !opts.length, print: false, printSize: opts[0]?.[0] };
+      return { photoId: id, download: true, print: false, printSize: opts[0]?.[0] };
     });
     if (session.name.trim().length < 2) {
       // Нэр, утас хэрэгтэй — оруулсны дараа шууд төлбөрийн жагсаалт (welcome())
