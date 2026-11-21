@@ -31,7 +31,8 @@ interface RecentPurchase {
   buyer_phone?: string | null;
   qpay_invoice_id?: string | null;
   albums: { name: string } | null;
-  photo_uploads: { filename: string } | null;
+  print_size?: string | null;
+  photo_uploads: { filename: string; preview_url?: string | null; thumb_url?: string | null } | null;
 }
 
 export default function AdminOverviewTab() {
@@ -47,6 +48,7 @@ export default function AdminOverviewTab() {
   const [confirmFor, setConfirmFor] = useState<RecentPurchase | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  const [viewPhoto, setViewPhoto] = useState<RecentPurchase | null>(null);
 
   async function checkQpay(p: RecentPurchase) {
     if (!p.qpay_invoice_id) return;
@@ -88,7 +90,7 @@ export default function AdminOverviewTab() {
 
   function purchasesQuery(from: number) {
     let q = supabase.from('purchases')
-      .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,albums(name),photo_uploads(filename)')
+      .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,print_size,albums(name),photo_uploads(filename,preview_url,thumb_url)')
       .order('created_at', { ascending: false });
     if (statusFilter !== 'all') q = q.eq('payment_status', statusFilter);
     const digits = phoneQ.replace(/\D/g, '');
@@ -268,12 +270,20 @@ export default function AdminOverviewTab() {
                       {(p.albums as { name: string } | null)?.name ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-stone-400 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <ImageIcon className="w-3.5 h-3.5 text-stone-600" />
-                        <span className="truncate max-w-[80px]">
-                          {(p.photo_uploads as { filename: string } | null)?.filename ?? '—'}
-                        </span>
-                      </div>
+                      {p.photo_uploads?.preview_url || p.photo_uploads?.thumb_url ? (
+                        <button onClick={() => setViewPhoto(p)} title="Зургийг харах"
+                          className="flex items-center gap-1.5 text-amber-300 hover:text-amber-200 hover:underline">
+                          <img src={p.photo_uploads.thumb_url || p.photo_uploads.preview_url || ''} alt="" loading="lazy"
+                            className="w-8 h-8 rounded object-cover bg-white/5 flex-shrink-0" />
+                          <span className="truncate max-w-[80px]">{p.photo_uploads.filename ?? '—'}</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <ImageIcon className="w-3.5 h-3.5 text-stone-600" />
+                          <span className="truncate max-w-[80px]">{p.photo_uploads?.filename ?? '—'}</span>
+                        </div>
+                      )}
+                      <span className="block text-stone-500 mt-0.5">{p.type === 'print' ? `Угаах${p.print_size ? ` · ${p.print_size}` : ''}` : 'Татах'}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-white font-semibold">₮{Number(p.gross_amount).toLocaleString()}</td>
                     <td className="px-4 py-3 text-right text-amber-400 text-xs">₮{Number(p.platform_fee_amount).toLocaleString()}</td>
@@ -306,6 +316,28 @@ export default function AdminOverviewTab() {
           </div>
         )}
       </div>
+
+      {viewPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4" onClick={() => setViewPhoto(null)}>
+          <div className="max-w-4xl w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-3 text-sm">
+              <div className="text-white">
+                <b>{viewPhoto.photo_uploads?.filename}</b>
+                <span className="text-stone-400"> · {viewPhoto.type === 'print' ? `Угаах${viewPhoto.print_size ? ` ${viewPhoto.print_size}` : ''}` : 'Татах'} · ₮{Number(viewPhoto.gross_amount).toLocaleString()} · {viewPhoto.buyer_name || '—'} {viewPhoto.buyer_phone || ''}</span>
+              </div>
+              <button onClick={() => setViewPhoto(null)} className="text-stone-300 hover:text-white px-3 py-1 rounded-lg bg-white/10">Хаах ✕</button>
+            </div>
+            <img src={viewPhoto.photo_uploads?.preview_url || viewPhoto.photo_uploads?.thumb_url || ''} alt={viewPhoto.photo_uploads?.filename ?? ''}
+              className="w-full max-h-[80vh] object-contain rounded-xl bg-stone-900" />
+            {viewPhoto.payment_status === 'pending' && viewPhoto.qpay_invoice_id && (
+              <div className="mt-3 text-right">
+                <button onClick={() => { const p = viewPhoto; setViewPhoto(null); setNote(null); setConfirmFor(p); }}
+                  className="text-sm px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold">Батлах →</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {note && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-lg text-sm px-4 py-3 rounded-xl shadow-xl ${note.ok ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}
