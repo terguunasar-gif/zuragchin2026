@@ -163,6 +163,9 @@ export default function AdminOverviewTab() {
                   <tr key={p.id} className="hover:bg-white/5 transition-colors">
                     <td className="px-6 py-3 text-stone-400 text-xs whitespace-nowrap">
                       {new Date(p.created_at).toLocaleDateString('mn-MN', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                      <span className="block text-stone-500">
+                        {new Date(p.created_at).toLocaleTimeString('mn-MN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-stone-300 text-xs">
                       {p.buyer_name || '—'}
