@@ -4,6 +4,7 @@ import {
   ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard, Copy,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchAllPages } from '../../lib/fetchAll';
 import { supabase } from '../../lib/supabase';
 import { makeSalePreview, WM_STRENGTHS, normalizeStrength, WmStrength } from '../../lib/watermark';
 import { backfillThumb, IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, previewPathFromUrl, uploadThumb } from '../../lib/thumbs';
@@ -135,14 +136,16 @@ export default function AlbumPhotosPage() {
 
   async function loadPhotos(isManager = canManage) {
     const COLS = 'id, filename, preview_url, original_url, print_prices, created_at, folder_id, source, faces_scanned_at, photographer_id, download_price, title';
-    const run = (cols: string) => {
+    // 1000-аас олон зурагтай цомог: 1000-аар нь хуудаслан бүгдийг уншина (Supabase max_rows)
+    const run = (cols: string) => fetchAllPages((from, to) => {
       let q = supabase.from('photo_uploads').select(cols)
         .eq('album_id', albumId!)
         .is('hidden_at', null) // нуусан (худалдагдсан тул устгаагүй) зургийг харуулахгүй
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true });
       if (!isManager) q = q.eq('photographer_id', profile!.id);
-      return q;
-    };
+      return q.range(from, to);
+    });
     let { data, error } = await run(COLS + ', thumb_url');
     setThumbSupported(!error);
     // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) үед

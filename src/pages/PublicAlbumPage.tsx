@@ -6,6 +6,7 @@ import {
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
 import { photoNumberMap, parsePhotoNumber } from '../lib/photoNumbers';
+import { fetchAllPages } from '../lib/fetchAll';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import { setAlbumGuideActive } from '../lib/albumGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -480,7 +481,7 @@ export default function PublicAlbumPage() {
       const run = async (cols: string) => {
         let q = supabase.from('photo_uploads').select(cols)
           .eq('album_id', albumId).is('hidden_at', null)
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: true }).order('id', { ascending: true });
         if (from !== undefined && to !== undefined) q = q.range(from, to);
         return await q as Rows;
       };
@@ -494,7 +495,8 @@ export default function PublicAlbumPage() {
     const lockP = albumLockState(albumId);
     const ownerP = supabase.from('profiles').select('name').eq('id', albumData.owner_id).maybeSingle();
     const firstP = photoQuery(0, FIRST_PAGE - 1);
-    const allP = photoQuery();
+    // 1000-аас олон зурагтай цомог: 1000-аар нь хуудаслан бүгдийг уншина (Supabase max_rows)
+    const allP = fetchAllPages((from, to) => photoQuery(from, to)) as Promise<Rows>;
     const foldersP = supabase.from('album_folders').select('id, name').eq('album_id', albumId)
       .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
     const aiP = supabase.from('platform_settings').select('value').eq('key', 'ai_album_price').maybeSingle();

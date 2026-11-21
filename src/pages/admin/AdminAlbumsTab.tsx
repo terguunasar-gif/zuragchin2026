@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay, Images } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { fetchAllPages } from '../../lib/fetchAll';
 import { supabase } from '../../lib/supabase';
 import AlbumLogoFixPanel from './AlbumLogoFixPanel';
 
@@ -76,8 +77,9 @@ export default function AdminAlbumsTab() {
     const albumIds = albumsData.map(a => a.id);
 
     const [photosRes, purchasesRes] = await Promise.all([
-      supabase.from('photo_uploads').select('album_id').in('album_id', albumIds),
-      supabase.from('purchases').select('album_id,gross_amount').eq('payment_status', 'paid').in('album_id', albumIds),
+      // 1000-аас олон мөр: хуудаслан бүгдийг уншина (Supabase max_rows)
+      fetchAllPages((from, to) => supabase.from('photo_uploads').select('album_id').in('album_id', albumIds).order('id').range(from, to), 200000),
+      fetchAllPages((from, to) => supabase.from('purchases').select('album_id,gross_amount').eq('payment_status', 'paid').in('album_id', albumIds).order('id').range(from, to), 200000),
     ]);
 
     const photoCountMap: Record<string, number> = {};

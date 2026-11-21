@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Grid2x2, Grid3x3, LayoutGrid, Loader2, Maximize, Minimize, ScanLine, Square, X } from 'lucide-react';
+import { fetchAllPages } from '../lib/fetchAll';
 import { supabase } from '../lib/supabase';
 import { albumLockState } from '../lib/albumLock';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
@@ -73,14 +74,16 @@ export default function AlbumKioskPage() {
     tokenRef.current = lock.state === 'ok' ? lock.token : '';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rows: any[] | null = null;
+    // 1000-аас олон зурагтай цомог: 1000-аар нь хуудаслан бүгдийг уншина (Supabase max_rows)
     if (tokenRef.current) {
-      ({ data: rows } = await supabase.rpc('locked_album_photos', { p_album_id: album.id, p_token: tokenRef.current }));
+      ({ data: rows } = await fetchAllPages((from, to) =>
+        supabase.rpc('locked_album_photos', { p_album_id: album.id, p_token: tokenRef.current }).range(from, to)));
     } else {
-      const res = await supabase.from('photo_uploads').select('id, preview_url, source, folder_id, hidden_at')
-        .eq('album_id', album.id).is('hidden_at', null).order('created_at', { ascending: true }).limit(3000);
+      const res = await fetchAllPages((from, to) => supabase.from('photo_uploads').select('id, preview_url, source, folder_id, hidden_at')
+        .eq('album_id', album.id).is('hidden_at', null).order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to));
       rows = res.error
-        ? (await supabase.from('photo_uploads').select('id, preview_url, source, folder_id')
-            .eq('album_id', album.id).order('created_at', { ascending: true }).limit(3000)).data
+        ? (await fetchAllPages((from, to) => supabase.from('photo_uploads').select('id, preview_url, source, folder_id')
+            .eq('album_id', album.id).order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to))).data
         : res.data;
     }
     setPhotos((rows ?? []).filter(r => r.preview_url).map(r => ({
