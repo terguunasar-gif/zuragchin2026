@@ -239,6 +239,44 @@ Deno.serve(async (req: Request) => {
       return json({ isPaid: !!expiresAt, expiresAt });
     }
 
+    // ── АДМИН: «pending» захиалгыг гараар баталгаажуулах (угаах/татах дараалалд оруулна) ──
+    // 1) Эхлээд QPay-аас шалгана — төлөгдсөн бол ердийн журмаар (орлого хуваарилна).
+    // 2) QPay-д төлөгдөөгүй бол: credit=true → орлогыг ердийнхөөр хуваарилна (мөнгө платформд орсон, ж: дансаар);
+    //    credit=false → зөвхөн «paid» болгоно, хэтэвчинд мөнгө нэмэхгүй (бэлнээр зурагчин/зохион байгуулагчид өгсөн).
+    if (req.method === "POST" && path === "/admin/confirm-payment") {
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+      const { data: userData } = await db.auth.getUser(jwt);
+      const uid = userData?.user?.id;
+      if (!uid) return json({ error: "Нэвтэрнэ үү" }, 401);
+      if (!(await isAdmin(db, uid))) return json({ error: "Зөвхөн админ" }, 403);
+
+      const { invoiceId, credit } = await req.json().catch(() => ({})) as { invoiceId?: string; credit?: boolean };
+      if (!invoiceId) return json({ error: "invoiceId дутуу" }, 400);
+      const { data: rows } = await db.from("purchases").select("id, payment_status").eq("qpay_invoice_id", invoiceId);
+      if (!rows || rows.length === 0) return json({ error: "Захиалга олдсонгүй" }, 404);
+      if (rows.every((r: { payment_status: string }) => r.payment_status === "paid")) return json({ ok: true, via: "already" });
+
+      const paid = await verifyPaid(invoiceId);
+      if (paid.isPaid) {
+        const ok = await processPayment(db, invoiceId, paid.paymentId, paid.paidAmount);
+        return json({ ok, via: "qpay" });
+      }
+      if (credit) {
+        const ok = await processPayment(db, invoiceId, `manual:${uid}`, null);
+        return json({ ok, via: "manual" });
+      }
+      const { error: upErr } = await db.from("purchases")
+        .update({ payment_status: "paid", qpay_transaction_id: `manual-cash:${uid}` })
+        .eq("qpay_invoice_id", invoiceId).eq("payment_status", "pending");
+      if (upErr) return json({ error: upErr.message }, 500);
+      const days = await settingNumber(db, "purchase_download_days", DOWNLOAD_DAYS_DEFAULT);
+      await db.from("purchases")
+        .update({ download_expires_at: new Date(Date.now() + days * 86400000).toISOString() })
+        .eq("qpay_invoice_id", invoiceId).eq("type", "download").is("download_expires_at", null);
+      return json({ ok: true, via: "cash" });
+    }
+
     // ── АДМИН: хугацаа хэтэрсэн цомгуудын файлыг цэвэрлэх ──
     if (req.method === "POST" && path === "/admin/cleanup-expired") {
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
