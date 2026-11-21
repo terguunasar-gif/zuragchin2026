@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, DragEvent, ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, X, CheckCircle2, AlertCircle, LogOut, User, Loader2, Tag, ChevronDown, ChevronUp, Eye, FolderOpen, FolderPlus, Gauge,
+  ArrowLeft, Upload, X, CheckCircle2, AlertCircle, LogOut, User, Loader2, Tag, ChevronDown, ChevronUp, Eye, FolderOpen, FolderPlus, Gauge, Plus,
 } from 'lucide-react';
 import QuotaPayModal, { QuotaPackage, normalizeQuotaPackages, DEFAULT_QUOTA_PACKAGES } from '../../components/QuotaPayModal';
 import { useAuth } from '../../contexts/AuthContext';
@@ -100,6 +100,7 @@ export default function PhotoUploadPage() {
   const [quota, setQuota] = useState<PhotoQuota | null>(null);
   const [quotaPkgs, setQuotaPkgs] = useState<QuotaPackage[]>(DEFAULT_QUOTA_PACKAGES);
   const [payPkg, setPayPkg] = useState<QuotaPackage | null>(null);
+  const [showQuotaPkgs, setShowQuotaPkgs] = useState(false);
 
   async function loadQuota(albumIdArg: string): Promise<PhotoQuota | null> {
     const { data, error } = await supabase.rpc('photographer_quota', { p_album_id: albumIdArg });
@@ -738,24 +739,47 @@ export default function PhotoUploadPage() {
                   <p className="text-stone-500 text-xs mt-2">
                     Үнэгүй {quota.free_quota.toLocaleString()} зураг{quota.extra > 0 ? ` + нэмэлт ${quota.extra.toLocaleString()}` : ''}. AI бүүтийн зураг тооцогдохгүй.
                   </p>
-                  {over > 0 && (
-                    <div className="mt-4 pt-4 border-t border-amber-500/30 space-y-3">
-                      <p className="text-amber-100 text-sm leading-relaxed">
-                        Та <b>{pending.length.toLocaleString()}</b> зураг сонгосон. Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг тул
-                        <b className="text-amber-300"> {over.toLocaleString()} зураг ({fmtSize(overBytes)})</b> хязгаараас хэтэрч байна.
-                        Эдгээрийг цомогт оруулахын тулд нэмэлт багц авна уу:
-                      </p>
-                      <div className="grid gap-2">
-                        {quotaPkgs.map(p => (
-                          <button key={p.code} onClick={() => setPayPkg(p)}
-                            className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${p.photos >= over ? 'bg-amber-500 hover:bg-amber-400 text-stone-950' : 'bg-white/10 hover:bg-white/15 text-white'}`}>
-                            <span>{p.name}</span><span>₮{p.price.toLocaleString()} · QPay</span>
+                  {(() => {
+                    const failedQuota = files.filter(f => f.status === 'error').length;
+                    const full = left === 0;
+                    const urgent = over > 0 || full;
+                    const open = urgent || showQuotaPkgs;
+                    return (
+                      <div className={`mt-4 pt-4 border-t ${urgent ? 'border-amber-500/30' : 'border-white/10'} space-y-3`}>
+                        {!open ? (
+                          <button onClick={() => setShowQuotaPkgs(true)}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/10 hover:bg-white/15 text-white">
+                            <Plus className="w-4 h-4" /> Цомгийн багтаамж нэмэх
                           </button>
-                        ))}
+                        ) : (
+                          <>
+                            <p className={`${urgent ? 'text-amber-100' : 'text-stone-300'} text-sm leading-relaxed`}>
+                              {over > 0 ? (
+                                <>Та <b>{pending.length.toLocaleString()}</b> зураг сонгосон. Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг тул
+                                  <b className="text-amber-300"> {over.toLocaleString()} зураг ({fmtSize(overBytes)})</b> хязгаараас хэтэрч байна.
+                                  Эдгээрийг цомогт оруулахын тулд нэмэлт багц авна уу:</>
+                              ) : full ? (
+                                <><b className="text-amber-300">Зургийн хязгаар дүүрсэн.</b> Цааш зураг оруулахын тулд нэмэлт багц авна уу
+                                  {failedQuota > 0 ? <> — төлсний дараа орж чадаагүй <b>{failedQuota}</b> зураг дахин оролдоно</> : null}:</>
+                              ) : (
+                                <>Үлдсэн эрх <b>{left.toLocaleString()}</b> зураг. Урьдчилан багтаамж нэмэх бол багцаа сонгоно уу:</>
+                              )}
+                            </p>
+                            <div className="grid gap-2">
+                              {quotaPkgs.map(p => (
+                                <button key={p.code} onClick={() => setPayPkg(p)}
+                                  className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${urgent && p.photos >= Math.max(over, failedQuota, 1) ? 'bg-amber-500 hover:bg-amber-400 text-stone-950' : 'bg-white/10 hover:bg-white/15 text-white'}`}>
+                                  <span>{p.name}</span><span>₮{p.price.toLocaleString()} · QPay</span>
+                                </button>
+                              ))}
+                            </div>
+                            {over > 0 && <p className="text-stone-400 text-xs">Төлөхгүй бол «Зураг байршуулах» дарахад эхний {left.toLocaleString()} зураг л орно.</p>}
+                            {!urgent && <button onClick={() => setShowQuotaPkgs(false)} className="text-xs text-stone-500 hover:text-stone-300">Хаах</button>}
+                          </>
+                        )}
                       </div>
-                      <p className="text-stone-400 text-xs">Төлөхгүй бол «Зураг байршуулах» дарахад эхний {left.toLocaleString()} зураг л орно.</p>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -786,7 +810,12 @@ export default function PhotoUploadPage() {
       {payPkg && album && (
         <QuotaPayModal albumId={album.id} pkg={payPkg}
           onClose={() => setPayPkg(null)}
-          onPaid={() => { setPayPkg(null); loadQuota(album.id); }} />
+          onPaid={() => {
+            setPayPkg(null);
+            loadQuota(album.id);
+            // Хязгаараас болж орж чадаагүй зургуудыг дахин дараалалд оруулна
+            setFiles(prev => prev.map(f => (f.status === 'error' && /хязгаар/i.test(f.errorMsg ?? '') ? { ...f, status: 'idle', progress: 0, errorMsg: '' } : f)));
+          }} />
       )}
     </div>
   );
