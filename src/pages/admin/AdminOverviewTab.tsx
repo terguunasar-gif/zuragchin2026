@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const PAGE = 50;
 import {
   Users, FolderOpen, DollarSign, TrendingUp, ShoppingBag,
   Camera, Image as ImageIcon, Clock,
@@ -35,8 +37,49 @@ export default function AdminOverviewTab() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentPurchases, setRecentPurchases] = useState<RecentPurchase[]>([]);
   const [loading, setLoading] = useState(true);
+  // Борлуулалтын жагсаалт: шүүлтүүр + «Илүү харах»
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
+  const [phoneQ, setPhoneQ] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [moreBusy, setMoreBusy] = useState(false);
 
   useEffect(() => { load(); }, []);
+
+  function purchasesQuery(from: number) {
+    let q = supabase.from('purchases')
+      .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,albums(name),photo_uploads(filename)')
+      .order('created_at', { ascending: false });
+    if (statusFilter !== 'all') q = q.eq('payment_status', statusFilter);
+    const digits = phoneQ.replace(/\D/g, '');
+    if (digits) q = q.ilike('buyer_phone', `%${digits}%`);
+    return q.range(from, from + PAGE - 1);
+  }
+
+  async function reloadPurchases() {
+    setMoreBusy(true);
+    const { data } = await purchasesQuery(0);
+    const rows = (data ?? []) as unknown as RecentPurchase[];
+    setRecentPurchases(rows);
+    setHasMore(rows.length === PAGE);
+    setMoreBusy(false);
+  }
+
+  async function loadMore() {
+    setMoreBusy(true);
+    const { data } = await purchasesQuery(recentPurchases.length);
+    const rows = (data ?? []) as unknown as RecentPurchase[];
+    setRecentPurchases(prev => [...prev, ...rows.filter(r => !prev.some(x => x.id === r.id))]);
+    setHasMore(rows.length === PAGE);
+    setMoreBusy(false);
+  }
+
+  // Шүүлтүүр солигдоход жагсаалтыг эхнээс нь
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    const t = setTimeout(() => { void reloadPurchases(); }, 300);
+    return () => clearTimeout(t);
+  }, [statusFilter, phoneQ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true);
@@ -51,10 +94,7 @@ export default function AdminOverviewTab() {
       supabase.from('purchases').select('gross_amount,platform_fee_amount').eq('payment_status', 'paid'),
       supabase.from('purchases').select('gross_amount').eq('payment_status', 'paid').gte('created_at', monthStart.toISOString()),
       supabase.from('platform_wallet').select('total_earned').maybeSingle(),
-      supabase.from('purchases')
-        .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,albums(name),photo_uploads(filename)')
-        .order('created_at', { ascending: false })
-        .limit(20),
+      purchasesQuery(0),
     ]);
 
     const users = usersRes.data ?? [];
@@ -74,7 +114,9 @@ export default function AdminOverviewTab() {
       platformFeeAllTime: Number(pwRes.data?.total_earned ?? 0),
     });
 
-    setRecentPurchases((purchasesRes.data ?? []) as unknown as RecentPurchase[]);
+    const first = (purchasesRes.data ?? []) as unknown as RecentPurchase[];
+    setRecentPurchases(first);
+    setHasMore(first.length === PAGE);
     setLoading(false);
   }
 
@@ -132,13 +174,23 @@ export default function AdminOverviewTab() {
 
       {/* ── Recent purchases ── */}
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-        <div className="px-6 py-5 border-b border-white/10 flex items-center gap-3">
+        <div className="px-6 py-5 border-b border-white/10 flex flex-wrap items-center gap-3">
           <div className="w-9 h-9 bg-green-500/10 rounded-xl flex items-center justify-center">
             <ShoppingBag className="w-5 h-5 text-green-400" />
           </div>
           <div>
             <p className="text-white font-semibold">Сүүлийн борлуулалтууд</p>
-            <p className="text-stone-500 text-xs">Сүүлийн 20 гүйлгээ</p>
+            <p className="text-stone-500 text-xs">{recentPurchases.length} гүйлгээ харагдаж байна</p>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {(['all', 'paid', 'pending'] as const).map(v => (
+              <button key={v} onClick={() => setStatusFilter(v)}
+                className={`text-xs px-3 py-1.5 rounded-lg border ${statusFilter === v ? 'bg-amber-500 text-stone-950 border-amber-500 font-semibold' : 'border-white/10 text-stone-300 hover:bg-white/5'}`}>
+                {v === 'all' ? 'Бүгд' : v === 'paid' ? 'Төлсөн' : 'Хүлээгдэж буй'}
+              </button>
+            ))}
+            <input value={phoneQ} onChange={e => setPhoneQ(e.target.value)} inputMode="numeric" placeholder="Утсаар хайх"
+              className="w-36 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500/50" />
           </div>
         </div>
 
@@ -198,6 +250,14 @@ export default function AdminOverviewTab() {
                 ))}
               </tbody>
             </table>
+            {hasMore && (
+              <div className="px-6 py-4 border-t border-white/5 text-center">
+                <button onClick={loadMore} disabled={moreBusy}
+                  className="text-sm px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white disabled:opacity-50">
+                  {moreBusy ? 'Ачаалж байна…' : `Илүү харах (+${PAGE})`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
