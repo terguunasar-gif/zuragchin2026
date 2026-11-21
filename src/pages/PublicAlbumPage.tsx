@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useLayoutEffect, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine,
+  Download, Printer, ShoppingCart, X, Calendar, User, Image as ImageIcon, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, Receipt, FolderOpen, ScanFace, Loader2, HandCoins, Square, Grid2x2, Grid3x3, Clapperboard, Trash2, CheckCircle2, Users, KeyRound, Copy, Share2, ScanLine, Search,
 } from 'lucide-react';
 // Нийтийн хуудас — нэвтрэлтээс хамааралгүй клиент (session гацалтад өртөхгүй)
 import { publicDb as supabase, supabase as authDb, hasRole } from '../lib/supabase';
+import { photoNumberMap, parsePhotoNumber } from '../lib/photoNumbers';
 import { albumOrFilter, isMissingColumnError, normalizeShareLink, readAlbumQuery } from '../lib/albumLink';
 import { setAlbumGuideActive } from '../lib/albumGuide';
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
@@ -723,6 +724,25 @@ export default function PublicAlbumPage() {
     : visiblePhotos;
   const [renderLimit, setRenderLimit] = useState(GRID_PAGE);
   useEffect(() => { setRenderLimit(GRID_PAGE); }, [folderFilter, phFilter, album?.id]);
+  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (хавтас бүрт 1-ээс)
+  const numMap = useMemo(() => photoNumberMap(photos, folderFilter), [photos, folderFilter]);
+  const [numQ, setNumQ] = useState('');
+  const [numErr, setNumErr] = useState('');
+  const findByNumber = () => {
+    const n = parsePhotoNumber(numQ);
+    if (!n) return;
+    let id: string | null = null;
+    for (const [k, v] of numMap) if (v === n) { id = k; break; }
+    if (!id) { setNumErr(t('№{n} зураг энэ хэсэгт олдсонгүй', { n })); return; }
+    setNumErr('');
+    if (phFilter && photos.find(p => p.id === id)?.photographer_id !== phFilter) setPhFilter('');
+    setView('large');
+    setFocusPhoto(id);
+    const target = id;
+    setTimeout(() => document.getElementById(`photo-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+    setTimeout(() => setFocusPhoto(f => (f === target ? null : f)), 5000);
+  };
+  useEffect(() => { setNumErr(''); }, [folderFilter]);
   // Тодруулах зураг (QR, хайлт, жижиг харагдацаас дарсан) зурагдсан байх ёстой
   useEffect(() => {
     if (!focusPhoto) return;
@@ -1061,6 +1081,17 @@ export default function PublicAlbumPage() {
               <Trash2 className="w-4 h-4" /><span className="hidden sm:inline">{delMode ? t('Болих') : t('Устгах')}</span>
             </button>
           )}
+          {photos.length > 0 && folderFilter !== 'guests' && folderFilter !== 'videos' && (
+            <form onSubmit={e => { e.preventDefault(); findByNumber(); }} className="flex-shrink-0 relative flex items-center rounded-xl border border-white/10 bg-white/5 focus-within:border-amber-500/60"
+              title={t('Дэлгэц дээр харсан дугаараар хайх')}>
+              <span className="pl-2.5 text-stone-400 text-sm font-semibold">№</span>
+              <input value={numQ} onChange={e => { setNumQ(e.target.value.replace(/\D/g, '').slice(0, 5)); setNumErr(''); }}
+                inputMode="numeric" enterKeyHint="search" placeholder={t('Дугаар')} aria-label={t('Зургийн дугаараар хайх')}
+                className="w-14 sm:w-20 bg-transparent px-1.5 py-2 text-sm text-white placeholder-stone-500 outline-none" />
+              <button type="submit" className="px-2 py-2 text-stone-300 hover:text-amber-300" aria-label={t('Хайх')}><Search className="w-4 h-4" /></button>
+              {numErr && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs bg-red-500 text-white px-2 py-1 rounded-lg shadow">{numErr}</span>}
+            </form>
+          )}
           {photos.length > 0 && folderFilter !== 'guests' && (
             <div className="flex-shrink-0 flex rounded-xl overflow-hidden border border-white/10 bg-white/5" role="group" aria-label={t('Харагдац')}>
               {([
@@ -1101,6 +1132,9 @@ export default function PublicAlbumPage() {
                 className={`relative block w-full break-inside-avoid bg-stone-900 overflow-hidden group ${view !== 'small' ? 'rounded-xl mb-2.5' : 'rounded-md mb-1.5'} ${
                   delMode && delPicks.has(photo.id) ? 'ring-4 ring-red-500' : ''}`}>
                 <MasonryThumb photo={photo} alt={photo.name || photo.title} sizes={view === 'small' ? SIZES.small : SIZES.pick} />
+                {numMap.get(photo.id) && (
+                  <span className={`absolute top-1 left-1 bg-black/70 text-white font-bold rounded px-1 leading-tight ${view === 'small' ? 'text-[10px]' : 'text-xs px-1.5 py-0.5'}`}>№{numMap.get(photo.id)}</span>
+                )}
                 {cart.some(c => c.photoId === photo.id) && (
                   <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-stone-950 text-[10px] font-bold">✓</span>
                 )}
@@ -1133,6 +1167,7 @@ export default function PublicAlbumPage() {
                 album={album}
                 sizes={view === 'medium' ? SIZES.medium : SIZES.large}
                 focused={focusPhoto === photo.id}
+                num={numMap.get(photo.id)}
                 wmLayers={freeMode ? [] : wmLayers}
                 freeDownload={photo.source !== 'ai_booth' && (freeActive || photoDownloadPrice(photo, album, aiPrice) === 0)}
                 freeBusy={freeBusy === photo.id}
@@ -1374,8 +1409,10 @@ function MasonryThumb({ photo, alt, sizes }: { photo: PhotoData; alt: string; si
   );
 }
 
-function PhotoCard({ photo, album, sizes, focused, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
+function PhotoCard({ photo, album, sizes, focused, num, wmLayers, allowPrint, aiPrice, inCart, printSelectorOpen, onTogglePrintSelector, onAddDownload, onAddPrint, freeDownload, freeBusy, onFreeDownload, printPicked, onTogglePrintPick, onOffer, onMakeVideo }: {
   focused?: boolean;
+  /** Зургийн дугаар (дэлгэцийнхтэй ижил) */
+  num?: number;
   /** <img sizes> — харагдацын баганын өргөн */
   sizes: string;
   /** Цомгийн эзэн: энэ зургаас AI видео үүсгэх */
@@ -1409,6 +1446,9 @@ function PhotoCard({ photo, album, sizes, focused, wmLayers, allowPrint, aiPrice
     <div id={`photo-${photo.id}`} className={`group break-inside-avoid bg-white/5 border rounded-2xl overflow-hidden transition-all duration-200 ${
       focused ? 'border-amber-400 ring-2 ring-amber-400/60 shadow-lg shadow-amber-500/20' : 'border-white/10 hover:border-white/20'}`}>
       <div className="relative bg-stone-900 overflow-hidden select-none" style={{ aspectRatio: String(ratio) }}>
+        {num ? (
+          <span className="absolute bottom-2 left-2 z-10 bg-black/75 text-white text-sm font-bold rounded-lg px-2 py-0.5 pointer-events-none">№{num}</span>
+        ) : null}
         <img
           {...gridImg(photo, sizes)}
           alt={photo.name || photo.title}
