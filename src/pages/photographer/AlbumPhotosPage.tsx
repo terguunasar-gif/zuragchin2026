@@ -1003,7 +1003,7 @@ export default function AlbumPhotosPage() {
               return (
                 <div key={photo.id} className={`bg-white/5 border rounded-2xl overflow-hidden group ${isSel ? 'border-amber-500' : 'border-white/10'}`}>
                   {/* Thumbnail */}
-                  <div className="relative aspect-square bg-stone-900">
+                  <div className="relative aspect-[4/5] bg-stone-950">
                     <button onClick={() => toggleSelect(photo.id)} title="Сонгох"
                       className="absolute top-2 left-2 z-10 w-8 h-8 bg-stone-950/80 rounded-lg flex items-center justify-center">
                       {isSel ? <CheckSquare className="w-5 h-5 text-amber-400" /> : <Square className="w-5 h-5 text-white" />}
@@ -1028,7 +1028,7 @@ export default function AlbumPhotosPage() {
                       alt={photo.filename}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                     {photo.source !== 'ai_booth' && (
