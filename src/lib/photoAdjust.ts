@@ -172,3 +172,12 @@ export async function preparePrintBlob(blob: Blob, size: string, a: PhotoAdjust 
     URL.revokeObjectURL(url);
   }
 }
+
+/**
+ * Цомгийн эзний зураг дээр хийсэн засвар (photo_uploads.adjust)-ыг эх зурагт хэрэгжүүлнэ.
+ * Худалдан авагчийн засвар үүний дараа (засагдсан зураг дээр) хэрэгжинэ — урьдчилан харахтай адил.
+ */
+export async function applyBaseEdit(blob: Blob, base?: (PhotoAdjust & PrintCrop) | null): Promise<Blob> {
+  if (!hasEdit(base)) return blob;
+  return await preparePrintBlob(blob, 'original', base!);
+}

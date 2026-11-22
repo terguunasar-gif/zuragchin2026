@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Crop, Eye, Loader2, Move, Printer, RotateCcw, Save, SlidersHorizontal, Sparkles, X } from 'lucide-react';
-import { ADJUST_FIELDS, applyAdjustToCanvas, CROP_KEYS, cropRect, isNeutral, loadImg, PhotoAdjust, PrintCrop, PRINT_SIZE_CM, renderPaper, targetRatio } from '../lib/photoAdjust';
+import { ADJUST_FIELDS, applyAdjustToCanvas, applyBaseEdit, hasEdit, CROP_KEYS, cropRect, isNeutral, loadImg, PhotoAdjust, PrintCrop, PRINT_SIZE_CM, renderPaper, targetRatio } from '../lib/photoAdjust';
 
 type Edit = PhotoAdjust & PrintCrop;
 
 /** Худалдан авагчийн засварт: зургийн эх сурвалж ба хадгалах арга */
 export interface EditorSource {
-  load: () => Promise<{ url: string; size: string; adjust: Edit }>;
+  load: () => Promise<{ url: string; size: string; adjust: Edit; base?: Edit }>;
   save: (a: Edit) => Promise<void>;
 }
 
@@ -59,9 +59,17 @@ export default function PrintEditor({ purchaseId, title, onClose, onPrint, sourc
     (async () => {
       try {
         const src = source
-          ? await source.load().then(r => ({ signedUrl: r.url, size: r.size, adjust: r.adjust }))
-          : await loadPrintSource(purchaseId).then(r => { setLoadedBrand(r.brand || ''); return r; });
-        const im = await loadImg(src.signedUrl);
+          ? await source.load().then(r => ({ signedUrl: r.url, size: r.size, adjust: r.adjust, base: r.base }))
+          : await loadPrintSource(purchaseId).then(r => { setLoadedBrand(r.brand || ''); return { ...r, base: r.baseAdjust }; });
+        // Цомгийн эзний засвартай эх зураг дээр засна (урьдчилан харах зурагт аль хэдийн шингэсэн)
+        let imgUrl = src.signedUrl;
+        let tmpUrl = '';
+        if (hasEdit(src.base)) {
+          const b = await applyBaseEdit(await (await fetch(src.signedUrl)).blob(), src.base);
+          imgUrl = tmpUrl = URL.createObjectURL(b);
+        }
+        const im = await loadImg(imgUrl);
+        if (tmpUrl) URL.revokeObjectURL(tmpUrl);
         if (!alive) return;
         const scale = Math.min(1, PREVIEW_MAX / Math.max(im.naturalWidth, im.naturalHeight));
         const c = document.createElement('canvas');

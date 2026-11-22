@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { applyBrandToPurchase, brandLayers } from './watermark';
-import { PhotoAdjust, PrintCrop, preparePrintBlob, PRINT_SIZE_CM, CROP_KEYS } from './photoAdjust';
+import { applyBaseEdit, PhotoAdjust, PrintCrop, preparePrintBlob, PRINT_SIZE_CM, CROP_KEYS } from './photoAdjust';
 
 const QPAY_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -17,7 +17,7 @@ export interface PrintJobResult { sms: SmsResult; smsText: string; buyerPhone: s
  * Цонхыг товч дарсан агшинд нээх ёстой (popup blocker), тиймээс энэ функцийг click дотроос шууд дуудна.
  */
 /** «Засах» цонхонд: эх зураг, хэмжээ, лого, хадгалсан засвар (төлөв өөрчлөхгүй, SMS явахгүй) */
-export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: string; filename: string; size: string; brand: string; adjust: PhotoAdjust & PrintCrop }> {
+export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: string; filename: string; size: string; brand: string; adjust: PhotoAdjust & PrintCrop; baseAdjust: PhotoAdjust & PrintCrop }> {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`${QPAY_FN_URL}/print-job`, {
     method: 'POST',
@@ -26,7 +26,7 @@ export async function loadPrintSource(purchaseId: string): Promise<{ signedUrl: 
   });
   const data = await res.json();
   if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Зураг ачаалж чадсангүй');
-  return { signedUrl: data.signedUrl, filename: data.filename, size: data.size, brand: data.brand ?? '', adjust: data.adjust ?? {} };
+  return { signedUrl: data.signedUrl, filename: data.filename, size: data.size, brand: data.brand ?? '', adjust: data.adjust ?? {}, baseAdjust: data.baseAdjust ?? {} };
 }
 
 /** Гэрэл/өнгөний засварыг хадгална — дараагийн «Принт» бүрт хэрэгжинэ */
@@ -56,7 +56,7 @@ export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAd
     if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
     const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
     // Цомгийн лого, мэндчилгээг (сайтын «Zuragchin.mn» тамгагүйгээр) хэвлэх зурагт шингээнэ
-    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {});
+    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {}, data.baseAdjust ?? {});
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
 <style id="pg">@page{size:${w}cm ${h}cm;margin:0}</style>
 <style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}cm;height:${h}cm;object-fit:contain}
@@ -81,7 +81,7 @@ im.onload=function(){
   }
 }
 
-async function withBrand(url: string, raw: string, filename: string, size: string, adjust: PhotoAdjust & PrintCrop = {}): Promise<string> {
+async function withBrand(url: string, raw: string, filename: string, size: string, adjust: PhotoAdjust & PrintCrop = {}, base: PhotoAdjust & PrintCrop = {}): Promise<string> {
   const layers = raw ? brandLayers(raw) : null;
   // Цомгийн лого(нууд)-ыг урьдчилан шалгана — ачаалагдахгүй бол логогүй хэвлэхгүй, алдаа харуулна
   if (layers) {
@@ -94,6 +94,8 @@ async function withBrand(url: string, raw: string, filename: string, size: strin
     }
   }
   let blob = await (await fetch(url)).blob();
+  // 0) цомгийн эзний засвар (байвал) — худалдан авагч/хэвлэгчийн засвар үүн дээр нэмэгдэнэ
+  blob = await applyBaseEdit(blob, base);
   // 1) гэрэл/өнгө → 2) цаасны харьцаанд тайрах (лого тайрагдахгүйн тулд ЭХЛЭЭД тайрна) → 3) цомгийн лого
   try {
     blob = await preparePrintBlob(blob, size, adjust);

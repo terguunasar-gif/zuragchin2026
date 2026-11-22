@@ -853,9 +853,10 @@ Deno.serve(async (req: Request) => {
       if (!signed?.signedUrl) return json({ error: "Эх зураг олдсонгүй" }, 404);
       const brand = album?.watermark_type === "layers" ? (album?.watermark_value ?? "") : "";
       const adjust = await readPrintAdjust(db, p.id);
+      const baseAdjust = (await readPhotoAdjusts(db, [p.photo_id]))[p.photo_id] ?? {};
 
       // «Засах» цонх: зөвхөн зураг + хадгалсан засвар. Төлөв өөрчлөхгүй, SMS явуулахгүй.
-      if (preview) return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, brand, adjust });
+      if (preview) return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, brand, adjust, baseAdjust });
 
       if (p.print_status === "pending") {
         await db.from("purchases").update({ print_status: "printed", print_status_updated_at: new Date().toISOString() }).eq("id", p.id);
@@ -886,7 +887,7 @@ Deno.serve(async (req: Request) => {
           sms = "failed";
         }
       }
-      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone, brand, adjust });
+      return json({ signedUrl: signed.signedUrl, filename: photo?.filename ?? "photo.jpg", size: p.print_size, sms, smsText, buyerPhone, brand, adjust, baseAdjust });
     }
 
     // ── УГААЛГАХ ЗАХИАЛГА: хэвлэхийн өмнөх гэрэл/өнгөний засварыг хадгална ──
@@ -936,7 +937,8 @@ Deno.serve(async (req: Request) => {
       const storagePath = String(photo.original_url ?? "").replace(/^photos-original\//, "");
       const { data: signed } = await db.storage.from("photos-original").createSignedUrl(storagePath, 3600);
       if (!signed?.signedUrl) return json({ error: "Холбоос үүсгэж чадсангүй" }, 500);
-      return json({ signedUrl: signed.signedUrl, filename: photo.filename ?? "photo.jpg" });
+      const adjust = (await readPhotoAdjusts(db, [photo.id]))[photo.id] ?? {};
+      return json({ signedUrl: signed.signedUrl, filename: photo.filename ?? "photo.jpg", adjust });
     }
 
     // ── Худалдан авсан зургийн татах холбоосууд (төлсний дараа 14 хоног) ──
@@ -1041,8 +1043,10 @@ Deno.serve(async (req: Request) => {
       const adjusts = await Promise.all(purchases.map(p => readPrintAdjust(db, p.id)));
       const adjustById: Record<string, Record<string, number>> = {};
       purchases.forEach((p, i) => { adjustById[p.id] = adjusts[i]; });
+      // Цомгийн эзний зураг дээр хийсэн засвар — худалдан авагчийн засвар үүн дээр нэмэгдэнэ
+      const baseByPhoto = await readPhotoAdjusts(db, purchases.map(p => p.photo_id));
 
-      const signedUrls: { purchaseId: string; photoId?: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number; adjust?: Record<string, number>; canEdit?: boolean }[] = [];
+      const signedUrls: { purchaseId: string; photoId?: string; signedUrl: string; filename: string; type: string; expiresAt: string | null; expired: boolean; brand?: string; downloadCount?: number; adjust?: Record<string, number>; baseAdjust?: Record<string, number>; canEdit?: boolean }[] = [];
       for (const p of purchases) {
         if (p.type === "download" && p.photo_uploads?.original_url) {
           const expiresAt: string | null = p.download_expires_at ?? null;
@@ -1059,6 +1063,7 @@ Deno.serve(async (req: Request) => {
             brand: brandByAlbum[p.album_id] ?? "",
             downloadCount: Number(p.download_count ?? 0),
             adjust: adjustById[p.id],
+            baseAdjust: baseByPhoto[p.photo_id],
             canEdit: !expired && (editByAlbum[p.album_id]?.allow ?? true),
           });
         } else if (p.type === "print") {
@@ -1067,6 +1072,7 @@ Deno.serve(async (req: Request) => {
             purchaseId: p.id, photoId: p.photo_id, signedUrl: "", filename: "", type: "print", expiresAt: null, expired: false,
             brand: brandByAlbum[p.album_id] ?? "",
             adjust: adjustById[p.id],
+            baseAdjust: baseByPhoto[p.photo_id],
             canEdit: e.allow && e.printOpen && (!p.print_status || p.print_status === "pending"),
           });
         }
@@ -1738,6 +1744,25 @@ function sanitizeAdjust(adjust: Record<string, unknown> | null | undefined): Rec
     if (v) clean[k] = Math.max(lo, Math.min(hi, v));
   }
   return clean;
+}
+
+/** Цомгийн эзний зураг бүр дээр хийсэн засвар (photo_uploads.adjust) — photo_id → засвар */
+// deno-lint-ignore no-explicit-any
+async function readPhotoAdjusts(db: any, photoIds: (string | null | undefined)[]): Promise<Record<string, Record<string, number>>> {
+  const ids = [...new Set(photoIds.filter(Boolean))] as string[];
+  const out: Record<string, Record<string, number>> = {};
+  if (!ids.length) return out;
+  try {
+    const { data, error } = await db.from("photo_uploads").select("id, adjust").in("id", ids);
+    if (error) return out; // SQL (adjust багана) ажиллаагүй
+    for (const r of data ?? []) {
+      if (r.adjust && typeof r.adjust === "object") {
+        const clean = sanitizeAdjust(r.adjust);
+        if (Object.keys(clean).length) out[r.id] = clean;
+      }
+    }
+  } catch { /* */ }
+  return out;
 }
 
 /** Угаалгах захиалгын хадгалсан гэрэл/өнгөний засвар (purchases bucket: adjust/<id>.json) */

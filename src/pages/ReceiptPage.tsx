@@ -9,7 +9,7 @@ import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
 import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
-import { hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
+import { applyBaseEdit, hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
 import PrintEditor from '../components/PrintEditor';
 import EditedThumb from '../components/EditedThumb';
 import { flushPendingEdits } from '../lib/pendingEdits';
@@ -77,6 +77,7 @@ interface SignedUrlItem {
   downloadCount?: number;
   /** Худалдан авагчийн хадгалсан засвар (тайралт, гэрэл/өнгө) */
   adjust?: PhotoAdjust & PrintCrop;
+  baseAdjust?: PhotoAdjust & PrintCrop;
   /** Засах боломжтой эсэх (цомгийн тохиргоо, угаалгах төлөв/хугацаа) */
   canEdit?: boolean;
 }
@@ -258,7 +259,9 @@ export default function ReceiptPage() {
   function transformFor(u: SignedUrlItem, filename: string, original = false) {
     const adj = original ? null : u.adjust;
     return async (b: Blob) => {
-      let out = hasEdit(adj) ? await preparePrintBlob(b, 'original', adj!) : b;
+      // «Эх файл» сонголтоос бусад үед цомгийн эзний засвар → худалдан авагчийн засвар
+      let out = original ? b : await applyBaseEdit(b, u.baseAdjust);
+      out = hasEdit(adj) ? await preparePrintBlob(out, 'original', adj!) : out;
       out = await applyBrandToPurchase(out, u.brand || '', filename);
       return out;
     };

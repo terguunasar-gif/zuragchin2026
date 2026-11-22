@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, Trash2, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard, Copy,
+  ArrowLeft, Upload, Trash2, SlidersHorizontal, LogOut, User, Tag, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, ImageOff, Loader2, FolderOpen, FolderPlus, Pencil, Check, Square, CheckSquare, ScanFace, HandCoins, Download, Clapperboard, Copy,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchAllPages } from '../../lib/fetchAll';
@@ -10,6 +10,9 @@ import { makeSalePreview, WM_STRENGTHS, normalizeStrength, WmStrength } from '..
 import { backfillThumb, IMMUTABLE_CACHE, isThumbSqlMissing, makeThumb, previewPathFromUrl, uploadThumb } from '../../lib/thumbs';
 import { albumFaceSearchEnabled, fileToImage, scanStoredPhoto, selfieDescriptor, FACE_MATCH_THRESHOLD } from '../../lib/faceSearch';
 import BrandMark from '../../components/BrandMark';
+import PrintEditor from '../../components/PrintEditor';
+import { originalUrlFor, saveOwnerEdit, type OwnerEdit } from '../../lib/ownerEdit';
+import { applyBaseEdit, hasEdit } from '../../lib/photoAdjust';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -30,6 +33,8 @@ interface Photo {
   download_price?: number | null;
   /** Зурагчны өгсөн нэр — нүүр хуудасны хайлтад гарна (update-50) */
   title?: string | null;
+  /** Цомгийн эзний засвар (гэрэл, өнгө, тайралт) — эх файл өөрчлөгдөхгүй */
+  adjust?: OwnerEdit | null;
 }
 
 interface Folder { id: string; name: string; }
@@ -58,6 +63,8 @@ export default function AlbumPhotosPage() {
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // Зураг засах цонх (цомгийн эзэн / зурагчин)
+  const [photoEdit, setPhotoEdit] = useState<Photo | null>(null);
   const [editingPrices, setEditingPrices] = useState<EditingPrices>({});
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
@@ -146,7 +153,9 @@ export default function AlbumPhotosPage() {
       if (!isManager) q = q.eq('photographer_id', profile!.id);
       return q.range(from, to);
     });
-    let { data, error } = await run(COLS + ', thumb_url');
+    let { data, error } = await run(COLS + ', thumb_url, adjust');
+    // adjust багана нэмэгдээгүй (SQL ажиллуулаагүй) үед
+    if (error && /adjust/.test(error.message)) ({ data, error } = await run(COLS + ', thumb_url'));
     setThumbSupported(!error);
     // thumb_url багана нэмэгдээгүй (SQL ажиллуулаагүй) үед
     if (error && isThumbSqlMissing(error)) ({ data, error } = await run(COLS));
@@ -187,7 +196,9 @@ export default function AlbumPhotosPage() {
         const origPath = ph.original_url.replace(/^photos-original\//, '');
         const { data: blob, error: dlErr } = await supabase.storage.from('photos-original').download(origPath);
         if (dlErr || !blob) throw dlErr ?? new Error('download');
-        const preview = await makeSalePreview(new File([blob], ph.filename || 'photo.jpg', { type: blob.type || 'image/jpeg' }), albumWm);
+        // Цомгийн эзний засвар (байвал) урьдчилан харах зурагт хэвээр үлдэнэ
+        const src = hasEdit(ph.adjust) ? await applyBaseEdit(blob, ph.adjust) : blob;
+        const preview = await makeSalePreview(new File([src], ph.filename || 'photo.jpg', { type: src.type || 'image/jpeg' }), albumWm);
         const newPath = `${profile.id}/${albumId}/preview_p2_${crypto.randomUUID()}.jpg`;
         const { error: upErr } = await supabase.storage.from('photos-preview').upload(newPath, preview, { contentType: 'image/jpeg', cacheControl: IMMUTABLE_CACHE });
         if (upErr) throw upErr;
@@ -1020,6 +1031,12 @@ export default function AlbumPhotosPage() {
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
+                    {photo.source !== 'ai_booth' && (
+                      <button onClick={() => setPhotoEdit(photo)} title="Гэрэл, өнгө, тайралтыг засах"
+                        className={`absolute bottom-2 right-2 z-10 h-8 px-2 rounded-lg flex items-center gap-1 text-xs font-semibold ${hasEdit(photo.adjust) ? 'bg-amber-500 text-stone-950' : 'bg-stone-950/80 text-white hover:bg-amber-500 hover:text-stone-950'}`}>
+                        <SlidersHorizontal className="w-3.5 h-3.5" /> {hasEdit(photo.adjust) ? 'Засварласан' : 'Засах'}
+                      </button>
+                    )}
                     {/* Delete button */}
                     <button
                       onClick={() => deletePhoto(photo)}
@@ -1154,6 +1171,28 @@ export default function AlbumPhotosPage() {
           </div>
         )}
       </main>
+      {photoEdit && albumWm && profile && (
+        <div className="fixed inset-0 z-[60]">
+          <PrintEditor
+            purchaseId={`photo-${photoEdit.id}`}
+            title={photoEdit.title || photoEdit.filename}
+            heading="Зургийг засах"
+            brand={albumWm.watermark_value || ''}
+            note="Худалдан авагчид засварласан зураг харагдаж, түүгээр татаж угаалгана. Эх файл өөрчлөгдөхгүй — «Анхны байдалд» дараад хадгалбал буцна."
+            source={{
+              load: async () => ({ url: await originalUrlFor(photoEdit), size: 'original', adjust: photoEdit.adjust ?? {} }),
+              save: async a => {
+                const ph = photoEdit;
+                const r = await saveOwnerEdit(ph, albumWm, profile.id, albumId!, a);
+                setPhotos(prev => prev.map(x => (x.id === ph.id ? { ...x, ...r } : x)));
+                setPhotoEdit(p => (p && p.id === ph.id ? { ...p, ...r } : p));
+                showToast('Засвар хадгалагдлаа — худалдан авагчид шинэ зураг харагдана');
+              },
+            }}
+            onClose={() => setPhotoEdit(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }

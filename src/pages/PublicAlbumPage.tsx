@@ -1,3 +1,4 @@
+import { applyBaseEdit, hasEdit, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { useEffect, useState, useCallback, useLayoutEffect, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -284,8 +285,10 @@ export default function PublicAlbumPage() {
       const data = await res.json();
       if (!res.ok || !data.signedUrl) throw new Error(data.error || 'error');
       try {
-        const { result, blobUrl } = await saveImageToDevice(data.signedUrl, data.filename);
-        if (result !== 'shared' && result !== 'cancelled') setFreeViewer({ url: result === 'manual' ? data.signedUrl : (blobUrl || data.signedUrl), name: data.filename, hint: result });
+        // Цомгийн эзний засвар (байвал) эх зурагт хэрэгжинэ
+        const base = data.adjust as (PhotoAdjust & PrintCrop) | undefined;
+        const { result, blobUrl } = await saveImageToDevice(data.signedUrl, data.filename, hasEdit(base) ? b => applyBaseEdit(b, base) : undefined);
+        if (result !== 'shared' && result !== 'cancelled') setFreeViewer({ url: result === 'manual' && !hasEdit(base) ? data.signedUrl : (blobUrl || data.signedUrl), name: data.filename, hint: result });
       } catch {
         setFreeViewer({ url: data.signedUrl, name: data.filename, hint: 'manual' });
       }

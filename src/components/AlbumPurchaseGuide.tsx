@@ -16,7 +16,7 @@ import EditedThumb from './EditedThumb';
 import { readLater, writeLater } from '../lib/savedLater';
 import { photoNumberMap, parsePhotoNumber } from '../lib/photoNumbers';
 import { listVisitedAlbums } from '../lib/visitedAlbums';
-import { hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
+import { applyBaseEdit, hasEdit, preparePrintBlob, type PhotoAdjust, type PrintCrop } from '../lib/photoAdjust';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { flushPendingEdits, savePendingEdits } from '../lib/pendingEdits';
 import { addPurchaseHistory, listPurchaseHistory, loadCart } from '../lib/purchaseHistory';
@@ -86,7 +86,7 @@ export default function AlbumPurchaseGuide({
   const onInvoiceRef = useRef(onInvoiceCreated);
   onPaidRef.current = onPaid;
   onInvoiceRef.current = onInvoiceCreated;
-  type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number; brand?: string; adjust?: PhotoAdjust & PrintCrop };
+  type PaidFile = { purchaseId: string; photoId?: string; signedUrl: string; filename: string; expired?: boolean; expiresAt?: string | null; downloadCount?: number; brand?: string; adjust?: PhotoAdjust & PrintCrop; baseAdjust?: PhotoAdjust & PrintCrop };
   const [dlFiles, setDlFiles] = useState<PaidFile[]>([]);
   const [dlSel, setDlSel] = useState<Set<string> | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -673,6 +673,7 @@ export default function AlbumPurchaseGuide({
         downloadCount: u.downloadCount,
         brand: (u as { brand?: string }).brand ?? '',
         adjust: (u as { adjust?: PhotoAdjust & PrintCrop }).adjust,
+        baseAdjust: (u as { baseAdjust?: PhotoAdjust & PrintCrop }).baseAdjust,
       });
     }
     const counted = idsWithServerDownloads(files.map(f => ({ id: f.purchaseId, downloadCount: f.downloadCount })));
@@ -705,7 +706,8 @@ export default function AlbumPurchaseGuide({
         setDlProg({ done: n, total: list.length });
         try {
           let blob = await (await fetch(u.signedUrl)).blob();
-          // засвар (байвал) → цомгийн лого
+          // цомгийн эзний засвар → худалдан авагчийн засвар (байвал) → цомгийн лого
+          blob = await applyBaseEdit(blob, u.baseAdjust);
           if (hasEdit(u.adjust)) blob = await preparePrintBlob(blob, 'original', u.adjust!);
           blob = await applyBrandToPurchase(blob, u.brand || '', u.filename);
           const name = /\.(jpe?g|png|webp)$/i.test(u.filename) ? u.filename : `${u.filename}.jpg`;
