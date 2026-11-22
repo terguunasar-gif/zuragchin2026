@@ -238,6 +238,21 @@ export default function PhotoUploadPage() {
 
   function removeFile(id: string) { removeFiles(new Set([id])); }
 
+  // Байршуулалт дууссаны дараа «Зураг нэмэх» — өмнөх жагсаалтыг цэвэрлээд шинэ зургуудыг шууд дараалалд оруулна
+  const addMoreRef = useRef<HTMLInputElement>(null);
+  function resetQueue() {
+    // Дөнгөж оруулсан зургууд одоо цомогт байгаа — дахин сонговол давхардал гэж тэмдэглэнэ
+    files.forEach(e => { if (e.status === 'done') existingNamesRef.current.add(e.file.name.toLowerCase()); URL.revokeObjectURL(e.previewUrl); });
+    setFiles([]); queueKeysRef.current = new Set(); setChecked(new Set()); setSkippedDup(0); setUploadStarted(false); setSuccessCount(0);
+  }
+  const onAddMore = (e: ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = '';
+    if (!list.length) return;
+    resetQueue();
+    addFiles(list);
+  };
+
   const onInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(Array.from(e.target.files));
     e.target.value = '';
@@ -579,8 +594,13 @@ export default function PhotoUploadPage() {
                 {successCount === files.length ? 'Бүх зураг амжилттай байршлаа.' : `${files.length - successCount} зурагт алдаа гарлаа.`}
               </p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => { setFiles([]); queueKeysRef.current = new Set(); setChecked(new Set()); setSkippedDup(0); setUploadStarted(false); setSuccessCount(0); }}
+            <div className="flex flex-wrap gap-2 justify-end">
+              <input ref={addMoreRef} type="file" multiple accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={onAddMore} />
+              <button onClick={() => addMoreRef.current?.click()}
+                className="flex items-center gap-1.5 text-sm text-stone-950 font-semibold bg-green-500 hover:bg-green-400 px-3 py-1.5 rounded-lg transition-colors">
+                <Plus className="w-4 h-4" /> Зураг нэмэх
+              </button>
+              <button onClick={resetQueue}
                 className="text-sm text-stone-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-colors">
                 Дахин байршуулах
               </button>
