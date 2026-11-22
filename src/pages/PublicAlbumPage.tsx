@@ -668,6 +668,8 @@ export default function PublicAlbumPage() {
     setTimeout(() => setNotice(null), 4000);
     const p = new URLSearchParams(searchParams);
     p.delete('add');
+    // Хөтөч горимд: сонгосон зургийн жагсаалт (татах/угаалгах сонголт) шууд нээгдэнэ
+    if (guideOn && r.ok) p.set('pay', '1');
     setSearchParams(p, { replace: true });
   }, [addParam, cartReady, photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1283,7 +1285,7 @@ export default function PublicAlbumPage() {
         <div className={`fixed left-4 right-4 sm:left-auto sm:right-6 sm:w-96 bottom-6 z-[75] rounded-2xl px-4 py-3 font-semibold shadow-2xl ${
           notice.ok ? 'bg-emerald-500 text-stone-950' : 'bg-red-500 text-white'}`}>
           {notice.text}
-          {notice.ok && (
+          {notice.ok && !guideOn && (
             <button onClick={() => { setNotice(null); setScanOpen(true); }}
               className="mt-2 w-full flex items-center justify-center gap-2 bg-stone-950/90 text-white text-sm py-2 rounded-xl">
               <ScanLine className="w-4 h-4 text-amber-400" /> {t('Дараагийн зургийн QR уншуулах')}

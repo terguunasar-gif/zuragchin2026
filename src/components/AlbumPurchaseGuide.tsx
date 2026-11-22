@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, Search, Send, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, ScanLine, Search, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
@@ -13,6 +13,7 @@ import { formatPrintDay, printOrdersOpen } from '../lib/printDeadline';
 import PrintEditor from './PrintEditor';
 import BrandMark from './BrandMark';
 import EditedThumb from './EditedThumb';
+const QrScanModal = lazy(() => import('./QrScanModal'));
 import { readLater, writeLater } from '../lib/savedLater';
 import { photoNumberMap, parsePhotoNumber } from '../lib/photoNumbers';
 import { listVisitedAlbums } from '../lib/visitedAlbums';
@@ -454,6 +455,28 @@ export default function AlbumPurchaseGuide({
     go('choices', { selected: ids, choices, invoice: null, declined: false }, SELECTED_MSG);
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   }
+
+  // Том дэлгэцийн зургийн QR-ийг дараалан уншуулж сонгосон жагсаалтад нэмнэ
+  const [scanOpen, setScanOpen] = useState(false);
+  const scanAdd = useCallback((text: string): { ok: boolean; message: string } => {
+    let id: string | null = null;
+    try { id = new URL(text).searchParams.get('add'); } catch { /* URL биш */ }
+    if (!id) return { ok: false, message: 'Том дэлгэц дээрх зургийн QR биш байна' };
+    const photo = photos.find(p => p.id === id);
+    if (!photo) return { ok: false, message: 'Энэ зураг энэ цомогт алга' };
+    const cur = sessionRef.current;
+    if (cur.choices.some(c => c.photoId === id)) return { ok: true, message: 'Энэ зураг аль хэдийн сонгогдсон' };
+    const opts = printOptions(photo);
+    const next = {
+      ...cur,
+      selected: [...new Set([...cur.selected, id])],
+      choices: [...cur.choices, { photoId: id, download: true, print: false, printSize: opts[0]?.[0] }],
+      invoice: null,
+    };
+    sessionRef.current = next;
+    commit(next);
+    return { ok: true, message: `Нэмэгдлээ ✓ · нийт ${next.choices.length} зураг` };
+  }, [photos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Төлөхөөс өмнө цомог руу буцаж нэмж/дахин сонгох — өмнөх сонголт, тохиргоо хадгалагдана */
   function backToAlbum() {
@@ -987,6 +1010,10 @@ export default function AlbumPurchaseGuide({
                 </div>
               );
             })}
+            <button type="button" onClick={() => setScanOpen(true)}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 rounded-xl py-3 text-sm font-semibold">
+              <ScanLine className="w-4 h-4" /> Дэлгэцээс дараагийн зургийн QR уншуулах
+            </button>
             <button type="button" onClick={backToAlbum}
               className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl py-3 text-sm font-semibold">
               <Images className="w-4 h-4 text-amber-400" /> Цомог руу буцаж зураг нэмэх
@@ -1270,6 +1297,20 @@ export default function AlbumPurchaseGuide({
           </div>
         );
       })()}
+      <Suspense fallback={null}>{scanOpen && (
+        <QrScanModal
+          title="Зургийн QR уншуулах"
+          hint="Том дэлгэц дээрх зургийн хажууд байгаа QR-ийг уншуулахад тэр зураг сонгосон жагсаалтад нэмэгдэнэ. Дараагийн зургийн QR-ийг шууд үргэлжлүүлэн уншуулна."
+          onCode={scanAdd}
+          onClose={() => setScanOpen(false)}
+          footer={
+            <button type="button" onClick={() => setScanOpen(false)}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl">
+              <Check className="w-4 h-4" /> Сонгож дууслаа · {session.choices.length} зураг — татах/угаалгах сонгох
+            </button>
+          }
+        />
+      )}</Suspense>
     </div>
   );
 }
