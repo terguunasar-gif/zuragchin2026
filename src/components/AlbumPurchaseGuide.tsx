@@ -1,11 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, ScanLine, Search, Send, X } from 'lucide-react';
+import { Bookmark, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, ScanLine, Search, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
 import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
 import BankLinks, { type BankLink } from './BankLinks';
 import {
-  askHelpBot, downloadExpired, dropGuideCartPhoto, fetchLeadPurchases, groupOwned, guidePaySummary, loadGuide, markGuidePaid, mergeOwned, normalizeMnPhone, prepareGuideEntry, rememberPurchase, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
+  askHelpBot, downloadExpired, dropGuideCartPhoto, fetchLeadPurchases, fetchPhonePurchases, groupOwned, guidePaySummary, loadGuide, markGuidePaid, mergeOwned, normalizeMnPhone, prepareGuideEntry, rememberPurchase, ruleReply, saveGuide, setAlbumGuideActive, syncGuideLead,
   type GuideCartLine, type GuideChoice, type GuideInvoice, type GuideMsg, type GuideSession, type GuideStep, type OwnedPhoto,
 } from '../lib/albumGuide';
 import { cachedUndownloaded, everyDownloaded, idsWithServerDownloads, readDownloadedIds, undownloadedByInvoice, writeDownloadedIds } from '../lib/receiptDownloads';
@@ -356,6 +356,45 @@ export default function AlbumPurchaseGuide({
   // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (хавтас бүрт 1-ээс)
   const numMap = useMemo(() => photoNumberMap(photos, session.folderId ?? 'all'), [photos, session.folderId]);
   const [numQ, setNumQ] = useState('');
+  // Утасны дугаараар төлсөн зургаа олох (хөтөч солигдсон, эсвэл өөр хүний утсаар)
+  const [phoneQ, setPhoneQ] = useState(() => loadGuide(album.id).phone || '');
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [phoneMsg, setPhoneMsg] = useState('');
+  async function findByPhone() {
+    const ph = normalizeMnPhone(phoneQ);
+    if (!ph) { setPhoneMsg('8 оронтой утасны дугаар оруулна уу'); return; }
+    setPhoneBusy(true);
+    setPhoneMsg('');
+    const rows = await fetchPhonePurchases(album.id, ph);
+    setPhoneBusy(false);
+    if (rows === null) { setPhoneMsg('Хайж чадсангүй. Дахин оролдоно уу.'); return; }
+    if (!rows.length) { setPhoneMsg('Энэ дугаараар энэ цомогт төлсөн зураг олдсонгүй.'); return; }
+    setSession(s => {
+      const next = { ...s, owned: mergeOwned(s.owned ?? [], rows) };
+      saveGuide(album.id, next);
+      return next;
+    });
+    // «Төлсөн захиалга» хэсэгт ч харагдуулна
+    try {
+      const known = new Set(listPurchaseHistory().map(h => h.invoiceId));
+      const byInv = new Map<string, typeof rows>();
+      for (const r of rows) byInv.set(r.invoiceId, [...(byInv.get(r.invoiceId) ?? []), r]);
+      for (const [inv, list] of byInv) {
+        if (known.has(inv)) continue;
+        addPurchaseHistory({
+          invoiceId: inv, albumId: album.id, albumName: album.name,
+          albumLink: window.location.pathname.replace(/^\/album\//, '').split('/')[0] || album.id,
+          total: list.reduce((n, r) => n + r.amount, 0),
+          downloads: list.filter(r => r.type === 'download').length, prints: list.filter(r => r.type === 'print').length,
+          buyerName: list[0]?.buyerName ?? '', paidAt: list[0]?.paidAt || new Date().toISOString(),
+        });
+      }
+    } catch { /* */ }
+    const n = new Set(rows.map(r => r.photoId)).size;
+    setPhoneMsg(`${n} төлсөн зураг олдлоо. Зураг дээрх «Төлсөн · Татах»-ыг дарна уу.`);
+    setPastId(null);
+    setPastNote('');
+  }
   const [numErr, setNumErr] = useState('');
   const [flashId, setFlashId] = useState<string | null>(null);
   function findByNumber() {
@@ -518,6 +557,12 @@ export default function AlbumPurchaseGuide({
   }
 
   const printsOpen = printOrdersOpen(album.print_deadline);
+  const ownedIds = new Set((session.owned ?? []).map(o => o.photoId));
+  function openOwned(photoId: string) {
+    setPastId(photoId);
+    setPastNote('');
+    requestAnimationFrame(() => document.getElementById('g-owned')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
   const lines: GuideCartLine[] = [];
   for (const c of session.choices) {
     const p = photos.find(x => x.id === c.photoId);
@@ -570,6 +615,45 @@ export default function AlbumPurchaseGuide({
     } finally {
       setDlBusy(false);
     }
+  }
+
+  function ownedPanel() {
+    return (
+              <div id="g-owned" className="space-y-2 scroll-mt-24">
+                <p className="text-sm text-stone-200">Таны өмнө авсан {groupOwned(session.owned ?? []).length} зураг энд байна</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {groupOwned(session.owned ?? []).map(row => {
+                    const photo = photos.find(p => p.id === row.photoId);
+                    const expired = !!row.download && downloadExpired(row.download.expiresAt);
+                    return (
+                      <button key={row.photoId} type="button" onClick={() => { setPastId(row.photoId); setPastNote(''); }}
+                        className={`relative aspect-square overflow-hidden rounded-xl bg-stone-900 ${pastId === row.photoId ? 'ring-2 ring-amber-400' : ''}`}>
+                        {photo?.watermarked_url && <img src={photo.watermarked_url} alt="" className="h-full w-full object-cover" />}
+                        {expired && <span className="absolute inset-x-0 bottom-0 bg-black/70 text-[10px] py-0.5">Хугацаа дууссан</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {pastId && (() => {
+                  const row = groupOwned(session.owned ?? []).find(r => r.photoId === pastId);
+                  if (!row) return null;
+                  const expired = !!row.download && downloadExpired(row.download.expiresAt);
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {row.download && (expired
+                        ? <p className="text-sm text-red-300">Татах хугацаа дууссан.</p>
+                        : <button type="button" disabled={dlBusy} onClick={() => redownload(row.download!)}
+                            className="rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm">Дахин татах</button>)}
+                      {printsOpen
+                        ? <button type="button" onClick={() => reprint(row.photoId)}
+                            className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
+                        : <p className="text-sm text-stone-400">Угаалгах хугацаа дууссан</p>}
+                    </div>
+                  );
+                })()}
+                {pastNote && <p className="text-sm text-stone-300">{pastNote}</p>}
+              </div>
+    );
   }
 
   function reprint(photoId: string) {
@@ -839,42 +923,7 @@ export default function AlbumPurchaseGuide({
               <button type="button" onClick={acceptYes} className="flex-1 bg-amber-500 text-stone-950 font-bold rounded-xl py-3">Тийм</button>
               <button type="button" onClick={() => { commit({ ...session, declined: true }); onClose(); }} className="flex-1 bg-white/10 rounded-xl py-3">Үгүй</button>
             </div>
-            {session.known && groupOwned(session.owned ?? []).length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm text-stone-200">Таны өмнө авсан {groupOwned(session.owned ?? []).length} зураг энд байна</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {groupOwned(session.owned ?? []).map(row => {
-                    const photo = photos.find(p => p.id === row.photoId);
-                    const expired = !!row.download && downloadExpired(row.download.expiresAt);
-                    return (
-                      <button key={row.photoId} type="button" onClick={() => { setPastId(row.photoId); setPastNote(''); }}
-                        className={`relative aspect-square overflow-hidden rounded-xl bg-stone-900 ${pastId === row.photoId ? 'ring-2 ring-amber-400' : ''}`}>
-                        {photo?.watermarked_url && <img src={photo.watermarked_url} alt="" className="h-full w-full object-cover" />}
-                        {expired && <span className="absolute inset-x-0 bottom-0 bg-black/70 text-[10px] py-0.5">Хугацаа дууссан</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-                {pastId && (() => {
-                  const row = groupOwned(session.owned ?? []).find(r => r.photoId === pastId);
-                  if (!row) return null;
-                  const expired = !!row.download && downloadExpired(row.download.expiresAt);
-                  return (
-                    <div className="flex flex-wrap gap-2">
-                      {row.download && (expired
-                        ? <p className="text-sm text-red-300">Татах хугацаа дууссан.</p>
-                        : <button type="button" disabled={dlBusy} onClick={() => redownload(row.download!)}
-                            className="rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm">Дахин татах</button>)}
-                      {printsOpen
-                        ? <button type="button" onClick={() => reprint(row.photoId)}
-                            className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
-                        : <p className="text-sm text-stone-400">Угаалгах хугацаа дууссан</p>}
-                    </div>
-                  );
-                })()}
-                {pastNote && <p className="text-sm text-stone-300">{pastNote}</p>}
-              </div>
-            )}
+            {session.known && groupOwned(session.owned ?? []).length > 0 && ownedPanel()}
           </div>
         )}
 
@@ -891,6 +940,19 @@ export default function AlbumPurchaseGuide({
 
         {session.step === 'browse' && (
           <>
+            <form onSubmit={e => { e.preventDefault(); void findByPhone(); }} className="flex items-center gap-2 mb-2 max-w-md">
+              <div className="flex-1 flex items-center rounded-xl border border-emerald-500/30 bg-emerald-500/5 focus-within:border-emerald-400/70">
+                <CheckCircle2 className="ml-3 w-4 h-4 text-emerald-400 shrink-0" />
+                <input value={phoneQ} onChange={e => { setPhoneQ(e.target.value.replace(/[^\d+]/g, '').slice(0, 12)); setPhoneMsg(''); }}
+                  type="tel" inputMode="numeric" enterKeyHint="search" placeholder="Төлсөн бол утасны дугаараар хайх"
+                  className="flex-1 min-w-0 bg-transparent px-2 py-2.5 text-sm text-white placeholder-stone-500 outline-none" />
+              </div>
+              <button type="submit" disabled={phoneBusy} className="shrink-0 flex items-center gap-1.5 bg-emerald-500 disabled:opacity-60 text-stone-950 font-semibold rounded-xl px-3 py-2.5 text-sm">
+                {phoneBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Хайх
+              </button>
+            </form>
+            {phoneMsg && <p className="text-xs text-emerald-200 mb-2">{phoneMsg}</p>}
+            {groupOwned(session.owned ?? []).length > 0 && <div className="mb-4 max-w-md">{ownedPanel()}</div>}
             <form onSubmit={e => { e.preventDefault(); findByNumber(); }} className="flex items-center gap-2 mb-3 max-w-md">
               <div className="flex-1 flex items-center rounded-xl border border-white/10 bg-white/5 focus-within:border-amber-500/60">
                 <span className="pl-3 text-stone-400 text-sm font-semibold">№</span>
@@ -918,7 +980,14 @@ export default function AlbumPurchaseGuide({
                     {numMap.get(p.id) && (
                       <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-10 bg-black/75 rounded px-1.5 text-[11px] font-bold">№{numMap.get(p.id)}</span>
                     )}
-                    <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded px-1.5 text-[11px]">{money(dlPrice(p, album, aiPrice))}</span>
+                    {ownedIds.has(p.id)
+                      ? <span role="button" tabIndex={0}
+                          onClick={e => { e.stopPropagation(); openOwned(p.id); }}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); openOwned(p.id); } }}
+                          className="absolute bottom-1.5 right-1.5 z-20 flex items-center gap-1 bg-emerald-500 text-stone-950 font-bold rounded-lg px-2 py-1 text-[11px] shadow-md">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Төлсөн · Татах
+                        </span>
+                      : <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded px-1.5 text-[11px]">{money(dlPrice(p, album, aiPrice))}</span>}
                   </button>
                 );
               })}

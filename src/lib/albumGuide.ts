@@ -401,6 +401,35 @@ export async function fetchLeadPurchases(albumId: string, token: string): Promis
   }
 }
 
+export interface PhonePurchaseRow extends OwnedPhoto { buyerName: string; paidAt: string; amount: number }
+
+/** Утасны дугаараар энэ цомогт төлсөн зургууд (өөр хөтчөөс). null = сервер алдаа */
+export async function fetchPhonePurchases(albumId: string, phone: string): Promise<PhonePurchaseRow[] | null> {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qpay/album-phone-purchases`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ albumId, phone }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => ({})) as { rows?: Record<string, unknown>[] };
+    const raw = Array.isArray(body.rows) ? body.rows : [];
+    const owned = readOwned(raw);
+    return owned.map((o, i) => ({
+      ...o,
+      buyerName: String(raw[i]?.buyerName ?? ''),
+      paidAt: String(raw[i]?.paidAt ?? ''),
+      amount: Number(raw[i]?.amount) || 0,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 export function mergeOwned(local: OwnedPhoto[], remote: OwnedPhoto[]): OwnedPhoto[] {
   const out = [...local];
   for (const item of remote) {

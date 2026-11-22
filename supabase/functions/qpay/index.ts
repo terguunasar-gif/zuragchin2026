@@ -825,6 +825,29 @@ Deno.serve(async (req: Request) => {
       return json({ isPaid: ok });
     }
 
+    // ── ЦОМОГ: утасны дугаараар энэ цомогт төлсөн зургууд (хөтөч солигдсон үед) ──
+    // Цомгийн линк нээлттэй тул нууцлал шаардахгүй — зөвхөн энэ цомгийн, төлөгдсөн мөрүүд.
+    if (req.method === "POST" && path === "/album-phone-purchases") {
+      const { albumId, phone } = await req.json() as { albumId?: string; phone?: string };
+      let d = String(phone ?? "").replace(/\D/g, "");
+      if (/^976\d{8}$/.test(d)) d = d.slice(3);
+      if (!albumId || !/^\d{8}$/.test(d)) return json({ error: "invalid_phone" }, 400);
+      const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data, error } = await db.from("purchases")
+        .select("photo_id, type, qpay_invoice_id, download_expires_at, buyer_name, created_at, gross_amount, photo_uploads(filename)")
+        .eq("album_id", albumId).eq("payment_status", "paid")
+        .in("buyer_phone", [d, `976${d}`, `+976${d}`])
+        .order("created_at", { ascending: false }).limit(500);
+      if (error) return json({ error: error.message }, 500);
+      // deno-lint-ignore no-explicit-any
+      const rows = (data ?? []).map((r: any) => ({
+        photoId: r.photo_id, invoiceId: r.qpay_invoice_id, type: r.type,
+        filename: (Array.isArray(r.photo_uploads) ? r.photo_uploads[0]?.filename : r.photo_uploads?.filename) ?? "",
+        expiresAt: r.download_expires_at ?? null, buyerName: r.buyer_name ?? "", paidAt: r.created_at, amount: Number(r.gross_amount) || 0,
+      })).filter((r: { photoId?: string; invoiceId?: string }) => r.photoId && r.invoiceId);
+      return json({ rows });
+    }
+
     // ── УГААЛГАХ ЗАХИАЛГА ХЭВЛЭХ: эх зургийн холбоос + төлөв «Угаасан» + худалдан авагчид SMS ──
     if (req.method === "POST" && path === "/print-job") {
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
