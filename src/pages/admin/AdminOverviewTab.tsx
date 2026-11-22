@@ -10,6 +10,7 @@ import { QPAY_FN_URL } from '../../lib/offers';
 import { printPurchase } from '../../lib/printPhoto';
 import type { PhotoAdjust } from '../../lib/photoAdjust';
 import PrintEditor from '../../components/PrintEditor';
+import AutoPrintBar from '../../components/AutoPrintBar';
 import { reloadIfOutdated } from '../../lib/appVersion';
 
 interface Stats {
@@ -237,6 +238,21 @@ export default function AdminOverviewTab() {
           <p className="text-white text-2xl font-bold">{recentPurchases.length > 0 ? '20+' : '0'}</p>
         </div>
       </div>
+
+      {/* ── Автомат принт (хэвлэдэг компьютер дээр) ── */}
+      <AutoPrintBar
+        storageKey="zm_autoprint_admin"
+        fetchPending={async () => {
+          const { data, error } = await supabase.from('purchases')
+            .select('id,buyer_name,buyer_phone,print_size,created_at,photo_uploads(filename)')
+            .eq('type', 'print').eq('payment_status', 'paid').eq('print_status', 'pending')
+            .order('created_at', { ascending: false }).limit(100);
+          if (error) throw error;
+          return ((data ?? []) as unknown as { id: string; buyer_name: string | null; buyer_phone: string | null; print_size: string | null; photo_uploads: { filename: string } | null }[])
+            .map(p => ({ id: p.id, label: `${p.photo_uploads?.filename ?? 'зураг'} · ${(p.print_size ?? '').replace('x', '×')} · ${p.buyer_name || p.buyer_phone || ''}` }));
+        }}
+        onPrinted={id => setRecentPurchases(prev => prev.map(x => (x.id === id ? { ...x, print_status: 'printed' } : x)))}
+      />
 
       {/* ── Recent purchases ── */}
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">

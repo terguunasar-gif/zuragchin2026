@@ -2,7 +2,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { hasRole } from '../lib/supabase';
-import SalesPanel, { useMySales } from '../components/SalesPanel';
+import SalesPanel, { useMySales, type SaleRow } from '../components/SalesPanel';
+import AutoPrintBar from '../components/AutoPrintBar';
+import { supabase } from '../lib/supabase';
 
 /**
  * Угаалгах захиалгатай зургуудын хуудас (/dashboard/print-orders?album=<id>).
@@ -37,6 +39,20 @@ export default function PrintOrdersPage() {
         <p className="text-stone-500 text-xs mt-6 -mb-4">
           Зураг дээр дарж томоор харна. «Засах»-аар гэрэл, өнгийг тохируулаад «Принт» дарна. Хүлээлгэж өгсний дараа төлвийг «Хүлээлгэж өгсөн» болгоно.
         </p>
+        <div className="mt-8 -mb-4">
+          <AutoPrintBar
+            storageKey={`zm_autoprint_${mode}`}
+            fetchPending={async () => {
+              const { data, error } = await supabase.rpc('my_sales');
+              if (error) throw error;
+              return ((data ?? []) as SaleRow[])
+                .filter(r => r.type === 'print' && r.print_status === 'pending' && (mode === 'organizer' ? r.is_my_album : r.is_my_photo))
+                .sort((a, b) => b.created_at.localeCompare(a.created_at))
+                .map(r => ({ id: r.id, label: `${r.filename ?? 'зураг'} · ${r.print_size.replace('x', '×')} · ${r.buyer_name || r.buyer_phone || ''}` }));
+            }}
+            onPrinted={() => { void sales.reload(); }}
+          />
+        </div>
         <SalesPanel mode={mode} sales={sales} initialFilter="print" initialAlbumId={albumId} bigThumbs hideSummary />
       </main>
     </div>

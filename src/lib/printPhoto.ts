@@ -41,37 +41,52 @@ export async function savePrintAdjust(purchaseId: string, adjust: PhotoAdjust & 
   if (!res.ok) throw new Error(data.error || 'Хадгалж чадсангүй');
 }
 
-/** adjustOverride: «Засах» цонхноос шууд хэвлэх үед (хадгалагдахыг хүлээхгүй) */
-export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAdjust & PrintCrop): Promise<PrintJobResult> {
-  const win = window.open('', '_blank');
-  if (win) win.document.write('<p style="font-family:sans-serif;padding:24px">Зураг бэлтгэж байна…</p>');
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${QPAY_FN_URL}/print-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: ANON_KEY },
-      body: JSON.stringify({ purchaseId }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
-    const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
-    // Цомгийн лого, мэндчилгээ болон жижиг «Zuragchin.mn» тэмдгийг хэвлэх зурагт шингээнэ
-    const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {}, data.baseAdjust ?? {});
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
+type PrintJobData = { signedUrl: string; filename: string; size: string; brand?: string; adjust?: PhotoAdjust & PrintCrop; baseAdjust?: PhotoAdjust & PrintCrop; sms: SmsResult; smsText?: string; buyerPhone?: string };
+
+/** Сервер: эх зургийн холбоос + төлөв «Угаасан» + (нэг удаа) SMS */
+async function requestPrintJob(purchaseId: string): Promise<PrintJobData> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${QPAY_FN_URL}/print-job`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}`, apikey: ANON_KEY },
+    body: JSON.stringify({ purchaseId }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
+  return data as PrintJobData;
+}
+
+/** Цаасны хэмжээтэй хэвлэх HTML. doneScript — хэвлэсний дараа ажиллах JS (автомат принтэд) */
+async function buildPrintHtml(data: PrintJobData, adjustOverride?: PhotoAdjust & PrintCrop, doneScript = ''): Promise<string> {
+  const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
+  // Цомгийн лого, мэндчилгээ болон жижиг «Zuragchin.mn» тэмдгийг хэвлэх зурагт шингээнэ
+  const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {}, data.baseAdjust ?? {});
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
 <style id="pg">@page{size:${w}cm ${h}cm;margin:0}</style>
 <style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}cm;height:${h}cm;object-fit:contain}
 @media screen{body{display:flex;justify-content:center;padding:16px;background:#444}img{box-shadow:0 4px 24px rgba(0,0,0,.5)}}</style>
 </head><body><img id="im" src="${imgSrc}">
 <script>
 var im=document.getElementById('im');
+im.onerror=function(){${doneScript}};
 im.onload=function(){
   if(im.naturalWidth>im.naturalHeight){ // хэвтээ зураг — цаасыг хэвтээгээр
     document.getElementById('pg').textContent='@page{size:${h}cm ${w}cm;margin:0}';
     im.style.width='${h}cm'; im.style.height='${w}cm';
   }
-  setTimeout(function(){window.focus();window.print();},300);
+  setTimeout(function(){window.focus();window.print();${doneScript}},300);
 };
 </script></body></html>`;
+  return html;
+}
+
+/** adjustOverride: «Засах» цонхноос шууд хэвлэх үед (хадгалагдахыг хүлээхгүй) */
+export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAdjust & PrintCrop): Promise<PrintJobResult> {
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<p style="font-family:sans-serif;padding:24px">Зураг бэлтгэж байна…</p>');
+  try {
+    const data = await requestPrintJob(purchaseId);
+    const html = await buildPrintHtml(data, adjustOverride);
     if (win) { win.document.open(); win.document.write(html); win.document.close(); }
     else window.open(data.signedUrl, '_blank');
     return { sms: data.sms, smsText: data.smsText ?? '', buyerPhone: data.buyerPhone ?? '' };
@@ -79,6 +94,37 @@ im.onload=function(){
     win?.close();
     throw e;
   }
+}
+
+/**
+ * Автомат принт: товч дарахгүйгээр (popup-гүй) нууц iframe дотор хэвлэнэ.
+ * Chrome-ыг --kiosk-printing-тэй нээсэн бол цонх асуулгүй анхдагч принтер рүү шууд гарна.
+ * Хэвлэх цонх хаагдсаны дараа (эсвэл 3 мин) дуусна — дараагийн захиалга түүний дараа.
+ */
+export async function printPurchaseSilently(purchaseId: string): Promise<PrintJobResult> {
+  const data = await requestPrintJob(purchaseId);
+  const token = `zmprint-${purchaseId}-${Date.now()}`;
+  const html = await buildPrintHtml(data, undefined, `parent.postMessage(${JSON.stringify(token)},'*');`);
+  await new Promise<void>((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+    let timer = 0;
+    const finish = (err?: Error) => {
+      window.removeEventListener('message', onMsg);
+      window.clearTimeout(timer);
+      // Хэвлэгч өгөгдлөө авч дуусахыг бага зэрэг хүлээгээд устгана
+      window.setTimeout(() => frame.remove(), 5000);
+      if (err) reject(err); else resolve();
+    };
+    const onMsg = (e: MessageEvent) => { if (e.data === token) finish(); };
+    window.addEventListener('message', onMsg);
+    timer = window.setTimeout(() => finish(), 180000);
+    frame.onerror = () => finish(new Error('Хэвлэх хуудас ачаалсангүй'));
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+  });
+  return { sms: data.sms, smsText: data.smsText ?? '', buyerPhone: data.buyerPhone ?? '' };
 }
 
 async function withBrand(url: string, raw: string, filename: string, size: string, adjust: PhotoAdjust & PrintCrop = {}, base: PhotoAdjust & PrintCrop = {}): Promise<string> {
