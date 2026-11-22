@@ -45,12 +45,35 @@ export function chromeIntentUrl(href: string): string {
   return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
 }
 
+/**
+ * Үндсэн хөтөч рүү автоматаар гаргах апп доторх хөтчүүд:
+ * сошиал (Messenger, Facebook, Instagram, Line, KakaoTalk) + Google апп/Lens (QR), Telegram, TikTok.
+ * Банкны апп зэрэг ерөнхий WebView энд орохгүй (QPay-ийн урсгалыг эвдэхгүйн тулд).
+ */
+export function autoOpenAppName(ua: string): string | null {
+  const social = socialInAppName(ua);
+  if (social) return social;
+  if (/GSA\//.test(ua)) return 'Google';
+  if (/Telegram/i.test(ua)) return 'Telegram';
+  if (/musical_ly|BytedanceWebview|TikTok/i.test(ua)) return 'TikTok';
+  return null;
+}
+
+/** iPhone/iPad-ийн iOS үндсэн хувилбар (ж: 17). Олдохгүй бол 0. */
+export function iosMajorVersion(ua: string): number {
+  const m = ua.match(/(?:iPhone|iPad|iPod)[^)]*?OS (\d+)[_.]/);
+  return m ? Number(m[1]) : 0;
+}
+
 /** QPay-ийн буцах хуудас, киоск, дэлгэцийн горимыг автоматаар бүү соль. */
 export function shouldAutoOpenChrome(opts: { ua: string; pathname: string; search: string; alreadyTried: boolean }): boolean {
   if (opts.alreadyTried) return false;
   if (new URLSearchParams(opts.search).get('stay') === '1') return false;
-  if (!/Android/i.test(opts.ua)) return false;
-  if (!socialInAppName(opts.ua)) return false;
+  const android = /Android/i.test(opts.ua);
+  // iPhone: x-safari-https:// холбоос iOS 17+ дээр л ажилладаг
+  const ios = /iPhone|iPad|iPod/i.test(opts.ua) && iosMajorVersion(opts.ua) >= 17;
+  if (!android && !ios) return false;
+  if (!autoOpenAppName(opts.ua)) return false;
   // Баримт, санал, бүүт, «Миний худалдан авалт» дээр QPay-ээс буцаж ирсэн төлбөрийг энэ хөтөч дээр нь шалгана.
   if (/^\/(?:receipt|offer|booth|my-purchases)(?:\/|$)/.test(opts.pathname)) return false;
   if (/^\/album\/[^/]+\/(?:kiosk|screen)\/?$/.test(opts.pathname)) return false;
@@ -204,7 +227,7 @@ export function openInSafariUrl(href = typeof location !== 'undefined' ? locatio
 const AUTO_KEY = 'zuragchin_iab_auto';
 
 /**
- * Апп доторх хөтчөөр орсон бол нэг удаа автоматаар Chrome / Safari руу шилжүүлэхийг оролдоно.
+ * Апп доторх хөтчөөр орсон бол нэг удаа автоматаар Chrome (Android) / Safari (iOS 17+) руу шилжүүлэхийг оролдоно.
  * Шилжиж чадвал true буцаана (оролдлого хийсэн). ?stay=1 параметртэй бол оролдохгүй.
  */
 export function tryAutoOpenInBrowser(): boolean {
@@ -214,6 +237,6 @@ export function tryAutoOpenInBrowser(): boolean {
   try { already = !!sessionStorage.getItem(AUTO_KEY); } catch { /* хувийн горим */ }
   if (!shouldAutoOpenChrome({ ua, pathname: location.pathname, search: location.search, alreadyTried: already })) return false;
   try { sessionStorage.setItem(AUTO_KEY, '1'); } catch { /* хувийн горим */ }
-  location.href = openInBrowserUrl();
+  location.href = /Android/i.test(ua) ? openInBrowserUrl() : openInSafariUrl();
   return true;
 }

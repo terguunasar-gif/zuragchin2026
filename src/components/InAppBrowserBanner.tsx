@@ -2,20 +2,20 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Copy, ExternalLink, X } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
-import { copyText, isAndroid, isIOS, openInBrowserUrl, socialInAppName, tryAutoOpenInBrowser } from '../lib/browserEnv';
+import { autoOpenAppName, copyText, iosMajorVersion, isAndroid, isIOS, openInBrowserUrl, openInSafariUrl, tryAutoOpenInBrowser } from '../lib/browserEnv';
 
 const HIDE_KEY = 'zuragchin_iab_hide';
 
 /**
- * Facebook/Messenger/Instagram (болон Line, KakaoTalk) доторх хөтчөөс гаргана.
+ * Messenger/Facebook/Instagram, Line, KakaoTalk, Google апп (Lens QR), Telegram, TikTok доторх хөтчөөс гаргана.
  * Android: нэг удаа Chrome intent. Үлдвэл дээд баннер «Хөтчөөр нээх».
- * iOS: автомат шилжүүлэг байхгүй, заавар + холбоос хуулах.
+ * iOS 17+: нэг удаа Safari (x-safari-https). Үлдвэл «Safari-аар нээх» товч + заавар + холбоос хуулах.
  * QPay-ийн буцах хуудас (/receipt, /offer) болон киоск/дэлгэцийг автоматаар сольдоггүй.
  */
 export default function InAppBrowserBanner() {
   const { t } = useI18n();
   const { pathname } = useLocation();
-  const app = typeof navigator !== 'undefined' ? socialInAppName(navigator.userAgent || '') : null;
+  const app = typeof navigator !== 'undefined' ? autoOpenAppName(navigator.userAgent || '') : null;
   const [hidden, setHidden] = useState(() => {
     try { return sessionStorage.getItem(HIDE_KEY) === '1'; } catch { return false; }
   });
@@ -49,6 +49,12 @@ export default function InAppBrowserBanner() {
               </a>
             ) : (
               <>
+                {iosMajorVersion(navigator.userAgent || '') >= 17 && (
+                  <a href={openInSafariUrl()}
+                    className="mb-2 flex w-full items-center justify-center gap-2 bg-stone-950 text-white font-extrabold text-base rounded-xl px-4 py-3">
+                    <ExternalLink className="w-5 h-5" /> {t('Safari-аар нээх')}
+                  </a>
+                )}
                 <p className="text-sm font-semibold leading-snug pr-6">
                   {t('Баруун дээд буланд ••• дараад ‘Браузерт нээх’ / ‘Open in Safari’ сонгоно уу')}
                 </p>
@@ -65,7 +71,7 @@ export default function InAppBrowserBanner() {
           </button>
         </div>
       </div>
-      <div className={isIOS || !isAndroid ? 'h-28' : 'h-[4.5rem]'} aria-hidden />
+      <div className={isIOS || !isAndroid ? (iosMajorVersion(navigator.userAgent || '') >= 17 ? 'h-44' : 'h-28') : 'h-[4.5rem]'} aria-hidden />
     </>
   );
 }
