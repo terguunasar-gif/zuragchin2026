@@ -98,7 +98,20 @@ export default function AlbumKioskPage() {
 
   const shown = useMemo(() => photos.filter(p =>
     folder === 'all' ? true : folder === 'ai' ? p.source === 'ai_booth' : p.folder_id === folder), [photos, folder]);
-  useEffect(() => { setIdx(0); setMark(null); }, [folder]);
+  // Дугаар цомог даяар давтагдахгүй (хавтас бүрт 1-ээс биш) — утас, цомгийн хуудастай ижил
+  const numOf = useMemo(() => new Map(photos.map((p, i) => [p.id, i + 1])), [photos]);
+  const folderCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of photos) if (p.folder_id) m.set(p.folder_id, (m.get(p.folder_id) ?? 0) + 1);
+    return m;
+  }, [photos]);
+  const pendingJump = useRef<string | null>(null);
+  useEffect(() => {
+    const target = pendingJump.current;
+    pendingJump.current = null;
+    const i = target ? shown.findIndex(p => p.id === target) : -1;
+    if (i >= 0) { setIdx(i); setMark(i); } else { setIdx(0); setMark(null); }
+  }, [folder]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const count = shown.length;
   const safeIdx = count ? Math.min(Math.max(idx, 0), count - 1) : 0;
@@ -183,8 +196,14 @@ export default function AlbumKioskPage() {
   const [jump, setJump] = useState('');
   const doJump = () => {
     const n = parseInt(jump, 10);
-    if (n >= 1 && n <= count) { setIdx(n - 1); setMark(n - 1); }
     setJump('');
+    const target = photos[n - 1];
+    if (!target) return;
+    const i = shown.findIndex(p => p.id === target.id);
+    if (i >= 0) { setIdx(i); setMark(i); return; }
+    // Өөр хавтсанд байна — «Бүх зураг» руу шилжээд тэр зураг руу очно
+    pendingJump.current = target.id;
+    setFolder('all');
   };
 
   const setFolder = (v: string) => {
@@ -234,14 +253,14 @@ export default function AlbumKioskPage() {
         <div className="flex-1" />
         {multi && count > 0 && (
           <span className="tabular-nums font-bold whitespace-nowrap text-white">
-            №{pageStart + 1}{pageEnd > pageStart + 1 ? `–${pageEnd}` : ''}<span className="text-stone-500 font-semibold">/{count}</span>
+            №{numOf.get(shown[pageStart]?.id) ?? pageStart + 1}{pageEnd > pageStart + 1 ? `–${numOf.get(shown[pageEnd - 1]?.id) ?? pageEnd}` : ''}<span className="text-stone-500 font-semibold"> · {count} зураг</span>
           </span>
         )}
         <select value={folder} onChange={e => setFolder(e.target.value)}
           className="bg-stone-900 border border-white/10 rounded-lg px-2 py-1.5 outline-none">
-          <option value="all">Бүх зураг</option>
+          <option value="all">Бүх зураг ({photos.length})</option>
           {hasAi && <option value="ai">✨ AI бүүт</option>}
-          {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          {folders.map(f => <option key={f.id} value={f.id}>{f.name} ({folderCount.get(f.id) ?? 0})</option>)}
         </select>
         <form onSubmit={e => { e.preventDefault(); doJump(); }} className="flex items-center gap-1">
           <input value={jump} onChange={e => setJump(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="№"
@@ -285,7 +304,7 @@ export default function AlbumKioskPage() {
                 <KioskTile
                   key={p.id}
                   photo={p}
-                  num={index + 1}
+                  num={numOf.get(p.id) ?? index + 1}
                   perPage={layout}
                   marked={mark === index}
                   onOpen={() => openSingle(index)}
@@ -318,7 +337,7 @@ export default function AlbumKioskPage() {
               <ChevronRight className="w-8 h-8" />
             </button>
             <span className="absolute left-3 top-3 bg-black/70 border border-white/15 rounded-xl px-3 py-1.5 text-lg md:text-2xl font-extrabold">
-              №{safeIdx + 1}<span className="text-stone-400 text-sm md:text-base font-semibold"> / {count}</span>
+              №{numOf.get(cur.id) ?? safeIdx + 1}<span className="text-stone-400 text-sm md:text-base font-semibold"> · {safeIdx + 1}/{count}</span>
             </span>
           </div>
 
@@ -354,7 +373,7 @@ export default function AlbumKioskPage() {
               <button key={p.id} onClick={() => { setIdx(i); setMark(i); setGrid(false); }}
                 className={`relative aspect-square rounded-lg overflow-hidden bg-stone-900 ${i === safeIdx ? 'ring-4 ring-amber-400' : ''}`}>
                 <img src={p.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                <span className="absolute left-1 bottom-1 bg-black/70 rounded px-1.5 text-xs font-bold">{i + 1}</span>
+                <span className="absolute left-1 bottom-1 bg-black/70 rounded px-1.5 text-xs font-bold">{numOf.get(p.id) ?? i + 1}</span>
               </button>
             ))}
           </div>

@@ -276,10 +276,10 @@ export default function AlbumScreenPage() {
           <button onClick={() => navigate(-1)} title="Буцах" className="p-2 rounded-lg hover:bg-white/10"><ArrowLeft className="w-4 h-4" /></button>
           <select value={folder} onChange={e => set('f', e.target.value)}
             className="bg-stone-900 border border-white/10 rounded-lg px-2 py-1.5 outline-none">
-            <option value="all">Бүх зураг</option>
+            <option value="all">Бүх зураг ({photos.filter(p => !p.video).length})</option>
             {hasAi && <option value="ai">✨ Зөвхөн AI бүүт</option>}
             {hasVideo && <option value="videos">🎬 Зөвхөн AI видео</option>}
-            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            {folders.map(f => <option key={f.id} value={f.id}>{f.name} ({photos.filter(p => p.folder_id === f.id).length})</option>)}
           </select>
           <div className="flex rounded-lg overflow-hidden border border-white/10">
             {SPEEDS.map(s => (

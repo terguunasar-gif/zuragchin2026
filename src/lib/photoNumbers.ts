@@ -1,21 +1,16 @@
 /**
  * Зургийн дугаар (№) — «Томоор үзүүлэх дэлгэц» (AlbumKioskPage)-тэй ЯГ ижил дүрмээр.
- * Дэлгэц дээр «Орой» хавтсанд №146 гэж харсан зургийг утсан дээр мөн «Орой» хавтсанд №146-аар олно.
  *  - Зургууд оруулсан дарааллаар (created_at өсөхөөр) — дуудагч тэр дарааллаар өгнө.
- *  - «Бүгд» (all): бүх зургийн дунд 1-ээс.
- *  - Хавтас: тухайн хавтсын зургуудын дунд 1-ээс.
- *  - «AI бүүт» (ai): AI бүүтийн зургуудын дунд 1-ээс.
- *  - Бусад таб (Миний зургууд, Бусад, …): «Бүгд»-ийн дугаар.
+ *  - Дугаар нь ЦОМОГ ДОТРОО давтагдахгүй: хэдэн ч хавтас үүсгэсэн, аль ч таб (хавтас, AI бүүт, …)
+ *    дээр нэг зураг үргэлж нэг ижил дугаартай (бүх зургийн дунд 1-ээс).
+ *    Өмнө нь хавтас бүрт 1-ээс эхэлдэг байсан тул өөр хавтасны зурагтай давхцдаг байв.
+ *  - tab параметрийг хуучин дуудлагуудтай нийцүүлэх үүднээс үлдээсэн (дугаарт нөлөөлөхгүй).
  */
 export interface NumberedPhoto { id: string; folder_id?: string | null; source?: string | null }
 
-export function photoNumberMap(photos: NumberedPhoto[], tab: string): Map<string, number> {
-  const isFolderTab = tab !== 'all' && tab !== 'ai' && photos.some(p => p.folder_id === tab);
-  const list = tab === 'ai'
-    ? photos.filter(p => p.source === 'ai_booth')
-    : isFolderTab ? photos.filter(p => p.folder_id === tab) : photos;
+export function photoNumberMap(photos: NumberedPhoto[], _tab?: string): Map<string, number> { // eslint-disable-line @typescript-eslint/no-unused-vars
   const m = new Map<string, number>();
-  list.forEach((p, i) => m.set(p.id, i + 1));
+  photos.forEach((p, i) => m.set(p.id, i + 1));
   return m;
 }
 

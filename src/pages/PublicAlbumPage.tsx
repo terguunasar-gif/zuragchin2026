@@ -731,8 +731,8 @@ export default function PublicAlbumPage() {
     : visiblePhotos;
   const [renderLimit, setRenderLimit] = useState(GRID_PAGE);
   useEffect(() => { setRenderLimit(GRID_PAGE); }, [folderFilter, phFilter, album?.id]);
-  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (хавтас бүрт 1-ээс)
-  const numMap = useMemo(() => photoNumberMap(photos, folderFilter), [photos, folderFilter]);
+  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (цомог даяар давтагдахгүй)
+  const numMap = useMemo(() => photoNumberMap(photos), [photos]);
   const [numQ, setNumQ] = useState('');
   const [numErr, setNumErr] = useState('');
   const findByNumber = () => {
@@ -743,6 +743,8 @@ export default function PublicAlbumPage() {
     if (!id) { setNumErr(t('№{n} зураг энэ хэсэгт олдсонгүй', { n })); return; }
     setNumErr('');
     if (phFilter && photos.find(p => p.id === id)?.photographer_id !== phFilter) setPhFilter('');
+    // Дугаар цомог даяар давтагдахгүй — өөр хавтсанд байвал «Бүгд» таб руу шилжинэ
+    if (!visiblePhotos.some(p => p.id === id)) setFolderFilter('all');
     setView('large');
     setFocusPhoto(id);
     const target = id;

@@ -398,8 +398,14 @@ export default function AlbumPurchaseGuide({
   const visible = session.folderId
     ? photos.filter(p => p.folder_id === session.folderId)
     : photos;
-  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (хавтас бүрт 1-ээс)
-  const numMap = useMemo(() => photoNumberMap(photos, session.folderId ?? 'all'), [photos, session.folderId]);
+  // Зургийн дугаар (№) — томоор үзүүлэх дэлгэцийнхтэй ижил (цомог даяар давтагдахгүй)
+  const numMap = useMemo(() => photoNumberMap(photos), [photos]);
+  // Хавтас бүрийн зургийн тоо («Шагнал 666»)
+  const folderCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of photos) if (p.folder_id) m.set(p.folder_id, (m.get(p.folder_id) ?? 0) + 1);
+    return m;
+  }, [photos]);
   const [numQ, setNumQ] = useState('');
   // Утасны дугаараар төлсөн зургаа олох (хөтөч солигдсон, эсвэл өөр хүний утсаар)
   const [phoneQ, setPhoneQ] = useState(() => loadGuide(album.id).phone || '');
@@ -447,8 +453,10 @@ export default function AlbumPurchaseGuide({
     if (!n) return;
     let id: string | null = null;
     for (const [k, v] of numMap) if (v === n) { id = k; break; }
-    if (!id) { setNumErr(`№${n} зураг энэ хэсэгт олдсонгүй`); return; }
+    if (!id) { setNumErr(`№${n} зураг энэ цомогт олдсонгүй`); return; }
     setNumErr('');
+    // Өөр хавтсанд байвал «Бүгд» руу шилжинэ (дугаар цомог даяар давтагдахгүй)
+    if (!visible.some(p => p.id === id)) commit({ ...session, folderId: null });
     setFlashId(id);
     const target = id;
     setTimeout(() => document.getElementById(`g-photo-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
@@ -999,12 +1007,12 @@ export default function AlbumPurchaseGuide({
         <div className="flex gap-1.5 overflow-x-auto flex-1 min-w-0 [scrollbar-width:none]">
           {named.length > 0 && <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === null ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
-            Бүгд
+            Бүгд<span className="ml-1 opacity-70">{photos.length}</span>
           </button>}
           {named.map(f => (
             <button key={f.id} type="button" onClick={() => openFolder(f.id, f.name)}
               className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${session.folderId === f.id ? 'bg-amber-500 text-stone-950' : 'bg-white/10 text-white'}`}>
-              {f.name}
+              {f.name}<span className="ml-1 opacity-70">{folderCount.get(f.id) ?? 0}</span>
             </button>
           ))}
         </div>
@@ -1055,10 +1063,10 @@ export default function AlbumPurchaseGuide({
           <div className="flex flex-wrap gap-2 max-w-lg mx-auto">
             {named.map(f => (
               <button key={f.id} type="button" onClick={() => openFolder(f.id, f.name)}
-                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-full px-4 py-2 text-sm">{f.name}</button>
+                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-full px-4 py-2 text-sm">{f.name}<span className="ml-1 opacity-70">{folderCount.get(f.id) ?? 0}</span></button>
             ))}
             <button type="button" onClick={() => openFolder(null, 'Бүх зураг')}
-              className="bg-amber-500/20 border border-amber-500/40 rounded-full px-4 py-2 text-sm">Бүгдийг</button>
+              className="bg-amber-500/20 border border-amber-500/40 rounded-full px-4 py-2 text-sm">Бүгдийг<span className="ml-1 opacity-70">{photos.length}</span></button>
           </div>
         )}
 
@@ -1122,7 +1130,7 @@ export default function AlbumPurchaseGuide({
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {others.map(f => (
                     <button key={f.id} type="button" onClick={() => openFolder(f.id, f.name)}
-                      className="shrink-0 bg-white/10 border border-white/10 rounded-2xl px-4 py-3 text-sm">{f.name}</button>
+                      className="shrink-0 bg-white/10 border border-white/10 rounded-2xl px-4 py-3 text-sm">{f.name}<span className="ml-1 opacity-70">{folderCount.get(f.id) ?? 0}</span></button>
                   ))}
                 </div>
               </div>

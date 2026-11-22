@@ -79,6 +79,8 @@ export default function PhotoUploadPage() {
   const [files, setFiles] = useState<FileEntry[]>([]);
   // Давхардал шалгах: цомогт байгаа файлын нэрс, дараалалд байгаа нэр+хэмжээ
   const existingNamesRef = useRef<Set<string>>(new Set());
+  // Хавтас бүрт цомогт байгаа зургийн тоо («Шагнал 666»)
+  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
   const queueKeysRef = useRef<Set<string>>(new Set());
   const [skippedDup, setSkippedDup] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -190,12 +192,18 @@ export default function PhotoUploadPage() {
     if (!album) return;
     (async () => {
       const names = new Set<string>();
+      const counts: Record<string, number> = {};
       for (let from = 0; from < 20000; from += 1000) {
-        const { data } = await supabase.from('photo_uploads').select('filename')
+        const { data } = await supabase.from('photo_uploads').select('filename, folder_id')
           .eq('album_id', album.id).range(from, from + 999);
-        (data ?? []).forEach(r => r.filename && names.add(String(r.filename).toLowerCase()));
+        (data ?? []).forEach(r => {
+          if (r.filename) names.add(String(r.filename).toLowerCase());
+          const k = (r as { folder_id?: string | null }).folder_id || '';
+          counts[k] = (counts[k] ?? 0) + 1;
+        });
         if (!data || data.length < 1000) break;
       }
+      setFolderCounts(counts);
       existingNamesRef.current = names;
       setFiles(prev => prev.map(f => ({ ...f, dupInAlbum: f.status === 'idle' && names.has(f.file.name.toLowerCase()) })));
     })();
@@ -242,7 +250,10 @@ export default function PhotoUploadPage() {
   const addMoreRef = useRef<HTMLInputElement>(null);
   function resetQueue() {
     // Дөнгөж оруулсан зургууд одоо цомогт байгаа — дахин сонговол давхардал гэж тэмдэглэнэ
-    files.forEach(e => { if (e.status === 'done') existingNamesRef.current.add(e.file.name.toLowerCase()); URL.revokeObjectURL(e.previewUrl); });
+    const done = files.filter(e => e.status === 'done');
+    done.forEach(e => existingNamesRef.current.add(e.file.name.toLowerCase()));
+    files.forEach(e => URL.revokeObjectURL(e.previewUrl));
+    if (done.length) setFolderCounts(c => ({ ...c, [folderId || '']: (c[folderId || ''] ?? 0) + done.length }));
     setFiles([]); queueKeysRef.current = new Set(); setChecked(new Set()); setSkippedDup(0); setUploadStarted(false); setSuccessCount(0);
   }
   const onAddMore = (e: ChangeEvent<HTMLInputElement>) => {
@@ -629,12 +640,12 @@ export default function PhotoUploadPage() {
                 <div className="flex flex-wrap gap-2 mb-3">
                   <button type="button" onClick={() => setFolderId('')}
                     className={`px-3 py-1.5 rounded-lg text-sm border ${folderId === '' ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-white/10 text-stone-300 hover:border-white/30'}`}>
-                    Хавтасгүй
+                    Хавтасгүй{folderCounts[''] ? <span className="ml-1 opacity-70">{folderCounts['']}</span> : null}
                   </button>
                   {folders.map(f => (
                     <button key={f.id} type="button" onClick={() => setFolderId(f.id)}
                       className={`px-3 py-1.5 rounded-lg text-sm border ${folderId === f.id ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-white/10 text-stone-300 hover:border-white/30'}`}>
-                      {f.name}
+                      {f.name}<span className="ml-1 opacity-70">{folderCounts[f.id] ?? 0}</span>
                     </button>
                   ))}
                 </div>
