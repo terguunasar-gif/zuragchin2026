@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { hasRole } from '../lib/supabase';
 import SalesPanel, { useMySales, type SaleRow } from '../components/SalesPanel';
 import AutoPrintBar from '../components/AutoPrintBar';
+import { readAutoPrintAlbums } from '../lib/autoPrintAlbums';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -43,12 +44,14 @@ export default function PrintOrdersPage() {
           <AutoPrintBar
             storageKey={`zm_autoprint_${mode}`}
             fetchPending={async () => {
+              const albums = await readAutoPrintAlbums();
+              if (!albums.size) return [];
               const { data, error } = await supabase.rpc('my_sales');
               if (error) throw error;
               return ((data ?? []) as SaleRow[])
-                .filter(r => r.type === 'print' && r.print_status === 'pending' && (mode === 'organizer' ? r.is_my_album : r.is_my_photo))
+                .filter(r => r.type === 'print' && r.print_status === 'pending' && albums.has(r.album_id) && (mode === 'organizer' ? r.is_my_album : r.is_my_photo))
                 .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                .map(r => ({ id: r.id, label: `${r.filename ?? 'зураг'} · ${r.print_size.replace('x', '×')} · ${r.buyer_name || r.buyer_phone || ''}` }));
+                .map(r => ({ id: r.id, createdAt: r.created_at, label: `${r.filename ?? 'зураг'} · ${r.print_size.replace('x', '×')} · ${r.buyer_name || r.buyer_phone || ''}` }));
             }}
             onPrinted={() => { void sales.reload(); }}
           />

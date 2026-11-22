@@ -11,6 +11,7 @@ import { printPurchase } from '../../lib/printPhoto';
 import type { PhotoAdjust } from '../../lib/photoAdjust';
 import PrintEditor from '../../components/PrintEditor';
 import AutoPrintBar from '../../components/AutoPrintBar';
+import { readAutoPrintAlbums } from '../../lib/autoPrintAlbums';
 import { reloadIfOutdated } from '../../lib/appVersion';
 
 interface Stats {
@@ -58,6 +59,9 @@ export default function AdminOverviewTab() {
   // Угаах захиалгыг (принтер гацсан үед дахин) хэвлэх
   const [printing, setPrinting] = useState<string | null>(null);
   const [editing, setEditing] = useState<RecentPurchase | null>(null);
+  // Авто принт асаалттай цомгийн тоо (null = ачаалж байна)
+  const [apAlbums, setApAlbums] = useState<number | null>(null);
+  useEffect(() => { readAutoPrintAlbums().then(s => setApAlbums(s.size)).catch(() => {}); }, []);
 
   async function doPrint(p: RecentPurchase, adjust?: PhotoAdjust) {
     if (reloadIfOutdated('Принт')) return;
@@ -243,15 +247,22 @@ export default function AdminOverviewTab() {
       <AutoPrintBar
         storageKey="zm_autoprint_admin"
         fetchPending={async () => {
+          const albums = await readAutoPrintAlbums();
+          setApAlbums(albums.size);
+          if (!albums.size) return [];
           const { data, error } = await supabase.from('purchases')
             .select('id,buyer_name,buyer_phone,print_size,created_at,photo_uploads(filename)')
             .eq('type', 'print').eq('payment_status', 'paid').eq('print_status', 'pending')
+            .in('album_id', [...albums])
             .order('created_at', { ascending: false }).limit(100);
           if (error) throw error;
-          return ((data ?? []) as unknown as { id: string; buyer_name: string | null; buyer_phone: string | null; print_size: string | null; photo_uploads: { filename: string } | null }[])
-            .map(p => ({ id: p.id, label: `${p.photo_uploads?.filename ?? 'зураг'} · ${(p.print_size ?? '').replace('x', '×')} · ${p.buyer_name || p.buyer_phone || ''}` }));
+          return ((data ?? []) as unknown as { id: string; buyer_name: string | null; buyer_phone: string | null; print_size: string | null; created_at: string; photo_uploads: { filename: string } | null }[])
+            .map(p => ({ id: p.id, createdAt: p.created_at, label: `${p.photo_uploads?.filename ?? 'зураг'} · ${(p.print_size ?? '').replace('x', '×')} · ${p.buyer_name || p.buyer_phone || ''}` }));
         }}
         onPrinted={id => setRecentPurchases(prev => prev.map(x => (x.id === id ? { ...x, print_status: 'printed' } : x)))}
+        note={apAlbums === null ? null : apAlbums === 0
+          ? <span className="text-amber-300">Авто принт асаалттай цомог алга. «Цомог» табаас хэвлэх цомгийнхоо «Авто принт» товчийг асаана уу.</span>
+          : <span className="text-emerald-300">Авто принт асаалттай цомог: {apAlbums} («Цомог» табаас өөрчилнө)</span>}
       />
 
       {/* ── Recent purchases ── */}

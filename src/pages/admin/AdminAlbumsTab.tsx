@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay, Images } from 'lucide-react';
+import { FolderOpen, ExternalLink, Search, CalendarPlus, X, Loader2, MonitorPlay, Images, Printer } from 'lucide-react';
+import { readAutoPrintAlbums, saveAutoPrintAlbums } from '../../lib/autoPrintAlbums';
 import { Link } from 'react-router-dom';
 import { fetchAllPages } from '../../lib/fetchAll';
 import { supabase } from '../../lib/supabase';
@@ -38,8 +39,25 @@ export default function AdminAlbumsTab() {
   const [search, setSearch] = useState('');
   const [loadError, setLoadError] = useState('');
   const [extending, setExtending] = useState<AdminAlbum | null>(null);
+  // Автомат принт асаалттай цомгууд (цомог бүрээр)
+  const [autoPrint, setAutoPrint] = useState<Set<string>>(new Set());
+  const [apBusy, setApBusy] = useState<string | null>(null);
+  const [apErr, setApErr] = useState('');
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); readAutoPrintAlbums().then(setAutoPrint).catch(() => {}); }, []);
+
+  async function toggleAutoPrint(id: string) {
+    setApBusy(id); setApErr('');
+    try {
+      // Өөр төхөөрөмж дээр өөрчилсөн байж болзошгүй тул хамгийн сүүлийнхийг уншаад өөрчилнө
+      const cur = await readAutoPrintAlbums();
+      if (cur.has(id)) cur.delete(id); else cur.add(id);
+      await saveAutoPrintAlbums(cur);
+      setAutoPrint(cur);
+    } catch (e) {
+      setApErr('Автомат принт хадгалж чадсангүй: ' + (e instanceof Error ? e.message : String(e)));
+    } finally { setApBusy(null); }
+  }
 
   useEffect(() => {
     let list = albums;
@@ -156,6 +174,12 @@ export default function AdminAlbumsTab() {
         </div>
       </div>
 
+      {apErr && <p className="text-red-400 text-sm">{apErr}</p>}
+      {autoPrint.size > 0 && (
+        <p className="text-xs text-emerald-300">
+          🖨 Автомат принт {autoPrint.size} цомогт асаалттай. Хэвлэдэг компьютер дээр «Нэгдсэн» таб → «Автомат принт → Асаах» байх ёстой.
+        </p>
+      )}
       {loadError && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl px-4 py-3">
           Цомгуудыг ачаалж чадсангүй: {loadError}
@@ -260,6 +284,18 @@ export default function AdminAlbumsTab() {
                         <MonitorPlay className="w-3.5 h-3.5 text-amber-400" />
                         Томоор
                       </a>
+                    ) : null}
+                    {a.id ? (
+                      <button type="button" onClick={() => toggleAutoPrint(a.id)} disabled={apBusy === a.id}
+                        title={autoPrint.has(a.id)
+                          ? 'Энэ цомгийн угаах захиалга хэвлэдэг компьютер дээр төлөгдмөгц өөрөө хэвлэгдэнэ. Дарж унтраана.'
+                          : 'Асаавал энэ цомгийн угаах захиалга төлөгдмөгц хэвлэдэг компьютер дээр өөрөө хэвлэгдэнэ.'}
+                        className={`ml-1.5 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-60 ${autoPrint.has(a.id)
+                          ? 'text-stone-950 font-semibold bg-emerald-500 hover:bg-emerald-400 border-emerald-500'
+                          : 'text-stone-300 bg-white/5 hover:bg-white/10 border-white/10'}`}>
+                        {apBusy === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                        {autoPrint.has(a.id) ? 'Авто принт: Асаалттай' : 'Авто принт: Унтраалттай'}
+                      </button>
                     ) : null}
                     {a.id ? (
                       <Link

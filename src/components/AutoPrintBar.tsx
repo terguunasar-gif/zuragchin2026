@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2, Printer, Power } from 'lucide-react';
 import { printPurchaseSilently } from '../lib/printPhoto';
 
-export interface AutoPrintItem { id: string; label: string }
+export interface AutoPrintItem { id: string; label: string; createdAt?: string }
+
+/** Асаахаас (эсвэл цомгийг авто принтэд нэмэхээс) өмнөх хуучин захиалгыг бөөнөөр хэвлэхгүй — зөвхөн сүүлийн 15 минутад үүссэн */
+const FRESH_MS = 15 * 60 * 1000;
 
 const POLL_MS = 12000;
 
@@ -11,7 +14,9 @@ const POLL_MS = 12000;
  * ирмэгц өөрөө хэвлэнэ. Асаах үед байсан (хуучин) захиалгыг хэвлэхгүй — зөвхөн шинээр ирснийг.
  * Тохиргоо энэ төхөөрөмж дээр хадгалагдана (хуудас дахин ачаалсан ч асаалттай үлдэнэ).
  */
-export default function AutoPrintBar({ storageKey, fetchPending, onPrinted }: {
+export default function AutoPrintBar({ storageKey, fetchPending, onPrinted, note }: {
+  /** Нэмэлт тайлбар (жишээ нь аль цомгууд хамрагдах) */
+  note?: ReactNode;
   /** Төхөөрөмж дээр асаалттай эсэхийг хадгалах түлхүүр */
   storageKey: string;
   /** Төлөгдсөн, хэвлээгүй угаах захиалгууд (шинэ нь эхэндээ) */
@@ -61,6 +66,7 @@ export default function AutoPrintBar({ storageKey, fetchPending, onPrinted }: {
   useEffect(() => {
     if (!on) { seen.current = null; return; }
     let stop = false;
+    const startedAt = Date.now();
     const tick = async () => {
       let items: AutoPrintItem[];
       try { items = await fetchRef.current(); } catch { return; }
@@ -73,9 +79,12 @@ export default function AutoPrintBar({ storageKey, fetchPending, onPrinted }: {
           : 'Асаалаа. Шинэ захиалга хүлээж байна…');
         return;
       }
-      const fresh = items.filter(i => !seen.current!.has(i.id)).reverse(); // хуучнаас нь эхэлж
+      const unseen = items.filter(i => !seen.current!.has(i.id));
+      unseen.forEach(i => seen.current!.add(i.id));
+      const fresh = unseen
+        .filter(i => !i.createdAt || Date.parse(i.createdAt) > startedAt - FRESH_MS)
+        .reverse(); // хуучнаас нь эхэлж
       if (!fresh.length) return;
-      fresh.forEach(i => seen.current!.add(i.id));
       queue.current.push(...fresh);
       setQueued(queue.current.length);
       void drain();
@@ -103,8 +112,8 @@ export default function AutoPrintBar({ storageKey, fetchPending, onPrinted }: {
           <p className="text-stone-400 text-xs">
             {on
               ? (busy ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Хэвлэж байна: {busy}{queued ? ` · дараалалд ${queued}` : ''}</span>
-                : 'Шинэ төлөгдсөн угаах захиалга ирмэгц энэ компьютерийн принтерээр өөрөө хэвлэнэ. Хуудсыг нээлттэй байлгана уу.')
-              : 'Асаавал төлбөр төлөгдмөгц угаах зураг шууд хэвлэгдэнэ. Зөвхөн хэвлэдэг нэг компьютер дээр асаана уу.'}
+                : 'Авто принт асаалттай цомгийн шинэ төлөгдсөн угаах захиалга ирмэгц энэ компьютерийн принтерээр өөрөө хэвлэнэ. Хуудсыг нээлттэй байлгана уу.')
+              : 'Асаавал «Цомог» табаас авто принт асаасан цомгуудын угаах зураг төлөгдмөгц энэ компьютерээр шууд хэвлэгдэнэ. Зөвхөн хэвлэдэг нэг компьютер дээр асаана уу.'}
           </p>
         </div>
         <button type="button" onClick={toggle}
@@ -112,6 +121,7 @@ export default function AutoPrintBar({ storageKey, fetchPending, onPrinted }: {
           <Power className="w-4 h-4" /> {on ? 'Унтраах' : 'Асаах'}
         </button>
       </div>
+      {note && <div className="text-xs mt-2">{note}</div>}
       {on && (
         <p className="text-stone-500 text-[11px] mt-2">
           Хэвлэх цонх асуулгүй шууд хэвлүүлэх бол Chrome-ыг <code className="text-stone-300">--kiosk-printing</code> тохиргоотой нээж, принтерээ «Default» болгоно.
