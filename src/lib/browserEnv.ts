@@ -70,8 +70,8 @@ export function shouldAutoOpenChrome(opts: { ua: string; pathname: string; searc
   if (opts.alreadyTried) return false;
   if (new URLSearchParams(opts.search).get('stay') === '1') return false;
   const android = /Android/i.test(opts.ua);
-  // iPhone: x-safari-https:// холбоос iOS 17+ дээр л ажилладаг
-  const ios = /iPhone|iPad|iPod/i.test(opts.ua) && iosMajorVersion(opts.ua) >= 17;
+  // iPhone: iOS 17+ → Safari (x-safari-https), iOS 16- → Chrome (googlechromes://, суулгасан бол)
+  const ios = /iPhone|iPad|iPod/i.test(opts.ua);
   if (!android && !ios) return false;
   if (!autoOpenAppName(opts.ua)) return false;
   // Баримт, санал, бүүт, «Миний худалдан авалт» дээр QPay-ээс буцаж ирсэн төлбөрийг энэ хөтөч дээр нь шалгана.
@@ -219,6 +219,11 @@ export async function saveVideoToDevice(url: string, filename: string): Promise<
   return 'downloaded';
 }
 
+/** iPhone: Chrome апп суулгасан бол түүгээр нээх холбоос (iOS 16 ба доош Safari-г шууд нээх арга байхгүй) */
+export function openInChromeIosUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
+  return href.replace(/^https:\/\//, 'googlechromes://').replace(/^http:\/\//, 'googlechrome://');
+}
+
 /** iPhone (iOS 17+): апп доторх хөтчөөс Safari-г нээх холбоос */
 export function openInSafariUrl(href = typeof location !== 'undefined' ? location.href : ''): string {
   return href.replace(/^https:\/\//, 'x-safari-https://').replace(/^http:\/\//, 'x-safari-http://');
@@ -237,6 +242,7 @@ export function tryAutoOpenInBrowser(): boolean {
   try { already = !!sessionStorage.getItem(AUTO_KEY); } catch { /* хувийн горим */ }
   if (!shouldAutoOpenChrome({ ua, pathname: location.pathname, search: location.search, alreadyTried: already })) return false;
   try { sessionStorage.setItem(AUTO_KEY, '1'); } catch { /* хувийн горим */ }
-  location.href = /Android/i.test(ua) ? openInBrowserUrl() : openInSafariUrl();
+  location.href = /Android/i.test(ua) ? openInBrowserUrl()
+    : iosMajorVersion(ua) >= 17 ? openInSafariUrl() : openInChromeIosUrl();
   return true;
 }
