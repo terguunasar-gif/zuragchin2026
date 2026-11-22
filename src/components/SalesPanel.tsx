@@ -4,6 +4,7 @@ import PrintEditor from './PrintEditor';
 import type { PhotoAdjust } from '../lib/photoAdjust';
 import { supabase } from '../lib/supabase';
 import { printPurchase, PrintJobResult } from '../lib/printPhoto';
+import { reloadIfOutdated } from '../lib/appVersion';
 
 // Зурагчин (өөрийн зураг) болон зохион байгуулагч (өөрийн цомог)-ийн борлуулалт,
 // угаалгах захиалгын жагсаалт. Мэдээллийг my_sales() RPC-ээс авна.
@@ -120,6 +121,7 @@ export default function SalesPanel({
   const [editing, setEditing] = useState<SaleRow | null>(null);
 
   async function doPrint(r: SaleRow, adjust?: PhotoAdjust) {
+    if (reloadIfOutdated('Принт')) return;
     setPrinting(r.id);
     try {
       const res = await printPurchase(r.id, adjust);
@@ -257,7 +259,7 @@ export default function SalesPanel({
                 </div>
                 {r.type === 'print' && (
                   <div className="flex items-center gap-2">
-                    <button onClick={() => setEditing(r)}
+                    <button onClick={() => { if (!reloadIfOutdated('Засвар')) setEditing(r); }}
                       title="Хэвлэхийн өмнө гэрэл, сүүдэр, өнгийг тохируулах"
                       className="flex items-center gap-1.5 border border-white/15 hover:border-amber-500/50 text-stone-200 text-xs font-medium px-3 py-1.5 rounded-lg">
                       <SlidersHorizontal className="w-3.5 h-3.5" /> Засах
