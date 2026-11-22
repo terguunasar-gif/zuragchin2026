@@ -55,7 +55,7 @@ export async function printPurchase(purchaseId: string, adjustOverride?: PhotoAd
     const data = await res.json();
     if (!res.ok || !data.signedUrl) throw new Error(data.error || 'Хэвлэх холбоос үүсгэж чадсангүй');
     const [w, h] = SIZE_CM[data.size] ?? SIZE_CM['10x15'];
-    // Цомгийн лого, мэндчилгээг (сайтын «Zuragchin.mn» тамгагүйгээр) хэвлэх зурагт шингээнэ
+    // Цомгийн лого, мэндчилгээ болон жижиг «Zuragchin.mn» тэмдгийг хэвлэх зурагт шингээнэ
     const imgSrc = await withBrand(data.signedUrl, data.brand ?? '', data.filename, data.size, adjustOverride ?? data.adjust ?? {}, data.baseAdjust ?? {});
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.filename)} · ${escapeHtml(data.size)}</title>
 <style id="pg">@page{size:${w}cm ${h}cm;margin:0}</style>
@@ -105,12 +105,11 @@ async function withBrand(url: string, raw: string, filename: string, size: strin
     const crop = Object.fromEntries(CROP_KEYS.filter(k => adjust[k] != null).map(k => [k, adjust[k]])) as PhotoAdjust & PrintCrop;
     blob = await preparePrintBlob(blob, size, crop);
   }
-  if (layers) {
-    const branded = await applyBrandToPurchase(blob, raw, filename, false);
-    // applyBrandToPurchase алдаа гарвал эх blob-ийг буцаадаг — тэгвэл логогүй хэвлэхгүй
-    if (branded === blob) throw new Error('Зурагт лого нэмж чадсангүй. «Принт»-ийг дахин дарна уу.');
-    blob = branded;
-  }
+  // Цомгийн лого/текст + жижиг «Zuragchin.mn» тэмдэг (логотой нэг шугамд, сул буланд)
+  const branded = await applyBrandToPurchase(blob, raw, filename, true);
+  // applyBrandToPurchase алдаа гарвал эх blob-ийг буцаадаг — цомгийн логотой бол логогүй хэвлэхгүй
+  if (branded === blob && layers) throw new Error('Зурагт лого нэмж чадсангүй. «Принт»-ийг дахин дарна уу.');
+  blob = branded;
   return await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result));

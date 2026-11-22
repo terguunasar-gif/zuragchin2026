@@ -269,8 +269,33 @@ export function siteBadgeRect(w: number, h: number, occupied: Rect[], textWidth:
     { x: w - zoneW, y: 0,         w: zoneW, h: zoneH },
     { x: 0,         y: 0,         w: zoneW, h: zoneH },
   ];
-  for (let i = 0; i < corners.length; i++) {
-    if (!occupied.some(r => overlapArea(zones[i], r) > 0)) return corners[i];
+  const free = corners.map((_, i) => i).filter(i => !occupied.some(r => overlapArea(zones[i], r) > 0));
+  if (free.length) {
+    const clampX = (x: number) => Math.max(0, Math.min(w - bw, Math.round(x)));
+    const clampY = (y: number) => Math.max(0, Math.min(h - bh, Math.round(y)));
+    // 1) Цомгийн лого/текст ДЭЭР эсвэл ДООР мөрөнд байвал тэр мөрийн сул буланд, логотой нэг хэвтээ шугамд
+    for (const i of free) {
+      const bottom = i < 2;
+      const rowY0 = bottom ? h - zoneH : 0, rowY1 = bottom ? h : zoneH;
+      const inRow = occupied.filter(r => r.y < rowY1 && r.y + r.h > rowY0);
+      if (inRow.length) {
+        // Булангийн хамгийн ойр (ирмэгт наалдсан) логог сонгоно
+        const ref = inRow.reduce((a, b) => (bottom ? (b.y + b.h > a.y + a.h ? b : a) : (b.y < a.y ? b : a)));
+        return { ...corners[i], y: clampY(ref.y + ref.h / 2 - bh / 2) };
+      }
+    }
+    // 2) Хажуу (зүүн/баруун) баганад байвал тэр баганын сул буланд, логотой нэг босоо шугамд
+    for (const i of free) {
+      const right = i === 0 || i === 2;
+      const colX0 = right ? w - zoneW : 0, colX1 = right ? w : zoneW;
+      const inCol = occupied.filter(r => r.x < colX1 && r.x + r.w > colX0);
+      if (inCol.length) {
+        const ref = inCol.reduce((a, b) => (right ? (b.x + b.w > a.x + a.w ? b : a) : (b.x < a.x ? b : a)));
+        // Ирмэгээ логотой тэгшилнэ (баруун талд — баруун ирмэг, зүүн талд — зүүн ирмэг)
+        return { ...corners[i], x: clampX(right ? ref.x + ref.w - bw : ref.x) };
+      }
+    }
+    return corners[free[0]];
   }
   // Зай авч шалгана — хүрэлцэх төдий ойр байхаас ч зайлсхийнэ
   const gap = pad;
