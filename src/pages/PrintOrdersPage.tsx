@@ -1,11 +1,10 @@
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { hasRole } from '../lib/supabase';
-import SalesPanel, { useMySales, type SaleRow } from '../components/SalesPanel';
+import SalesPanel, { useMySales } from '../components/SalesPanel';
 import AutoPrintBar from '../components/AutoPrintBar';
-import { readAutoPrintAlbums } from '../lib/autoPrintAlbums';
-import { supabase } from '../lib/supabase';
 
 /**
  * Угаалгах захиалгатай зургуудын хуудас (/dashboard/print-orders?album=<id>).
@@ -18,6 +17,12 @@ export default function PrintOrdersPage() {
   const albumId = params.get('album');
   const asParam = params.get('as');
   const sales = useMySales();
+  // Автомат принт хэвлэмэгц жагсаалтыг шинэчилнэ
+  useEffect(() => {
+    const on = () => { void sales.reload(); };
+    window.addEventListener('zm-auto-printed', on);
+    return () => window.removeEventListener('zm-auto-printed', on);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const mode: 'organizer' | 'photographer' =
     asParam === 'photographer' || asParam === 'organizer' ? asParam
       : hasRole(profile, 'organizer') ? 'organizer' : 'photographer';
@@ -41,20 +46,7 @@ export default function PrintOrdersPage() {
           Зураг дээр дарж томоор харна. «Засах»-аар гэрэл, өнгийг тохируулаад «Принт» дарна. Хүлээлгэж өгсний дараа төлвийг «Хүлээлгэж өгсөн» болгоно.
         </p>
         <div className="mt-8 -mb-4">
-          <AutoPrintBar
-            storageKey={`zm_autoprint_${mode}`}
-            fetchPending={async () => {
-              const albums = await readAutoPrintAlbums();
-              if (!albums.size) return [];
-              const { data, error } = await supabase.rpc('my_sales');
-              if (error) throw error;
-              return ((data ?? []) as SaleRow[])
-                .filter(r => r.type === 'print' && r.print_status === 'pending' && albums.has(r.album_id) && (mode === 'organizer' ? r.is_my_album : r.is_my_photo))
-                .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                .map(r => ({ id: r.id, createdAt: r.created_at, label: `${r.filename ?? 'зураг'} · ${r.print_size.replace('x', '×')} · ${r.buyer_name || r.buyer_phone || ''}` }));
-            }}
-            onPrinted={() => { void sales.reload(); }}
-          />
+          <AutoPrintBar />
         </div>
         <SalesPanel mode={mode} sales={sales} initialFilter="print" initialAlbumId={albumId} bigThumbs hideSummary />
       </main>
