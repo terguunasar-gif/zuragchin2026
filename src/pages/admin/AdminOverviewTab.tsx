@@ -3,10 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 const PAGE = 50;
 import {
   Users, FolderOpen, DollarSign, TrendingUp, ShoppingBag,
-  Camera, Image as ImageIcon, Clock,
+  Camera, Image as ImageIcon, Clock, Printer, Loader2, SlidersHorizontal,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { QPAY_FN_URL } from '../../lib/offers';
+import { printPurchase } from '../../lib/printPhoto';
+import type { PhotoAdjust } from '../../lib/photoAdjust';
+import PrintEditor from '../../components/PrintEditor';
+import { reloadIfOutdated } from '../../lib/appVersion';
 
 interface Stats {
   totalUsers: number;
@@ -32,6 +36,7 @@ interface RecentPurchase {
   qpay_invoice_id?: string | null;
   albums: { name: string } | null;
   print_size?: string | null;
+  print_status?: 'pending' | 'printed' | 'delivered' | null;
   photo_uploads: { filename: string; preview_url?: string | null; thumb_url?: string | null } | null;
 }
 
@@ -49,6 +54,24 @@ export default function AdminOverviewTab() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
   const [viewPhoto, setViewPhoto] = useState<RecentPurchase | null>(null);
+  // Угаах захиалгыг (принтер гацсан үед дахин) хэвлэх
+  const [printing, setPrinting] = useState<string | null>(null);
+  const [editing, setEditing] = useState<RecentPurchase | null>(null);
+
+  async function doPrint(p: RecentPurchase, adjust?: PhotoAdjust) {
+    if (reloadIfOutdated('Принт')) return;
+    setPrinting(p.id);
+    try {
+      await printPurchase(p.id, adjust);
+      if (!p.print_status || p.print_status === 'pending') {
+        setRecentPurchases(prev => prev.map(x => (x.id === p.id ? { ...x, print_status: 'printed' } : x)));
+      }
+    } catch (e) {
+      setNote({ text: e instanceof Error ? e.message : 'Хэвлэхэд алдаа гарлаа', ok: false });
+    } finally {
+      setPrinting(null);
+    }
+  }
 
   async function checkQpay(p: RecentPurchase) {
     if (!p.qpay_invoice_id) return;
@@ -90,7 +113,7 @@ export default function AdminOverviewTab() {
 
   function purchasesQuery(from: number) {
     let q = supabase.from('purchases')
-      .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,print_size,albums(name),photo_uploads(filename,preview_url,thumb_url)')
+      .select('id,gross_amount,platform_fee_amount,payment_status,created_at,type,buyer_name,buyer_phone,qpay_invoice_id,print_size,print_status,albums(name),photo_uploads(filename,preview_url,thumb_url)')
       .order('created_at', { ascending: false });
     if (statusFilter !== 'all') q = q.eq('payment_status', statusFilter);
     const digits = phoneQ.replace(/\D/g, '');
@@ -300,6 +323,21 @@ export default function AdminOverviewTab() {
                             className="ml-1 text-stone-400 hover:text-white">· Хуулах</button>
                         </span>
                       )}
+                      {p.type === 'print' && p.payment_status === 'paid' && (
+                        <span className="flex items-center justify-end gap-1.5 mt-1.5">
+                          <button onClick={() => { if (!reloadIfOutdated('Засвар')) setEditing(p); }}
+                            title="Хэвлэхийн өмнө гэрэл, өнгө, тайралтыг тохируулах"
+                            className="flex items-center gap-1 border border-white/15 hover:border-amber-500/50 text-stone-300 text-[11px] px-2 py-1 rounded-lg">
+                            <SlidersHorizontal className="w-3 h-3" /> Засах
+                          </button>
+                          <button onClick={() => doPrint(p)} disabled={printing === p.id}
+                            title="Принтер гацсан, муу гарсан үед дахин хэвлэх. SMS дахин явахгүй."
+                            className="flex items-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 text-[11px] font-bold px-2 py-1 rounded-lg">
+                            {printing === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
+                            {!p.print_status || p.print_status === 'pending' ? 'Принт' : 'Дахин принт'}
+                          </button>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -337,6 +375,15 @@ export default function AdminOverviewTab() {
             )}
           </div>
         </div>
+      )}
+
+      {editing && (
+        <PrintEditor
+          purchaseId={editing.id}
+          title={`${(editing.print_size ?? '').replace('x', '×')} · ${editing.buyer_name || ''}`}
+          onClose={() => setEditing(null)}
+          onPrint={adjust => { const p = editing; setEditing(null); void doPrint(p, adjust); }}
+        />
       )}
 
       {note && (

@@ -265,7 +265,7 @@ export default function SalesPanel({
                       <SlidersHorizontal className="w-3.5 h-3.5" /> Засах
                     </button>
                     <button onClick={() => doPrint(r)} disabled={printing === r.id}
-                      title="Принтерээр хэвлэх — төлөв «Угаасан» болж, худалдан авагчид SMS очно"
+                      title={r.print_status === 'pending' ? 'Принтерээр хэвлэх — төлөв «Угаасан» болж, худалдан авагчид SMS очно' : 'Принтер гацсан, муу гарсан үед дахин хэвлэх. SMS дахин явахгүй.'}
                       className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 text-xs font-bold px-3 py-1.5 rounded-lg">
                       {printing === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
                       {r.print_status === 'pending' ? 'Принт' : 'Дахин принт'}
