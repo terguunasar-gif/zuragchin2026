@@ -77,7 +77,8 @@ export default function AlbumPurchaseGuide({
   const [dlNote, setDlNote] = useState('');
   const [dlGot, setDlGot] = useState<Set<string>>(() => new Set(paidInvoice ? readDownloadedIds(paidInvoice) : []));
   const [licenseOk, setLicenseOk] = useState(false);
-  const [pastId, setPastId] = useState<string | null>(null);
+  // Өмнө авсан зургуудаас сонгосон (олныг) — дахин татах / угаалгах
+  const [pastSel, setPastSel] = useState<Set<string>>(() => new Set());
   const [pastNote, setPastNote] = useState('');
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState('');
@@ -392,7 +393,7 @@ export default function AlbumPurchaseGuide({
     } catch { /* */ }
     const n = new Set(rows.map(r => r.photoId)).size;
     setPhoneMsg(`${n} төлсөн зураг олдлоо. Зураг дээрх «Төлсөн · Татах»-ыг дарна уу.`);
-    setPastId(null);
+    setPastSel(new Set());
     setPastNote('');
   }
   const [numErr, setNumErr] = useState('');
@@ -559,7 +560,7 @@ export default function AlbumPurchaseGuide({
   const printsOpen = printOrdersOpen(album.print_deadline);
   const ownedIds = new Set((session.owned ?? []).map(o => o.photoId));
   function openOwned(photoId: string) {
-    setPastId(photoId);
+    setPastSel(prev => new Set(prev).add(photoId));
     setPastNote('');
     requestAnimationFrame(() => document.getElementById('g-owned')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -617,58 +618,127 @@ export default function AlbumPurchaseGuide({
     }
   }
 
+  function togglePast(photoId: string) {
+    setPastNote('');
+    setPastSel(prev => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId); else next.add(photoId);
+      return next;
+    });
+  }
+
   function ownedPanel() {
+    const rows = groupOwned(session.owned ?? []);
+    const picked = rows.filter(r => pastSel.has(r.photoId));
+    const dlRows = picked.filter(r => r.download && !downloadExpired(r.download.expiresAt));
+    const expiredN = picked.filter(r => r.download && downloadExpired(r.download.expiresAt)).length;
+    const allOn = rows.length > 0 && picked.length === rows.length;
     return (
               <div id="g-owned" className="space-y-2 scroll-mt-24">
-                <p className="text-sm text-stone-200">Таны өмнө авсан {groupOwned(session.owned ?? []).length} зураг энд байна</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-stone-200">Таны өмнө авсан {rows.length} зураг</p>
+                  <button type="button" onClick={() => { setPastNote(''); setPastSel(allOn ? new Set() : new Set(rows.map(r => r.photoId))); }}
+                    className="shrink-0 text-xs font-semibold text-amber-300 underline">{allOn ? 'Сонголт арилгах' : 'Бүгдийг сонгох'}</button>
+                </div>
+                <p className="text-xs text-stone-400">Дахин татах эсвэл угаалгах зургаа дарж сонгоно уу.</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {groupOwned(session.owned ?? []).map(row => {
+                  {rows.map(row => {
                     const photo = photos.find(p => p.id === row.photoId);
                     const expired = !!row.download && downloadExpired(row.download.expiresAt);
+                    const on = pastSel.has(row.photoId);
                     return (
-                      <button key={row.photoId} type="button" onClick={() => { setPastId(row.photoId); setPastNote(''); }}
-                        className={`relative aspect-square overflow-hidden rounded-xl bg-stone-900 ${pastId === row.photoId ? 'ring-2 ring-amber-400' : ''}`}>
+                      <button key={row.photoId} type="button" onClick={() => togglePast(row.photoId)}
+                        className={`relative aspect-square overflow-hidden rounded-xl bg-stone-900 ${on ? 'ring-2 ring-amber-400' : ''}`}>
                         {photo?.watermarked_url && <img src={photo.watermarked_url} alt="" className="h-full w-full object-cover" />}
+                        <span className={`pointer-events-none absolute top-1.5 left-1.5 flex h-6 w-6 items-center justify-center rounded-md border-2 shadow-md ${on ? 'border-amber-300 bg-amber-500 text-stone-950' : 'border-white bg-black/70'}`}>
+                          {on && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                        </span>
                         {expired && <span className="absolute inset-x-0 bottom-0 bg-black/70 text-[10px] py-0.5">Хугацаа дууссан</span>}
                       </button>
                     );
                   })}
                 </div>
-                {pastId && (() => {
-                  const row = groupOwned(session.owned ?? []).find(r => r.photoId === pastId);
-                  if (!row) return null;
-                  const expired = !!row.download && downloadExpired(row.download.expiresAt);
-                  return (
-                    <div className="flex flex-wrap gap-2">
-                      {row.download && (expired
-                        ? <p className="text-sm text-red-300">Татах хугацаа дууссан.</p>
-                        : <button type="button" disabled={dlBusy} onClick={() => redownload(row.download!)}
-                            className="rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm">Дахин татах</button>)}
-                      {printsOpen
-                        ? <button type="button" onClick={() => reprint(row.photoId)}
-                            className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах</button>
-                        : <p className="text-sm text-stone-400">Угаалгах хугацаа дууссан</p>}
-                    </div>
-                  );
-                })()}
+                {picked.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {dlRows.length > 0 && (
+                      <button type="button" disabled={dlBusy} onClick={() => redownloadMany(dlRows.map(r => r.download!))}
+                        className="flex items-center gap-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 font-semibold px-3 py-2 text-sm disabled:opacity-60">
+                        {dlBusy && <Loader2 className="w-4 h-4 animate-spin" />} Дахин татах ({dlRows.length})
+                      </button>
+                    )}
+                    {printsOpen
+                      ? <button type="button" onClick={() => reprintMany(picked.map(r => r.photoId))}
+                          className="rounded-xl bg-amber-500 text-stone-950 font-semibold px-3 py-2 text-sm">Угаалгах ({picked.length})</button>
+                      : <p className="text-sm text-stone-400">Угаалгах хугацаа дууссан</p>}
+                    {expiredN > 0 && <p className="w-full text-xs text-red-300">{expiredN} зургийн татах хугацаа дууссан.</p>}
+                  </div>
+                )}
                 {pastNote && <p className="text-sm text-stone-300">{pastNote}</p>}
               </div>
     );
   }
 
-  function reprint(photoId: string) {
-    const photo = photos.find(p => p.id === photoId);
-    const opts = photo ? printOptions(photo) : [];
-    if (!opts.length) { setPastNote('Энэ зурагт угаалгах үнэ байхгүй.'); return; }
-    const choices: GuideChoice[] = [{ photoId, download: false, print: true, printSize: opts[0][0] }];
+  /** Сонгосон олон зургийг нэг дор угаалгах — хэмжээгээ «choices» алхамд сонгоно */
+  function reprintMany(ids: string[]) {
+    const choices: GuideChoice[] = [];
+    for (const id of ids) {
+      const photo = photos.find(p => p.id === id);
+      const opts = photo ? printOptions(photo) : [];
+      if (opts.length) choices.push({ photoId: id, download: false, print: true, printSize: opts[0][0] });
+    }
+    if (!choices.length) { setPastNote('Сонгосон зурагт угаалгах үнэ байхгүй.'); return; }
+    const skipped = ids.length - choices.length;
+    setPastSel(new Set());
     commit({
       ...session,
-      selected: [photoId],
+      selected: choices.map(c => c.photoId),
       choices,
-      step: 'pay',
+      step: 'choices',
       invoice: null,
-      messages: [...session.messages, { role: 'bot', text: guidePaySummary(session.name, 1, 0, 1, money(opts[0][1])) }],
+      messages: [...session.messages, { role: 'bot', text: `Угаалгах ${choices.length} зураг сонголоо${skipped ? ` (${skipped} зурагт угаалгах үнэ байхгүй)` : ''}. Хэмжээгээ шалгаад QPay-ээр төлнө үү.` }],
     });
+  }
+
+  /** Сонгосон олон зургийг нэг дор дахин татах */
+  async function redownloadMany(items: OwnedPhoto[]) {
+    if (!items.length) return;
+    if (items.length === 1) { await redownload(items[0]); return; }
+    setPastNote('');
+    setDlBusy(true);
+    try {
+      const byInv = new Map<string, OwnedPhoto[]>();
+      for (const it of items) byInv.set(it.invoiceId, [...(byInv.get(it.invoiceId) ?? []), it]);
+      const out: File[] = [];
+      const got: Record<string, string[]> = {};
+      let expired = 0;
+      let done = 0;
+      for (const [inv, list] of byInv) {
+        const files = await loadPaidFiles(inv);
+        for (const item of list) {
+          const hit = files.find(f => (f.photoId && f.photoId === item.photoId) || f.filename === item.filename);
+          if (!hit || hit.expired || !hit.signedUrl || downloadExpired(hit.expiresAt)) { expired++; continue; }
+          try {
+            const blob = await (await fetch(hit.signedUrl)).blob();
+            const name = /\.(jpe?g|png|webp)$/i.test(hit.filename) ? hit.filename : `${hit.filename}.jpg`;
+            out.push(new File([blob], name, { type: blob.type || 'image/jpeg' }));
+            (got[inv] ??= []).push(hit.purchaseId);
+          } catch { /* нэг зураг алдсан ч бусдыг үргэлжлүүлнэ */ }
+          done++;
+          setPastNote(`Бэлтгэж байна… ${done}/${items.length}`);
+        }
+      }
+      if (!out.length) { setPastNote(expired ? 'Татах хугацаа дууссан.' : 'Дахин татаж чадсангүй.'); return; }
+      const how = await saveFilesToGallery(out);
+      if (how === 'cancelled') { setPastNote('Хадгалаагүй.'); return; }
+      for (const [inv, ids] of Object.entries(got)) writeDownloadedIds(inv, ids);
+      setPastSel(new Set());
+      const extra = expired ? ` ${expired} зургийн хугацаа дууссан.` : '';
+      setPastNote((how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : `${out.length} зураг татагдлаа.`) + extra);
+    } catch {
+      setPastNote('Дахин татаж чадсангүй.');
+    } finally {
+      setDlBusy(false);
+    }
   }
 
   function beginPay() {
