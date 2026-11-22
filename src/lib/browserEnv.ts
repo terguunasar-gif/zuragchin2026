@@ -103,11 +103,31 @@ export function canShareFiles(files: File[]): boolean {
   try { return !!nav.canShare?.({ files }); } catch { return false; }
 }
 
+/** Нэг товч дарахад хадгалах зургийн тоо (iPhone-ы хуваалцах цонх, Android-ын олон таталтын хязгаар) */
+export const SAVE_CHUNK = 10;
+
+export function chunkList<T>(list: T[], size = SAVE_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Товч дарсны «идэвх» хэвээр байна уу. Олон зураг бэлдэхэд хэдэн секунд болдог тул идэвх алдагдаж,
+ * хөтөч хуваалцах цонх / олон таталтыг хаадаг. API дэмжихгүй хуучин хөтөч дээр false (товчоор хадгална).
+ */
+export function activationAlive(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+  return !!ua?.isActive;
+}
+
 /**
  * Утасны «Save Image / Хадгалах» цонх. Олон зургийг нэг хуваалцалтаар.
  * Дэмжихгүй бол файл таталт руу буцна. Цуцалсан бол татсан гэж тэмдэглэхгүй.
+ * 'blocked' — товч дарсны идэвх алдагдсан (дахин товч дарж хадгална).
  */
-export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'downloaded' | 'cancelled'> {
+export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'downloaded' | 'cancelled' | 'blocked'> {
   if (!files.length) return 'downloaded';
   // Android-ийн хуваалцах цонхонд «Галерейд хадгалах» байдаггүй (Gmail, Messenger л гарна) —
   // тиймээс Android дээр шууд татна (Downloads → Галерейд харагдана). Хуваалцах цонх зөвхөн iPhone-д.
@@ -117,6 +137,7 @@ export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'dow
       return 'shared';
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled';
+      if (e instanceof DOMException && e.name === 'NotAllowedError') return 'blocked';
     }
   }
   for (const file of files) {
@@ -127,8 +148,9 @@ export async function saveFilesToGallery(files: File[]): Promise<'shared' | 'dow
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(href), 60000);
-    await new Promise(r => setTimeout(r, 350));
+    setTimeout(() => URL.revokeObjectURL(href), 120000);
+    // Хэт ойр дараалсан таталтыг хөтөч алгасдаг
+    await new Promise(r => setTimeout(r, 700));
   }
   return 'downloaded';
 }

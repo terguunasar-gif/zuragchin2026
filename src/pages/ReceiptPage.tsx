@@ -7,7 +7,7 @@ import { publicDb, withTimeout } from '../lib/supabase';
 import { addPurchaseHistory } from '../lib/purchaseHistory';
 import { useI18n } from '../lib/i18n';
 import { LanguageSwitcher } from '../components/LanguagePicker';
-import { inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '../lib/browserEnv';
+import { activationAlive, chunkList, inAppBrowserName, isIOS, saveFilesToGallery, saveImageToDevice } from '../lib/browserEnv';
 import { applyBrandToPurchase } from '../lib/watermark';
 import { applyBaseEdit, hasEdit, PhotoAdjust, PrintCrop, preparePrintBlob } from '../lib/photoAdjust';
 import PrintEditor from '../components/PrintEditor';
@@ -310,35 +310,44 @@ export default function ReceiptPage() {
       setBulkMsg(failed ? t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : '');
       return;
     }
-    const savedHow = await saveFilesToGallery(saved.map(s => s.file));
-    if (savedHow === 'cancelled') {
-      setBulkMsg(t('Хадгалаагүй. Дахин дарна уу.'));
-      return;
-    }
-    noteDownloaded(saved.map(s => s.id));
+    // Сонгосон дарааллаар нь
+    const order = new Map(list.map((p, k) => [p.id, k]));
+    saved.sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0));
     const failNote = failed ? ' ' + t('{n} зураг татагдсангүй — тус тусад нь дахин оролдоно уу.', { n: failed }) : '';
-    setBulkMsg((savedHow === 'shared'
-      ? t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгоно уу.')
-      : t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: saved.length })) + failNote);
+    const chunks = chunkList(saved);
+    // Бэлдэхэд удсан бол товч дарсны идэвх алдагдана — тэр үед хөтөч хадгалахыг хаадаг тул
+    // багц бүрийг тусдаа товчоор хадгалуулна.
+    if (chunks.length === 1 && activationAlive()) {
+      const savedHow = await saveFilesToGallery(saved.map(s => s.file));
+      if (savedHow === 'cancelled') { setBulkMsg(t('Хадгалаагүй. Дахин дарна уу.')); return; }
+      if (savedHow !== 'blocked') {
+        noteDownloaded(saved.map(s => s.id));
+        setBulkMsg((savedHow === 'shared'
+          ? t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгоно уу.')
+          : t('{n} зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.', { n: saved.length })) + failNote);
+        return;
+      }
+    }
+    setReady(chunks);
+    setBulkMsg(t('{n} зураг бэлэн боллоо. Доорх ногоон товч(ууд)-ыг дарж хадгална уу.', { n: saved.length }) + failNote);
   }
 
   async function saveChunk(idx: number) {
     const chunk = ready[idx];
     if (!chunk) return;
-    let saved = false;
-    try {
-      await navigator.share({ files: chunk.map(c => c.file) });
-      saved = true;
-    } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) {
-        setBulkMsg(t('Хадгалж чадсангүй. Зураг тус бүрийн «Татах»-ыг дарна уу.'));
-        return;
-      }
-    }
-    if (saved) noteDownloaded(chunk.map(c => c.id));
+    const how = await saveFilesToGallery(chunk.map(c => c.file));
+    if (how === 'cancelled') { setBulkMsg(t('Хадгалаагүй. Дахин дарна уу.')); return; }
+    if (how === 'blocked') { setBulkMsg(t('Хадгалж чадсангүй. Товчийг дахин дарна уу.')); return; }
+    noteDownloaded(chunk.map(c => c.id));
     const rest = ready.filter((_, k) => k !== idx);
     setReady(rest);
-    if (!rest.length) setBulkMsg(t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгосон бол зургууд Photos-д орсон.'));
+    if (!rest.length) {
+      setBulkMsg(how === 'shared'
+        ? t('Нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгосон бол зургууд Photos-д орсон.')
+        : t('Бүх зураг татагдлаа. «Downloads / Татсан файлууд» хавтсаас харна уу.'));
+    } else {
+      setBulkMsg(t('{n} зураг хадгалагдлаа. Дараагийн багцаа дарна уу.', { n: chunk.length }));
+    }
   }
 
   /** Зургийг утасны галерей / компьютерт хадгална */
@@ -587,8 +596,11 @@ export default function ReceiptPage() {
                       : t('Галерейд хадгалах — {n} зураг', { n: chunk.length })}
                   </button>
                 ))}
-                {ready.length > 0 && (
+                {ready.length > 0 && isIOS && (
                   <p className="text-stone-400 text-xs text-center">{t('Товч дараад нээгдсэн цонхноос «Save Images / Зураг хадгалах»-ыг сонгоно.')}</p>
+                )}
+                {ready.length > 0 && (
+                  <button onClick={() => { setReady([]); setBulkMsg(''); }} className="w-full text-stone-400 text-xs underline">{t('Болих')}</button>
                 )}
                 {bulkMsg && <p className="text-emerald-300 text-xs text-center">{bulkMsg}</p>}
               </div>

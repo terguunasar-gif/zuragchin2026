@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bookmark, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Images, Loader2, MessageCircle, QrCode, ScanLine, Search, Send, X } from 'lucide-react';
 import type { AlbumData, PhotoData } from '../pages/PublicAlbumPage';
-import { isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
+import { activationAlive, chunkList, isAndroid, saveFilesToGallery, socialInAppName } from '../lib/browserEnv';
 import { supabase } from '../lib/supabase';
 import BankLinks, { type BankLink } from './BankLinks';
 import {
@@ -79,6 +79,50 @@ export default function AlbumPurchaseGuide({
   const [licenseOk, setLicenseOk] = useState(false);
   // Өмнө авсан зургуудаас сонгосон (олныг) — дахин татах / угаалгах
   const [pastSel, setPastSel] = useState<Set<string>>(() => new Set());
+  // Бэлэн болсон ч хадгалаагүй багцууд — товч бүр шинэ «дарах» тул хөтөч хаахгүй
+  type SaveBatch = { files: File[]; onSaved: () => void };
+  const [saveQueue, setSaveQueue] = useState<SaveBatch[]>([]);
+  const [queueNote, setQueueNote] = useState('');
+  /** Бэлдсэн зургуудыг хадгална: идэвх хэвээр, нэг багц бол шууд; эс бөгөөс товчоор */
+  async function saveOrQueue(batches: SaveBatch[], doneMsg: (how: 'shared' | 'downloaded', n: number) => string): Promise<string> {
+    if (batches.length === 1 && activationAlive()) {
+      const how = await saveFilesToGallery(batches[0].files);
+      if (how === 'cancelled') return 'Хадгалаагүй. Дахин дарна уу.';
+      if (how !== 'blocked') { batches[0].onSaved(); return doneMsg(how, batches[0].files.length); }
+    }
+    setSaveQueue(batches);
+    const n = batches.reduce((k, b) => k + b.files.length, 0);
+    setQueueNote(`${n} зураг бэлэн боллоо. Доорх ногоон товч(ууд)-ыг дарж хадгална уу.`);
+    return '';
+  }
+  async function saveQueued(idx: number) {
+    const b = saveQueue[idx];
+    if (!b) return;
+    const how = await saveFilesToGallery(b.files);
+    if (how === 'cancelled') { setQueueNote('Хадгалаагүй. Дахин дарна уу.'); return; }
+    if (how === 'blocked') { setQueueNote('Хадгалж чадсангүй. Товчийг дахин дарна уу.'); return; }
+    b.onSaved();
+    const rest = saveQueue.filter((_, k) => k !== idx);
+    setSaveQueue(rest);
+    setQueueNote(rest.length
+      ? `${b.files.length} зураг хадгалагдлаа. Дараагийн багцаа дарна уу.`
+      : (how === 'shared' ? 'Нээгдсэн цонхноос «Save Image / Хадгалах»-ыг дарж галерей руу хийнэ үү.'
+        : 'Бүх зураг татагдлаа. Утасны Галерей эсвэл Downloads хавтсаас харна уу.'));
+  }
+  function queueButtons() {
+    if (!saveQueue.length && !queueNote) return null;
+    return (
+      <div className="space-y-2">
+        {saveQueue.map((b, k) => (
+          <button key={k} type="button" onClick={() => saveQueued(k)}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-500 text-stone-950 font-bold rounded-xl py-3.5">
+            {saveQueue.length > 1 ? `Галерейд хадгалах — ${b.files.length} зураг (багц ${k + 1})` : `Галерейд хадгалах — ${b.files.length} зураг`}
+          </button>
+        ))}
+        {queueNote && <p className="text-sm text-emerald-200 text-center">{queueNote}</p>}
+      </div>
+    );
+  }
   const [pastNote, setPastNote] = useState('');
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState('');
@@ -607,10 +651,10 @@ export default function AlbumPurchaseGuide({
       }
       const blob = await (await fetch(hit.signedUrl)).blob();
       const name = /\.(jpe?g|png|webp)$/i.test(hit.filename) ? hit.filename : `${hit.filename}.jpg`;
-      const how = await saveFilesToGallery([new File([blob], name, { type: blob.type || 'image/jpeg' })]);
-      if (how === 'cancelled') { setPastNote('Хадгалаагүй.'); return; }
-      setDlGot(new Set(writeDownloadedIds(item.invoiceId, [hit.purchaseId])));
-      setPastNote(how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : 'Зураг татагдлаа.');
+      const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+      const msg = await saveOrQueue([{ files: [file], onSaved: () => setDlGot(new Set(writeDownloadedIds(item.invoiceId, [hit.purchaseId]))) }],
+        how => (how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : 'Зураг татагдлаа.'));
+      setPastNote(msg);
     } catch {
       setPastNote('Дахин татаж чадсангүй.');
     } finally {
@@ -673,6 +717,7 @@ export default function AlbumPurchaseGuide({
                     {expiredN > 0 && <p className="w-full text-xs text-red-300">{expiredN} зургийн татах хугацаа дууссан.</p>}
                   </div>
                 )}
+                {queueButtons()}
                 {pastNote && <p className="text-sm text-stone-300">{pastNote}</p>}
               </div>
     );
@@ -704,12 +749,13 @@ export default function AlbumPurchaseGuide({
     if (!items.length) return;
     if (items.length === 1) { await redownload(items[0]); return; }
     setPastNote('');
+    setSaveQueue([]); setQueueNote('');
     setDlBusy(true);
     try {
       const byInv = new Map<string, OwnedPhoto[]>();
       for (const it of items) byInv.set(it.invoiceId, [...(byInv.get(it.invoiceId) ?? []), it]);
       const out: File[] = [];
-      const got: Record<string, string[]> = {};
+      const outItems: { file: File; inv: string; purchaseId: string }[] = [];
       let expired = 0;
       let done = 0;
       for (const [inv, list] of byInv) {
@@ -720,20 +766,23 @@ export default function AlbumPurchaseGuide({
           try {
             const blob = await (await fetch(hit.signedUrl)).blob();
             const name = /\.(jpe?g|png|webp)$/i.test(hit.filename) ? hit.filename : `${hit.filename}.jpg`;
-            out.push(new File([blob], name, { type: blob.type || 'image/jpeg' }));
-            (got[inv] ??= []).push(hit.purchaseId);
+            const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+            out.push(file);
+            outItems.push({ file, inv, purchaseId: hit.purchaseId });
           } catch { /* нэг зураг алдсан ч бусдыг үргэлжлүүлнэ */ }
           done++;
           setPastNote(`Бэлтгэж байна… ${done}/${items.length}`);
         }
       }
       if (!out.length) { setPastNote(expired ? 'Татах хугацаа дууссан.' : 'Дахин татаж чадсангүй.'); return; }
-      const how = await saveFilesToGallery(out);
-      if (how === 'cancelled') { setPastNote('Хадгалаагүй.'); return; }
-      for (const [inv, ids] of Object.entries(got)) writeDownloadedIds(inv, ids);
       setPastSel(new Set());
       const extra = expired ? ` ${expired} зургийн хугацаа дууссан.` : '';
-      setPastNote((how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : `${out.length} зураг татагдлаа.`) + extra);
+      const batches = chunkList(outItems).map(list => ({
+        files: list.map(x => x.file),
+        onSaved: () => { for (const x of list) writeDownloadedIds(x.inv, [x.purchaseId]); },
+      }));
+      const msg = await saveOrQueue(batches, (how, n) => (how === 'shared' ? 'Нээгдсэн цонхноос «Хадгалах»-ыг дарна уу.' : `${n} зураг татагдлаа.`));
+      setPastNote(msg ? msg + extra : extra.trim());
     } catch {
       setPastNote('Дахин татаж чадсангүй.');
     } finally {
@@ -869,6 +918,7 @@ export default function AlbumPurchaseGuide({
     if (!paidInvoice || dlBusy) return;
     setDlBusy(true);
     setDlNote('');
+    setSaveQueue([]); setQueueNote('');
     try {
       const known = (dlFiles.length ? dlFiles : await loadPaidFiles(paidInvoice)).filter(f => f.signedUrl && !f.expired);
       if (!dlFiles.length) setDlFiles(known);
@@ -895,14 +945,18 @@ export default function AlbumPurchaseGuide({
       }
       if (!files.length) { setDlNote('Татах холбоос хараахан бэлэн биш. Хэдэн секундийн дараа дахин дарна уу.'); return; }
       setDlProg({ done: files.length, total: list.length, saving: true });
-      const savedHow = await saveFilesToGallery(files);
-      if (savedHow === 'cancelled') { setDlNote('Хадгалаагүй. «Галерей руу хадгалах»-ыг дахин дарна уу.'); return; }
-      noteGuideDownloaded(savedIds);
-      setDlNote(savedHow === 'shared'
+      const pairs = files.map((file, k) => ({ file, id: savedIds[k] }));
+      const batches = chunkList(pairs).map(list => ({
+        files: list.map(x => x.file),
+        onSaved: () => noteGuideDownloaded(list.map(x => x.id)),
+      }));
+      const failed = list.length - files.length;
+      const msg = await saveOrQueue(batches, how => (how === 'shared'
         ? 'Нээгдсэн цонхноос «Save Image / Хадгалах»-ыг дарж галерей руу хийнэ үү.'
         : (isAndroid
           ? 'Зургууд татагдлаа. Утасны Галерей эсвэл Downloads хавтсаас харна уу.'
-          : 'Таталт эхэллээ.'));
+          : 'Таталт эхэллээ.')));
+      setDlNote((msg || '') + (failed > 0 ? ` ${failed} зураг татагдсангүй — дахин дарна уу.` : ''));
     } catch {
       setDlNote('Татаж чадсангүй. Баримтын хуудаснаас дахин оролдоно уу.');
     } finally {
@@ -1298,6 +1352,7 @@ export default function AlbumPurchaseGuide({
                 </>
               );
             })()}
+            {queueButtons()}
             {dlNote && <p className="text-sm text-stone-300">{dlNote}</p>}
             {paidInvoice && (
               <a href={`/receipt/${paidInvoice}`} className="block text-center text-amber-300 text-sm underline">Баримт үзэх</a>
