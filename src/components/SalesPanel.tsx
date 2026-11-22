@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Download, Loader2, MessageSquare, Phone, Printer, Receipt, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, MessageSquare, Phone, Printer, Receipt, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react';
 import PrintEditor from './PrintEditor';
 import type { PhotoAdjust } from '../lib/photoAdjust';
 import { supabase } from '../lib/supabase';
@@ -139,8 +139,11 @@ export default function SalesPanel({
     () => rows.filter(r => (mode === 'photographer' ? r.is_my_photo : r.is_my_album)),
     [rows, mode],
   );
+  const [phoneQ, setPhoneQ] = useState('');
+  const phoneDigits = phoneQ.replace(/\D/g, '');
   const visible = scoped
     .filter(r => (filter === 'all' || r.type === filter) && (!albumFilter || r.album_id === albumFilter))
+    .filter(r => !phoneDigits || String(r.buyer_phone ?? '').replace(/\D/g, '').includes(phoneDigits))
     // Хэвлээгүй угаалгах захиалгыг дээр нь
     .sort((a, b) => Number(b.type === 'print' && b.print_status === 'pending') - Number(a.type === 'print' && a.print_status === 'pending'));
   const sum = summarize(scoped);
@@ -198,6 +201,22 @@ export default function SalesPanel({
       </div>
       </>}
 
+      <div className="relative mb-3 max-w-xs">
+        <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input type="tel" inputMode="numeric" value={phoneQ} onChange={e => setPhoneQ(e.target.value)}
+          placeholder="Утасны дугаараар хайх"
+          className="w-full bg-white/5 border border-white/10 focus:border-amber-500/60 rounded-lg pl-9 pr-8 py-2 text-sm text-white placeholder-stone-500 outline-none" />
+        {phoneQ && (
+          <button onClick={() => setPhoneQ('')} title="Цэвэрлэх"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      {phoneDigits && (
+        <p className="text-xs text-stone-400 mb-3">«{phoneQ}» — {visible.length} борлуулалт олдлоо</p>
+      )}
+
       {albumFilter && (
         <div className="flex items-center gap-2 mb-3 text-xs">
           <span className="text-stone-400">Цомог:</span>
@@ -212,7 +231,7 @@ export default function SalesPanel({
       ) : visible.length === 0 ? (
         <div className="bg-white/5 border border-white/10 rounded-2xl py-12 text-center">
           <Receipt className="w-8 h-8 text-stone-600 mx-auto mb-2" />
-          <p className="text-stone-400 text-sm">Одоогоор борлуулалт алга.</p>
+          <p className="text-stone-400 text-sm">{phoneDigits ? 'Энэ дугаартай борлуулалт олдсонгүй.' : 'Одоогоор борлуулалт алга.'}</p>
         </div>
       ) : (
         <div className="space-y-2">
