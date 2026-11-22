@@ -13,6 +13,7 @@ import BrandMark from '../../components/BrandMark';
 import PrintEditor from '../../components/PrintEditor';
 import { originalUrlFor, saveOwnerEdit, type OwnerEdit } from '../../lib/ownerEdit';
 import { applyBaseEdit, hasEdit } from '../../lib/photoAdjust';
+import { photoNumberMap } from '../../lib/photoNumbers';
 
 const PRINT_SIZES = ['10x15', '13x18', '20x30', 'A4', '21x30'] as const;
 
@@ -640,6 +641,9 @@ export default function AlbumPhotosPage() {
     : filter === 'none' ? !isAiPhoto(p) && !p.folder_id
     : p.folder_id === filter);
   const folderCount = (id: string) => photos.filter(p => p.folder_id === id).length;
+  // Худалдан авагчийн цомог / дэлгэц дээрх №-тэй ижил дугаар (оруулсан дарааллаар, хавтас бүрт 1-ээс)
+  const ascPhotos = [...photos].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const numMap = canManage ? photoNumberMap(ascPhotos, filter === 'none' ? 'all' : filter) : new Map<string, number>();
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -1008,6 +1012,11 @@ export default function AlbumPhotosPage() {
                       className="absolute top-2 left-2 z-10 w-8 h-8 bg-stone-950/80 rounded-lg flex items-center justify-center">
                       {isSel ? <CheckSquare className="w-5 h-5 text-amber-400" /> : <Square className="w-5 h-5 text-white" />}
                     </button>
+                    {numMap.get(photo.id) && (
+                      <span className="absolute top-2 left-12 z-10 h-8 px-2 rounded-lg bg-stone-950/85 text-white font-extrabold text-sm flex items-center">
+                        №{numMap.get(photo.id)}
+                      </span>
+                    )}
                     {(folderName || photo.source === 'ai_booth') && (
                       <span className="absolute bottom-2 left-2 z-10 text-[11px] bg-stone-950/80 text-stone-200 px-2 py-0.5 rounded-md">
                         {photo.source === 'ai_booth' ? '✨ AI бүүт' : folderName}
