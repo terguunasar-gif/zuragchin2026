@@ -96,6 +96,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/delete") return json(await remove(req, await readJson(req)));
     if (req.method === "POST" && path === "/aspect") return json(await suggestAspect(req, await readJson(req)));
     if (req.method === "POST" && path === "/admin/preview") return json(await adminPreview(req, await readJson(req)));
+    if (req.method === "POST" && path === "/admin/sample-video") return json(await adminSampleStart(req, await readJson(req)));
+    if (req.method === "POST" && path === "/admin/sample-status") return json(await adminSampleStatus(req, await readJson(req)));
     if (req.method === "POST" && path === "/advance") return json(await advanceAlbum(await readJson(req)));
     if (req.method === "POST" && path === "/fal-webhook") {
       // Хариуг 15 сек дотор буцаах ёстой — татаж хадгалахыг арын горимд хийнэ.
@@ -557,6 +559,88 @@ async function adminPreview(req: Request, body: Record<string, unknown>) {
   }
   await db.from("ai_video_templates").update({ preview_url: previewUrl, updated_at: now() }).eq("id", tpl.id);
   return { previewUrl };
+}
+
+// ── update-90 Админ: загварын AI жишээ зургаас жишээ видео үүсгэх ──────────────
+// ai_video_templates.sample_op-д fal/Veo operation хадгалж, админы хуудас 8 сек тутам /admin/sample-status дуудна.
+// Нэг видео ≈ $0.08 × секунд (Glam 6с ≈ $0.49, үйлдэл 8с ≈ $0.66).
+
+type SampleTpl = { id: string; slug: string; prompt: string; style?: string; preview_url: string; sample_video_url: string; sample_op?: string };
+
+async function loadSampleTpl(id: string): Promise<SampleTpl> {
+  if (!isUuid(id)) throw new HttpError(400, "Загвар буруу");
+  const { data, error } = await db.from("ai_video_templates")
+    .select("id, slug, prompt, style, preview_url, sample_video_url, sample_op").eq("id", id).maybeSingle();
+  if (error) throw new HttpError(500, "update-90-ийн SQL (sample_op багана) ажиллуулаагүй байна: " + error.message);
+  if (!data) throw new HttpError(404, "Загвар олдсонгүй");
+  return data as SampleTpl;
+}
+
+async function adminSampleStart(req: Request, body: Record<string, unknown>) {
+  const user = await currentUser(req);
+  if (!user.admin) throw new HttpError(403, "Зөвхөн админ");
+  if (!GEMINI_API_KEY && !usingFal()) throw new HttpError(500, "FAL_KEY тохируулаагүй байна");
+  const tpl = await loadSampleTpl(str(body.templateId));
+  if (!tpl.preview_url) throw new HttpError(400, "Эхлээд AI жишээ зураг үүсгэнэ үү");
+  if (tpl.sample_op) return { status: "processing" };
+
+  const res = await fetch(tpl.preview_url);
+  if (!res.ok) throw new HttpError(502, `Жишээ зураг татаж чадсангүй (${res.status})`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const glam = tpl.style === "glam";
+  let op: string;
+  try {
+    op = await startVeo({
+      apiKey: GEMINI_API_KEY,
+      model: VIDEO_MODEL,
+      image: { mimeType: sniffMime(bytes), data: bytesToBase64(bytes) },
+      prompt: glam ? glamPrompt(tpl.prompt) : videoPrompt(tpl.prompt),
+      durationSeconds: glam ? GLAM_SECONDS : VIDEO_SECONDS,
+      aspectRatio: "16:9",
+      resolution: "720p",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("sample video start failed:", msg);
+    throw new HttpError(502, msg.slice(0, 300));
+  }
+  await db.from("ai_video_templates").update({ sample_op: op, updated_at: now() }).eq("id", tpl.id);
+  return { status: "processing" };
+}
+
+async function adminSampleStatus(req: Request, body: Record<string, unknown>) {
+  const user = await currentUser(req);
+  if (!user.admin) throw new HttpError(403, "Зөвхөн админ");
+  const tpl = await loadSampleTpl(str(body.templateId));
+  if (!tpl.sample_op) return { status: tpl.sample_video_url ? "done" : "none", sampleVideoUrl: tpl.sample_video_url };
+
+  const poll = await pollVeo(GEMINI_API_KEY, tpl.sample_op);
+  if (!poll.done) return { status: "processing" };
+  if ("error" in poll && poll.error) {
+    await db.from("ai_video_templates").update({ sample_op: "", updated_at: now() }).eq("id", tpl.id);
+    return { status: "failed", error: poll.error.slice(0, 300) };
+  }
+  const uri = "videoUri" in poll ? poll.videoUri : "";
+  if (!uri) {
+    await db.from("ai_video_templates").update({ sample_op: "", updated_at: now() }).eq("id", tpl.id);
+    return { status: "failed", error: "Видео ирсэнгүй" };
+  }
+  const bytes = await downloadVeo(GEMINI_API_KEY, uri);
+  const path = `samples/sample-${tpl.slug}-${Date.now()}.mp4`;
+  const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: "video/mp4", upsert: true });
+  if (error) throw new Error(`sample upload: ${error.message}`);
+  const sampleVideoUrl = db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+  // Өмнөх AI жишээ видеог устгана (цомгоос сонгосон видеонд хүрэхгүй)
+  const marker = `/${BUCKET}/samples/sample-`;
+  const old = String(tpl.sample_video_url ?? "");
+  if (old.includes(marker)) {
+    await db.storage.from(BUCKET).remove([old.slice(old.indexOf(`/${BUCKET}/`) + BUCKET.length + 2).split("?")[0]]).catch(() => undefined);
+  }
+  // Давхар дуудалтаас хамгаалж зөвхөн тухайн op-той мөрийг шинэчилнэ
+  await db.from("ai_video_templates").update({ sample_video_url: sampleVideoUrl, sample_op: "", updated_at: now() })
+    .eq("id", tpl.id).eq("sample_op", tpl.sample_op);
+  return { status: "done", sampleVideoUrl };
 }
 
 // ── QPay ─────────────────────────────────────────────────────────────────────
